@@ -1,0 +1,7 @@
+# Development / test dependencies.
+# Install with:  .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+# This includes the runtime deps via the -r line below, so a fresh venv needs
+# only this one file.
+-r requirements.txt
+
+pytest>=8.0.0

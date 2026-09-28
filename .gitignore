@@ -1,0 +1,11 @@
+.env
+.kite_token
+__pycache__/
+*.pyc
+data/
+output/
+logs/
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
