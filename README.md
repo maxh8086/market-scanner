@@ -101,6 +101,26 @@ daily candles per request, so a full 26-year history is 3 requests, not
 only fetch days after the last cached date per symbol, so they finish in
 seconds.
 
+## Docker pipeline and per-stock conclusions
+
+`./start.ps1` runs scan, enrich, cross-check and portfolio in Docker on demand;
+`./stop.ps1` tears it down. Credentials come from `.env` at runtime and are never
+baked into an image. Optional stages:
+
+```powershell
+./start.ps1 -WithTimesfm        # add TimesFM forecast columns (CPU image)
+./start.ps1 -WithConclusions    # write a short conclusion per stock (NVIDIA GPU)
+```
+
+`-WithConclusions` serves `Qwen/Qwen3-4B-Instruct-2507` through vLLM (4-bit MXFP4
+weights, FP8 KV cache, about 4.5 GB of GPU memory, about 10 minutes for 290
+stocks) and writes `output/ath_conclusions_YYYY-MM-DD.csv`. The stance
+(CONSTRUCTIVE / MIXED / CAUTIOUS) comes from a fixed scorecard, not the model; the
+model only writes the prose, and its output is checked against the stock's fact
+sheet. It is a reading aid over stored data, never investment advice, and never
+changes the ranking. To compare models, run `python bench_models.py` (see
+`handoff.md`). The first GPU start downloads about 8 GB plus a 30 GB image.
+
 ## Output
 
 `output/ath_scan_YYYY-MM-DD.xlsx` (one sheet per bucket + a `Summary`
