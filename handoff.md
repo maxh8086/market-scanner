@@ -323,6 +323,24 @@ placeholders only.
   and WELENT takes its ₹7,300 cr project cost and not the ₹13,341 cr order book
   two sentences later.
 
+  **Capacity context (2026-09-29).** Two new report columns, 88 in all:
+  `order_capacity_plan` and `capacity_filing_date`. For each ranked order the
+  label is `PLANNED` (a capacity filing on or before the order date), `CAPACITY_AFTER`
+  (the first one came later -- the company saying the order outgrew its plant)
+  or `UNPLANNED`. `UNPLANNED` means *no capacity expansion was filed*, not that
+  no plan exists; the column points at the PDFs and does not conclude. It reads
+  announcement *metadata* (28-month cache, no network) and not the fetched
+  PDFs (6-month window), which would otherwise have fabricated `UNPLANNED` for
+  a third of order winners. Result: UNPLANNED 11, PLANNED 5, CAPACITY_AFTER 1
+  (STLTECH, verified). `capacity_change` is still empty -- it needs the
+  never-run LLM stage.
+  Verifying those labels exposed a defect in factor 4 itself: `margin expansion`
+  matched the EXPANSION keyword (8 of 285 keyword hits) and gave AXISCADES a
+  capacity plan. `_expansion_text` now strips margin/multiple-expansion phrases
+  before matching, so a release that mentions both keeps its real capacity content.
+  Categories `Acquisition` (2,602 rows) and `Diversification` (174) carry 0%
+  capacity language, so no category widening is needed.
+
   Pooled tier counts after all of it (964 documents): `loose` 471, `none` 261,
   `anchor+scaled` 106, `foreign-currency` 60, `unquantified` 34, `withheld` 17,
   `cumulative` 15. Note that **pooled yield is not comparable to the prior** —
@@ -353,14 +371,26 @@ placeholders only.
   guard had been silently dead. `pypdf` 6.19.0 is installed in `.venv`.
   `hasXbrl: True` on every announcement is announcement-type tagging only; the
   API exposes no XBRL payload and the order value is not in a tagged taxonomy.
-- **`NEW_ATH_TODAY` and `5-15%` buckets are now populated but not yet
-  eyeballed against a chart.** The full run finally put names in them
-  (QPOWER 0.06%, DYNAMATIC 2.22%, and 122 names in `5-15%`), so this is
-  actionable for the first time — it is the last unverified path through
-  `scanner/ath.py` on real data.
+- **`NEW_ATH_TODAY` bucket checked against a second source (2026-09-29) --
+  closed.** All six names were compared with Screener's overview. Five of six
+  scan LTPs equal Screener's `previous_close` to the paisa (QPOWER 1592.7,
+  ENGINERSIN 313.9, WELCORP 2739.7, SHRIPISTON 4645.3, PGIL 1296.1);
+  DYNAMATECH is 0.46% off (13200 vs 13139), consistent with BSE/NSE divergence
+  in a thin name. ATH highs agree with Screener's 52-week high to rounding
+  (ENGINERSIN 321.4/321, SHRIPISTON 4843/4843, PGIL 1357.9/1358, DYNAMATECH
+  13500/13507, and APLAPOLLO 2301.4/2301 for an ATH dated months back). The two
+  apparent gaps (QPOWER 1613 vs 1593.6, WELCORP 2870 vs 2838) are one session
+  *later*: Screener answered intraday on 2026-09-29 against a 09-28 scan, and
+  WELCORP was +4.6% that morning. The history cache confirms it -- QPOWER's
+  newest cached candle is 09-25 with a highest-ever cached high of 1570, so
+  the 09-28 print is a genuine new ATH. `5-15%` was not spot-checked.
+  `output/ath_scan_2026-09-28.csv` predates an `as_of` column, so post-close
+  finality is inferred from the exact close match rather than read from a field.
 - **LTP cross-check is 3 symbols deep**, not 6: the Kite MCP session expired
   mid-session, so HDFCBANK/BSE/SWIGGY were not independently confirmed
   against a second broker. Re-login to Kite MCP and re-check if that matters.
+  (The six `NEW_ATH_TODAY` names were since confirmed against Screener --
+  see above -- so this now concerns the wider universe only.)
 - **Sustained rate limits unmeasured beyond 30 requests.** 7.2 req/sec held
   over a short burst, but a per-30-minute account cap (if any) would only
   show up during a full run. The client honours `Retry-After` on 429 and
@@ -368,6 +398,14 @@ placeholders only.
 
 ## Known limitations / deliberate design choices
 
+- **`NEW_ATH_TODAY` means "printed a new ATH today", not "closed at it".**
+  `classify_bucket` returns it *before* the `--max-dist` check, so a stock
+  that spiked to a new high and faded is still in it: DYNAMATECH sits there
+  at 2.22% while DIVISLAB at 1.95% sits in `0-5%`. That is deliberate, and
+  the distance column shows the fade. Two consequences nobody has
+  exercised: `NEW_ATH_TODAY` bypasses `--max-dist`, and a day-one listing is
+  vacuously a new ATH (`is_new_ath_today` is true with no prior candles), so
+  `recent_ipo` is the guard to read alongside it.
 - **A mixed-currency order value keeps only its rupee leg.** LLOYDSENGG's
   mandated field reads `₹613 Crore + €18 Million`, and the parse reports
   ₹613 cr — understated by roughly ₹170 cr. Found by reading all 17 ranked
@@ -425,11 +463,19 @@ so an environment gap otherwise costs you that time twice:
 ```bash
 .venv\Scripts\python.exe ath_scan.py --help
 # pytest is NOT installed in .venv -- use unittest, which needs no dependency
-.venv\Scripts\python.exe -m unittest discover -s tests -t . -q    # 470 tests
+.venv\Scripts\python.exe -m unittest discover -s tests -t . -q    # 479 tests
 ```
 
 Set `PYTHONIOENCODING=utf-8` for anything that prints a rupee sign, and
 `PYTHONPATH=.` for scratch scripts that import `scanner`.
+
+**Heredoc escape gotcha.** Inside a `<<'PYEOF'` heredoc feeding Python, a
+`` in a non-raw string literal becomes a literal *backspace* (``) and
+lands silently in the written file -- a regex word boundary that never
+matches. It cost a guard that silently did not fire (`_LEGEND_BOUND`,
+diagnosed by printing `repr(pattern)`). Avoid escape sequences in transit;
+build them with `chr(92) + "b"`. Also: `/tmp` in Git Bash is invisible to
+Windows Python, and a `.venv` interpreter must be named explicitly.
 
 ### Environment history (resolved 2026-09-28)
 
