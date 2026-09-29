@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  scanner:
+    build:
+      context: .
+      dockerfile: docker/scanner/Dockerfile
+    container_name: ath-scanner
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+    restart: "no"
+
+  enrich:
+    build:
+      context: .
+      dockerfile: docker/enrich/Dockerfile
+    container_name: ath-enrich
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+    restart: "no"
+
+  crosscheck:
+    build:
+      context: .
+      dockerfile: docker/crosscheck/Dockerfile
+    container_name: ath-crosscheck
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+    restart: "no"
+
+  portfolio:
+    build:
+      context: .
+      dockerfile: docker/portfolio/Dockerfile
+    container_name: ath-portfolio
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+    restart: "no"
+
+  laya:
+    build:
+      context: .
+      dockerfile: docker/laya/Dockerfile
+    container_name: ath-laya
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - huggingface_cache:/root/.cache/huggingface
+    ports:
+      - "8000:8000"
+    profiles:
+      - laya
+    restart: "no"
+
+volumes:
+  huggingface_cache:
+    driver: local
