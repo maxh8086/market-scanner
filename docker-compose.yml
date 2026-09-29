@@ -1,68 +1,67 @@
-version: '3.8'
+# One image per component. Everything except `laya` and `llm` is a one-shot job:
+#   docker compose run --rm scanner --symbols INFY,TCS
+# start.ps1 drives the whole sequence; stop.ps1 tears it down.
+#
+# Components do not call each other. They hand off through the bind-mounted
+# data/, output/ and logs/ folders (SQLite caches, TinyDB store, CSV outputs).
+# The only container-to-container traffic is enrich -> llm (Ollama HTTP).
+#
+# Secrets reach containers ONLY at runtime, through `env_file: .env` (compose
+# reads it; no image, build arg or log ever contains it). A service gets the
+# file only if it needs credentials: crosscheck, laya and llm deliberately do not.
+x-persist: &persist
+  - ./data:/app/data
+  - ./output:/app/output
+  - ./logs:/app/logs
 
 services:
   scanner:
-    build:
-      context: .
-      dockerfile: docker/scanner/Dockerfile
-    container_name: ath-scanner
+    build: {context: ., dockerfile: docker/scanner/Dockerfile}
     env_file: .env
-    volumes:
-      - ./data:/app/data
-      - ./output:/app/output
-      - ./logs:/app/logs
+    volumes: *persist
     restart: "no"
 
   enrich:
-    build:
-      context: .
-      dockerfile: docker/enrich/Dockerfile
-    container_name: ath-enrich
+    build: {context: ., dockerfile: docker/enrich/Dockerfile}
     env_file: .env
-    volumes:
-      - ./data:/app/data
-      - ./output:/app/output
-      - ./logs:/app/logs
+    volumes: *persist
     restart: "no"
 
-  crosscheck:
-    build:
-      context: .
-      dockerfile: docker/crosscheck/Dockerfile
-    container_name: ath-crosscheck
-    volumes:
-      - ./data:/app/data
-      - ./output:/app/output
-      - ./logs:/app/logs
+  crosscheck:            # independent of Upstox by design: no credentials
+    build: {context: ., dockerfile: docker/crosscheck/Dockerfile}
+    volumes: *persist
     restart: "no"
 
-  portfolio:
-    build:
-      context: .
-      dockerfile: docker/portfolio/Dockerfile
-    container_name: ath-portfolio
+  portfolio:             # read-only Kite holdings overlay
+    build: {context: ., dockerfile: docker/portfolio/Dockerfile}
     env_file: .env
-    volumes:
-      - ./data:/app/data
-      - ./output:/app/output
-      - ./logs:/app/logs
+    volumes: *persist
     restart: "no"
 
-  laya:
-    build:
-      context: .
-      dockerfile: docker/laya/Dockerfile
-    container_name: ath-laya
-    env_file: .env
+  llm:                   # extraction model for `enrich --llm`; profile `llm` (start.ps1 -WithLlm)
+    image: ollama/ollama:latest
+    container_name: ath-llm
     volumes:
-      - ./data:/app/data
-      - huggingface_cache:/root/.cache/huggingface
+      - ollama_models:/root/.ollama      # multi-GB model, pulled once
     ports:
-      - "8000:8000"
-    profiles:
-      - laya
+      - "127.0.0.1:11434:11434"          # loopback only; enrich reaches it as http://llm:11434
+    profiles: ["llm"]
+    restart: "no"
+
+  laya:                  # decision-model service; profile `laya` (start.ps1 -WithLaya). Not wired into ranking.
+    build: {context: ., dockerfile: docker/laya/Dockerfile}
+    container_name: ath-laya
+    # No env_file: Laya needs none of the broker/data credentials. To require a
+    # bearer key, set LAYA_API_KEY in the shell that runs start.ps1.
+    environment:
+      - LAYA_API_KEY
+    volumes:
+      - huggingface_cache:/home/appuser/.cache/huggingface   # weights download once
+    ports:
+      - "127.0.0.1:8000:8000"            # loopback only: laya-serve has no auth by default
+    profiles: ["laya"]
     restart: "no"
 
 volumes:
   huggingface_cache:
-    driver: local
+  ollama_models:

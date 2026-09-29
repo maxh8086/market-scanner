@@ -1,38 +1,28 @@
-#!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-Manually start the ATH Scanner pipeline in Docker.
+Manually run the ATH Scanner pipeline in Docker: scan -> enrich -> crosscheck -> portfolio.
 
 .DESCRIPTION
-Runs the scanner, enrichment, crosscheck, and optionally portfolio and Laya
-stages in order, with bind-mounted data directories on the host.
+No scheduler; you trigger it. Data, output and logs are bind-mounted from this
+folder, so caches survive between runs. Credentials are read by docker compose
+from .env at runtime; this script only checks that the file exists and never
+opens it. Run stop.ps1 when you are done.
 
-.PARAMETER Symbols
-Symbols to scan (passed to ath_scan.py --symbols).
-
-.PARAMETER WithLaya
-Start the Laya decision model as a long-running service (profile laya).
-
-.PARAMETER SkipEnrich
-Skip the enrichment stage.
-
-.PARAMETER SkipCrosscheck
-Skip the crosscheck stage.
-
-.PARAMETER SkipPortfolio
-Skip the portfolio stage.
-
-.PARAMETER Rebuild
-Force a full docker compose build before running.
+.PARAMETER Symbols        Comma-separated symbols to scan instead of the full index.
+.PARAMETER WithLlm        Start an Ollama container and run enrichment with --llm (first start pulls the model, several GB).
+.PARAMETER WithLaya       Also start the Laya decision-model service (first start downloads ~800 MB of weights). Not used by any stage yet.
+.PARAMETER SkipEnrich     Skip enrichment.
+.PARAMETER SkipCrosscheck Skip the independent price cross-check.
+.PARAMETER SkipPortfolio  Skip the Kite holdings overlay.
+.PARAMETER Rebuild        Rebuild images without the cache.
 
 .EXAMPLE
 ./start.ps1
-./start.ps1 -Symbols "INFY,TCS"
-./start.ps1 -WithLaya -Rebuild
+./start.ps1 -Symbols "INFY,TCS" -SkipPortfolio
 #>
-
 param(
     [string]$Symbols,
+    [switch]$WithLlm,
     [switch]$WithLaya,
     [switch]$SkipEnrich,
     [switch]$SkipCrosscheck,
@@ -41,182 +31,140 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Set-Location -Path $PSScriptRoot
 
-function Write-Stage {
-    param([string]$Message)
-    Write-Host "`n=== $Message ===" -ForegroundColor Cyan
+$LlmModel = 'qwen3:8b'   # keep in step with scanner/llm.py LLMConfig.model
+
+# Run docker and return its exit code. Under Windows PowerShell 5.1 a native
+# command's stderr becomes an error record, and docker writes ordinary build
+# progress to stderr -- so 'Stop' must be relaxed around the call, and success
+# judged by the exit code alone.
+function Invoke-Docker {
+    param([string[]]$DockerArgs)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & docker @DockerArgs | Out-Host
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previous
+    }
 }
 
-function Write-Error-Message {
-    param([string]$Message)
+function Write-Stage([string]$Message) { Write-Host ""; Write-Host "=== $Message ===" -ForegroundColor Cyan }
+function Stop-Pipeline([string]$Message) {
     Write-Host "Error: $Message" -ForegroundColor Red
+    Write-Host "Containers may still be up; run ./stop.ps1 to clean up." -ForegroundColor Yellow
+    exit 1
 }
 
-$startTime = Get-Date
-
-# Verify Docker daemon
-Write-Stage "Checking Docker daemon"
-try {
-    $dockerInfo = & docker info 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error-Message "Docker daemon not responding. Ensure Docker Desktop is running."
-        exit 1
+# Wait for a container's own healthcheck (the slim images have no curl).
+function Wait-Healthy([string]$Container, [int]$Minutes) {
+    $deadline = (Get-Date).AddMinutes($Minutes)
+    $health = ''
+    while ((Get-Date) -lt $deadline) {
+        $health = (& docker inspect --format '{{.State.Health.Status}}' $Container 2>$null)
+        if ($health -eq 'healthy') { return $true }
+        Start-Sleep -Seconds 5
     }
-    Write-Host "Docker daemon is running."
-} catch {
-    Write-Error-Message "Docker command not found. Ensure Docker is installed."
-    exit 1
+    Write-Host "$Container last health status: '$health'" -ForegroundColor Yellow
+    return $false
 }
 
-# Verify .env exists
-Write-Stage "Verifying .env"
-if (-not (Test-Path ".env")) {
-    Write-Error-Message ".env file not found. Copy .env.example to .env and fill in your credentials."
-    exit 1
+$timings = [ordered]@{}
+function Measure-Stage([string]$Name, [scriptblock]$Body) {
+    $t = Get-Date
+    $code = & $Body
+    $timings[$Name] = [int]((Get-Date) - $t).TotalSeconds
+    return $code
 }
-Write-Host ".env file found."
 
-# Build
-Write-Stage "Building Docker images"
-$buildStart = Get-Date
-if ($Rebuild) {
-    & docker compose build --no-cache 2>&1
-} else {
-    & docker compose build 2>&1
+Write-Stage "Preflight"
+$code = Invoke-Docker @('info', '--format', '{{.ServerVersion}}')
+if ($code -ne 0) { Stop-Pipeline "Docker is not responding. Start Docker Desktop and retry." }
+# Existence only. This script must never read the credentials file.
+if (-not (Test-Path -LiteralPath '.env')) {
+    Stop-Pipeline ".env not found. Copy .env.example to .env and fill in your credentials."
 }
-if ($LASTEXITCODE -ne 0) {
-    Write-Error-Message "Docker build failed."
-    exit 1
-}
-$buildEnd = Get-Date
-$buildDuration = [int](($buildEnd - $buildStart).TotalSeconds)
-Write-Host "Build completed in $buildDuration seconds."
+Write-Host ".env present."
 
-# Start Laya if requested
+$profiles = @()
+if ($WithLlm)  { $profiles += @('--profile', 'llm') }
+if ($WithLaya) { $profiles += @('--profile', 'laya') }
+
+Write-Stage "Building images"
+$buildArgs = @('compose') + $profiles + @('build')
+if ($Rebuild) { $buildArgs += '--no-cache' }
+$code = Measure-Stage 'build' { Invoke-Docker $buildArgs }
+if ($code -ne 0) { Stop-Pipeline "Docker build failed." }
+
+if ($WithLlm) {
+    Write-Stage "Starting the extraction model (Ollama, $LlmModel)"
+    $code = Invoke-Docker @('compose', '--profile', 'llm', 'up', '-d', 'llm')
+    if ($code -ne 0) { Stop-Pipeline "Could not start the llm container." }
+    # No healthcheck on the stock image; retry the pull until the server is up.
+    $pulled = $false
+    for ($i = 0; $i -lt 30 -and -not $pulled; $i++) {
+        $code = Invoke-Docker @('exec', 'ath-llm', 'ollama', 'pull', $LlmModel)
+        if ($code -eq 0) { $pulled = $true } else { Start-Sleep -Seconds 5 }
+    }
+    if (-not $pulled) { Stop-Pipeline "Could not pull model $LlmModel." }
+}
+
 if ($WithLaya) {
-    Write-Stage "Starting Laya service"
-    $layaStart = Get-Date
-    & docker compose --profile laya up -d laya 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error-Message "Failed to start Laya."
-        exit 1
-    }
-
-    # Wait for healthcheck
-    Write-Host "Waiting for Laya healthcheck..."
-    $maxRetries = 60
-    $retries = 0
-    while ($retries -lt $maxRetries) {
-        $health = & docker compose exec laya curl -s http://localhost:8000/health 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "Laya is healthy."
-            break
-        }
-        $retries++
-        Start-Sleep -Seconds 1
-    }
-    if ($retries -eq $maxRetries) {
-        Write-Error-Message "Laya healthcheck timed out."
-        exit 1
-    }
-    $layaEnd = Get-Date
-    $layaDuration = [int](($layaEnd - $layaStart).TotalSeconds)
-    Write-Host "Laya ready in $layaDuration seconds."
+    Write-Stage "Starting Laya (first start downloads weights; this can take several minutes)"
+    $code = Invoke-Docker @('compose', '--profile', 'laya', 'up', '-d', 'laya')
+    if ($code -ne 0) { Stop-Pipeline "Could not start Laya." }
+    if (-not (Wait-Healthy 'ath-laya' 15)) { Stop-Pipeline "Laya did not become healthy within 15 minutes." }
+    Write-Host "Laya is healthy on http://127.0.0.1:8000" -ForegroundColor Green
 }
 
-# Run scanner
-Write-Stage "Running ATH Scanner"
-$scanStart = Get-Date
-$scanArgs = @("compose", "run", "--rm", "scanner")
-if ($Symbols) {
-    $scanArgs += @("--symbols", $Symbols)
-}
-& docker @scanArgs 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Error-Message "Scanner failed."
-    exit 1
-}
-$scanEnd = Get-Date
-$scanDuration = [int](($scanEnd - $scanStart).TotalSeconds)
-Write-Host "Scanner completed in $scanDuration seconds."
+Write-Stage "Scan"
+$scanArgs = @('compose', 'run', '--rm', 'scanner')
+if ($Symbols) { $scanArgs += @('--symbols', $Symbols) }
+$code = Measure-Stage 'scan' { Invoke-Docker $scanArgs }
+if ($code -ne 0) { Stop-Pipeline "Scan failed (exit $code)." }
 
-# Run enrich
-if (-not $SkipEnrich) {
-    Write-Stage "Running Enrichment"
-    $enrichStart = Get-Date
-    & docker compose run --rm enrich --all 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error-Message "Enrichment failed."
-        exit 1
-    }
-    $enrichEnd = Get-Date
-    $enrichDuration = [int](($enrichEnd - $enrichStart).TotalSeconds)
-    Write-Host "Enrichment completed in $enrichDuration seconds."
-} else {
+if ($SkipEnrich) {
     Write-Host "Enrichment skipped."
+} else {
+    Write-Stage "Enrich"
+    $enrichArgs = @('compose') + $profiles + @('run', '--rm', 'enrich', '--all')
+    if ($WithLlm) { $enrichArgs += @('--llm', '--llm-url', 'http://llm:11434', '--llm-model', $LlmModel) }
+    $code = Measure-Stage 'enrich' { Invoke-Docker $enrichArgs }
+    if ($code -ne 0) { Stop-Pipeline "Enrichment failed (exit $code)." }
 }
 
-# Run crosscheck
-if (-not $SkipCrosscheck) {
-    Write-Stage "Running Crosscheck"
-    $crossStart = Get-Date
-    & docker compose run --rm crosscheck --scan output 2>&1
-    $crossExit = $LASTEXITCODE
-    $crossEnd = Get-Date
-    $crossDuration = [int](($crossEnd - $crossStart).TotalSeconds)
-
-    if ($crossExit -eq 0) {
-        Write-Host "Crosscheck completed in $crossDuration seconds."
-    } elseif ($crossExit -eq 1) {
-        Write-Host "Crosscheck: divergence detected (exit code 1). This is a warning, not a failure." -ForegroundColor Yellow
-    } else {
-        Write-Error-Message "Crosscheck failed with exit code $crossExit"
-        exit 1
-    }
+if ($SkipCrosscheck) {
+    Write-Host "Cross-check skipped."
 } else {
-    Write-Host "Crosscheck skipped."
+    Write-Stage "Cross-check (independent price source)"
+    $code = Measure-Stage 'crosscheck' { Invoke-Docker @('compose', 'run', '--rm', 'crosscheck') }
+    if ($code -eq 1) {
+        Write-Host "Cross-check found DIVERGED symbols -- a warning, not a failure. See output/crosscheck_*.csv" -ForegroundColor Yellow
+    } elseif ($code -ne 0) {
+        Stop-Pipeline "Cross-check failed (exit $code)."
+    }
 }
 
-# Run portfolio
-if (-not $SkipPortfolio) {
-    Write-Stage "Running Portfolio Overlay"
-    $portStart = Get-Date
-    & docker compose run --rm portfolio --output-dir output 2>&1
-    $portExit = $LASTEXITCODE
-    $portEnd = Get-Date
-    $portDuration = [int](($portEnd - $portStart).TotalSeconds)
-
-    if ($portExit -eq 0) {
-        Write-Host "Portfolio completed in $portDuration seconds."
-    } elseif ($portExit -eq 2) {
-        Write-Host "Portfolio: no holdings source available (exit code 2). This is a warning, not a failure." -ForegroundColor Yellow
-    } else {
-        Write-Error-Message "Portfolio failed with exit code $portExit"
-        exit 1
-    }
-} else {
+if ($SkipPortfolio) {
     Write-Host "Portfolio skipped."
-}
-
-# Summary
-Write-Stage "Pipeline Summary"
-$totalEnd = Get-Date
-$totalDuration = [int](($totalEnd - $startTime).TotalSeconds)
-
-Write-Host "Total elapsed time: $totalDuration seconds"
-Write-Host ""
-Write-Host "Output files:"
-if (Test-Path "output") {
-    Get-ChildItem -Path "output" -File | ForEach-Object {
-        Write-Host "  output/$($_.Name)"
+} else {
+    Write-Stage "Portfolio overlay"
+    $code = Measure-Stage 'portfolio' { Invoke-Docker @('compose', 'run', '--rm', 'portfolio') }
+    if ($code -eq 2) {
+        Write-Host "No holdings source (data/holdings.json or KITE_ACCESS_TOKEN) -- skipped, not a failure." -ForegroundColor Yellow
+    } elseif ($code -ne 0) {
+        Stop-Pipeline "Portfolio failed (exit $code)."
     }
 }
+
+Write-Stage "Done"
+foreach ($k in $timings.Keys) { Write-Host ("  {0,-11} {1,5} s" -f $k, $timings[$k]) }
 Write-Host ""
-Write-Host "Data files:"
-if (Test-Path "data") {
-    Get-ChildItem -Path "data" -File | ForEach-Object {
-        Write-Host "  data/$($_.Name)"
-    }
-}
+Write-Host "Newest files in output/:"
+Get-ChildItem -LiteralPath 'output' -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 8 |
+    ForEach-Object { Write-Host ("  output/{0}" -f $_.Name) }
 Write-Host ""
-Write-Host "Pipeline completed successfully." -ForegroundColor Green
+Write-Host "Finished. Run ./stop.ps1 to shut the setup down." -ForegroundColor Green

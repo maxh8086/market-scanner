@@ -1,81 +1,54 @@
-#!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-Stop the ATH Scanner Docker containers.
+Shut the ATH Scanner Docker setup down.
 
 .DESCRIPTION
-Stops all running containers and optionally removes built images and
-Hugging Face model weights.
+Stops and removes every container of this project (including the optional llm
+and laya services, which live under compose profiles). Your data/, output/ and
+logs/ folders are bind mounts and are never touched by this script.
 
-.PARAMETER Prune
-Remove built project images (docker compose down --rmi local).
-
-.PARAMETER PurgeModels
-Remove the Hugging Face weights volume (use with caution).
-
-.EXAMPLE
-./stop.ps1
-./stop.ps1 -Prune
-./stop.ps1 -Prune -PurgeModels
+.PARAMETER Prune       Also remove the images built for this project.
+.PARAMETER PurgeModels Also delete the downloaded model volumes (Laya weights ~800 MB, Ollama model several GB; re-downloaded on the next start that uses them).
 #>
-
 param(
     [switch]$Prune,
     [switch]$PurgeModels
 )
 
 $ErrorActionPreference = 'Stop'
+Set-Location -Path $PSScriptRoot
 
-Write-Host "=== Stopping ATH Scanner Pipeline ===" -ForegroundColor Cyan
-
-# Build down command
-$downArgs = @("compose", "--profile", "laya", "down", "--remove-orphans")
-
-if ($Prune) {
-    $downArgs += "--rmi"
-    $downArgs += "local"
-    Write-Host "Removing built project images."
+# docker writes ordinary progress to stderr; see the note in start.ps1.
+function Invoke-Docker {
+    param([string[]]$DockerArgs)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & docker @DockerArgs | Out-Host
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previous
+    }
 }
 
+Write-Host "=== Stopping the ATH Scanner setup ===" -ForegroundColor Cyan
+
+$down = @('compose', '--profile', 'laya', '--profile', 'llm', 'down', '--remove-orphans')
+if ($Prune) { $down += @('--rmi', 'local') }
 if ($PurgeModels) {
-    $downArgs += "-v"
-    Write-Host "WARNING: Removing Hugging Face weights volume. Models will be re-downloaded on next Laya start." -ForegroundColor Yellow
+    $down += '--volumes'   # the only named volumes are the model caches
+    Write-Host "Removing the model volumes." -ForegroundColor Yellow
 }
 
-# Execute down
-& docker @downArgs 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Error: Failed to stop containers." -ForegroundColor Red
+$code = Invoke-Docker $down
+if ($code -ne 0) {
+    Write-Host "Error: docker compose down failed (exit $code)." -ForegroundColor Red
     exit 1
 }
 
-Write-Host "Containers and services stopped." -ForegroundColor Green
-
-# Show what remains
 Write-Host ""
-Write-Host "=== Remaining Docker Resources ===" -ForegroundColor Cyan
-
-$containers = & docker ps -q 2>&1
-if ($containers) {
-    Write-Host "Running containers:"
-    & docker ps --format "table {{.Names}}`t{{.Image}}`t{{.Status}}" 2>&1
-} else {
-    Write-Host "No containers running."
-}
-
-$images = & docker images --filter "reference=ath-*" --filter "reference=*ath*" -q 2>&1
-if ($images) {
-    Write-Host ""
-    Write-Host "Remaining ATH project images:"
-    & docker images --filter "reference=ath-*" --filter "reference=*ath*" --format "table {{.Repository}}:{{.Tag}}`t{{.Size}}" 2>&1
-}
-
-$volumes = & docker volume ls --filter "name=ath" -q 2>&1
-if ($volumes) {
-    Write-Host ""
-    Write-Host "Remaining ATH project volumes:"
-    & docker volume ls --filter "name=ath" --format "table {{.Name}}`t{{.Driver}}" 2>&1
-}
-
+Write-Host "Still running for this project:" -ForegroundColor Cyan
+$left = & docker compose --profile laya --profile llm ps --format '{{.Name}}  {{.Status}}' 2>$null
+if ($left) { $left | ForEach-Object { Write-Host "  $_" } } else { Write-Host "  nothing" }
 Write-Host ""
-Write-Host "Stop completed." -ForegroundColor Green
+Write-Host "data/, output/ and logs/ are untouched." -ForegroundColor Green
