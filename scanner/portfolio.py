@@ -147,6 +147,10 @@ def overlay(
 
     portfolio_df = pd.DataFrame(portfolio_rows)
 
+    # Compute weights
+    total_value = portfolio_df["current_value"].sum()
+    portfolio_df["weight_pct"] = (portfolio_df["current_value"] / total_value * 100) if total_value > 0 else 0
+
     # Compute summary
     summary = _compute_summary(portfolio_df, scan_df if enriched_df is None else enriched_df)
 
@@ -252,9 +256,10 @@ def _compute_summary(portfolio_df: pd.DataFrame, ref_df: Optional[pd.DataFrame] 
     total_pnl = total_value - total_invested
     total_pnl_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0
 
-    # Weights
+    # Weights (use existing weight_pct if available, otherwise compute)
     portfolio_df = portfolio_df.copy()
-    portfolio_df["weight_pct"] = (portfolio_df["current_value"] / total_value * 100) if total_value > 0 else 0
+    if "weight_pct" not in portfolio_df.columns:
+        portfolio_df["weight_pct"] = (portfolio_df["current_value"] / total_value * 100) if total_value > 0 else 0
 
     # Count in scan
     in_scan = (portfolio_df["in_scan"] == "YES").sum()
