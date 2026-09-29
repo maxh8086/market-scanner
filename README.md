@@ -101,25 +101,60 @@ daily candles per request, so a full 26-year history is 3 requests, not
 only fetch days after the last cached date per symbol, so they finish in
 seconds.
 
-## Docker pipeline and per-stock conclusions
+## Docker pipeline
 
-`./start.ps1` runs scan, enrich, cross-check and portfolio in Docker on demand;
-`./stop.ps1` tears it down. Credentials come from `.env` at runtime and are never
-baked into an image. Optional stages:
+Everything runs as containers of one `docker-compose.yml`; the only thing on the host
+is `start.ps1` (and `stop.ps1`). Credentials come from `.env` at runtime and are never
+baked into an image. One command runs the whole pipeline, no switches:
 
 ```powershell
-./start.ps1 -WithTimesfm        # add TimesFM forecast columns (CPU image)
-./start.ps1 -WithConclusions    # write a short conclusion per stock (NVIDIA GPU)
+./start.ps1                                   # full run (needs an NVIDIA GPU)
+./start.ps1 -Symbols "INFY,TCS" -SkipPortfolio   # smaller run
+./stop.ps1                                    # tear down (-PurgeGraph / -PurgeModels to drop volumes)
 ```
 
-`-WithConclusions` serves `Qwen/Qwen3-4B-Instruct-2507` through vLLM (4-bit MXFP4
-weights, FP8 KV cache, about 4.5 GB of GPU memory, about 10 minutes for 290
-stocks) and writes `output/ath_conclusions_YYYY-MM-DD.csv`. The stance
-(CONSTRUCTIVE / MIXED / CAUTIOUS) comes from a fixed scorecard, not the model; the
-model only writes the prose, and its output is checked against the stock's fact
-sheet. It is a reading aid over stored data, never investment advice, and never
-changes the ranking. To compare models, run `python bench_models.py` (see
-`handoff.md`). The first GPU start downloads about 8 GB plus a 30 GB image.
+| Stage | Container | What it does |
+|---|---|---|
+| scan | `scanner` | Upstox prices/history, ATH buckets |
+| enrich | `enrich` + `vllm` | NSE filings, fundamentals, AI extraction of order/capacity/guidance figures |
+| forecast | `enrich-timesfm` | TimesFM revenue/volatility forecasts (CPU) |
+| graph | `neo4j` + `graph` | loads filings, extractions, fundamentals; reads back customer facts |
+| conclude | `conclude` + `vllm` | one short, checked conclusion per stock |
+| purge | `graph` | deletes expired, processed data (see Retention) |
+| report | `report` | `output/ath_report_YYYY-MM-DD.xlsx` |
+| cross-check, portfolio | `crosscheck`, `portfolio` | independent price check, Kite holdings overlay |
+
+**One model, two jobs.** `vllm` serves `Qwen/Qwen3-4B-Instruct-2507` (4-bit MXFP4
+weights, FP8 KV cache, about 4.5 GB of GPU memory) for both extraction and
+conclusions. Extraction uses strict JSON schemas and the model only *copies* a figure
+and its scale word ("crore", "million"); code does the rupee arithmetic, because a 4-bit
+4B model got crore conversions wrong by 10x. `python bench_extract.py` is the fixed
+acceptance test for that (PASS at 95% agreement with the regex on 40 filings, threshold
+90%). The stance (CONSTRUCTIVE / MIXED / CAUTIOUS) comes from a fixed scorecard, not the
+model; the model only writes the prose, checked against the stock's fact sheet. It is a
+reading aid over stored data, never investment advice, and never changes the ranking.
+`python bench_models.py` compares conclusion models (see `handoff.md`). The first GPU
+start downloads about 8 GB plus a 30 GB image.
+
+**The graph.** Neo4j holds Company, Filing (with its text), Extraction, Counterparty,
+Conclusion and Fundamentals nodes. It gives the conclusions facts no single filing
+shows: how many distinct customers, repeat customers, other companies selling to the
+same customer (`graph.*` keys in the fact sheet). TinyDB (`data/documents.json`) stays
+the system of record and the graph can always be rebuilt from it; if Neo4j is down the
+run continues without graph facts. The database password is generated into `.env.neo4j`
+(git-ignored) by `start.ps1`; the browser UI is on http://127.0.0.1:7474 (loopback only).
+
+**Retention.** Every stored record carries `expires_at` (its date plus `years`). The
+purge step deletes a record only when it is past that date *and processed* (a filing
+that never produced an extraction is kept). Set it in `config/retention.json`:
+
+```json
+{"years": 3, "purge": true, "only_when_processed": true}
+```
+
+`"purge": false` keeps everything (dates are still written, so you can switch it on
+later); `RETENTION_YEARS` / `RETENTION_PURGE` override it for one run.
+`python graph_sync.py purge --dry-run` shows what would go.
 
 ## Output
 
@@ -234,6 +269,10 @@ day when a name actually lands in them.
 
 ```
 ath_scan.py             # CLI entry point
+enrich.py conclude.py   # enrichment / conclusion stages (containers `enrich`, `conclude`)
+graph_sync.py           # Neo4j load, facts, purge (container `graph`)
+final_report.py         # two-sheet workbook (container `report`)
+config/retention.json   # how long stored data is kept
 scanner/
   upstox.py             # Upstox client: auth, instrument keys, quotes, candles
   constituents.py       # NSE list download/cache/clean (also the ISIN source)
@@ -241,6 +280,7 @@ scanner/
   ath.py                # ATH + distance + bucketing (pure functions, no I/O)
   report.py             # Excel/CSV/terminal output
   auth.py               # Kite login + token cache -- NOT used by the scan;
+  graph.py retention.py # Neo4j client; expires_at / purge rules
   instruments.py        # Kite token resolution -- NOT used by the scan;
                         #   both retained for the Kite portfolio side
 tests/test_ath.py       # unit tests for ath.py with synthetic candles

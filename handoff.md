@@ -434,10 +434,10 @@ placeholders only.
 
 ## Docker, manual trigger, cross-check, portfolio (added 2026-09-29)
 
-**Run it:** `./start.ps1` (scan -> enrich -> crosscheck -> portfolio), then
+**Run it:** `./start.ps1` (full pipeline, no switches; see the 2026-09-30 section below), then
 `./stop.ps1`. No scheduler; the 4 PM IST run was replaced by this manual
-trigger on request. Flags: `-Symbols`, `-WithLlm`, `-WithLaya`, `-SkipEnrich`,
-`-SkipCrosscheck`, `-SkipPortfolio`, `-Rebuild`. Credentials reach containers
+trigger on request. Flags: `-Symbols`, `-WithLaya`, `-SkipEnrich`,
+`-SkipCrosscheck`, `-SkipPortfolio`, `-Rebuild` (the `-WithLlm/-WithTimesfm/-WithConclusions` switches were removed on 2026-09-30). Credentials reach containers
 only at runtime through compose `env_file: .env` (scanner, enrich, portfolio);
 crosscheck, laya and llm get none. The scripts never open `.env`.
 
@@ -485,8 +485,7 @@ and is labelled "point forecast only (N points, need 25 for validated band)".
 - Laya is installed in the venv and containerised but is a classifier
   (`/v1/systemone`), not compatible with `enrich --llm`; it is not used in
   ranking and is unmeasured. First `-WithLaya` start downloads ~808 MB.
-- `--llm` (which would fill `capacity_change`) and Neo4j need the Ollama
-  profile (`-WithLlm`, multi-GB model). Neo4j itself is not built.
+- (Superseded 2026-09-30: extraction now runs on vLLM/Qwen3-4B and Neo4j is built.)
 - TimesFM lives only in the separate `enrich-timesfm` image (see the section below).
 - No scheduled task was created.
 
@@ -671,6 +670,47 @@ Note that `requirements.txt` pins only `pandas>=2.0.0`, so a fresh install
 now resolves **pandas 3.0.6** (a major-version bump from the 2.x the
 project originally ran on). The suite and the Excel writer were both
 verified against 3.0.6; add an upper bound if that ever needs freezing.
+
+## Neo4j, vLLM extraction, retention, one-command run (added 2026-09-30)
+
+Architecture rule from the owner: every component is a container under the single
+`docker-compose.yml`; only `start.ps1`/`stop.ps1` live on the host.
+
+- **`start.ps1` (no switches)**: preflight (docker, `.env` exists, generate
+  `.env.neo4j` if missing) -> build -> `up -d neo4j vllm` -> scan -> wait for vLLM
+  -> `enrich --all --llm-url http://vllm:8000 --llm-model qwen3-4b --llm-api openai
+  --llm-workers 4` -> `enrich-timesfm` -> `graph load` + `graph facts` -> `conclude`
+  -> `graph conclusions` + `graph purge` -> stop vllm/neo4j -> `report` (xlsx) ->
+  crosscheck -> portfolio. Graph steps are warnings if Neo4j is down (exit 3).
+  Kept switches: `-Symbols -WithLaya -SkipEnrich -SkipCrosscheck -SkipPortfolio -Rebuild`.
+  Ollama service, `ollama_models` volume and the `llm/timesfm/vllm` profiles are gone.
+- **Extraction on vLLM**: Qwen3-4B-Instruct-2507 with strict JSON schemas
+  (`scanner/llm.py` `SCHEMAS`). The model copies figure + scale word, code converts
+  (`to_rupees`, `add_rupees`) because the 4-bit 4B model was 10x off doing crore
+  arithmetic. Acceptance test `python bench_extract.py` (`scanner/extractcheck.py`):
+  PASS 38/40 = 95% agreement with the regex (threshold 90%), 0 failed. The two
+  disagreements (MTARTECH, ATLANTAELE) are not resolved; the regex is the reference
+  only where it is anchored to the mandated field.
+- **Graph** (`scanner/graph.py`, `graph_sync.py`, service `graph`, image `ath-enrich`):
+  nodes Company, Filing(text, processed), Extraction, Counterparty, Conclusion,
+  Fundamentals; all values go in as query parameters. `graph facts` writes
+  `data/graph_facts.json` (distinct_customers, repeat_customers, peers_sharing_customer),
+  which `conclude.py` turns into `graph.*` fact-sheet keys (counts only, only when a
+  named customer exists). TinyDB is still the system of record; the graph can be
+  rebuilt from it. `stop.ps1 -PurgeGraph` drops the volume (use it if `.env.neo4j` was
+  deleted and the password no longer matches). Cypher was verified against a live
+  neo4j:5-community (load, facts, purge) with synthetic data.
+- **Retention** (`scanner/retention.py`, `config/retention.json`): `expires_at` =
+  record date + `years` (3), stamped by `docstore.put_*` and on graph nodes. Purge
+  deletes only expired AND processed records (filing processed = has an extraction).
+  `"purge": false` disables deletion; env `RETENTION_YEARS`/`RETENTION_PURGE` override.
+  `python graph_sync.py purge --dry-run`.
+- **Final workbook** (`final_report.py`, `scanner/workbook.py`): sheet `Stocks` = all
+  stocks and every column with filters, sheet `Summary` = counts/stance/industry/data quality.
+- Secrets: `.env` never read by scripts; `.env.neo4j` is generated (random, git-ignored,
+  `.dockerignore`d); neo4j and graph get only that file.
+- Tests: 675 pass (2 skipped). Git Bash heredocs unescape `\n`; write Python with
+  `chr(92)` or the Write tool when a patch needs a literal backslash.
 
 ## Not done (explicitly deferred per spec's "Later" section)
 
