@@ -357,9 +357,10 @@ class TestNaiveLevelForecast(unittest.TestCase):
     """
 
     def test_too_short_to_forecast_is_an_error(self):
+        # 3 points is less than season+1=5, so it's too short for even unvalidated
         out = fc.naive_forecast([100.0, 110.0, 120.0], steps=3, season=4)
         self.assertFalse(out.ok)
-        self.assertIn("need 9 points", out.error)
+        self.assertIn("need 5 points", out.error)
         self.assertEqual(out.note, "")
 
     def test_a_short_series_forecasts_without_a_band(self):

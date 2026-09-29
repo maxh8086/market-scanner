@@ -611,13 +611,20 @@ def naive_forecast(values: Sequence[float], steps: int,
     band around it is the measured spread of that rule's own past errors, and
     only the spread -- the level of those errors is deliberately not used to move
     the central case. See the comment at the quantiles for why.
+
+    A validated error band requires 2*season+1 points; unvalidated point
+    forecasts work from season+1 points but with an honest note about the
+    missing backtest data.
     """
     out = SeriesForecast(backend=BACKEND_NAIVE, label=label, season=season,
                          n_history=len(values))
     vals = [float(v) for v in values if v is not None]
-    need = (2 * season + 1) if season else 5
-    if len(vals) < need:
-        out.error = f"need {need} points, have {len(vals)}"
+    # Minimum for even an unvalidated forecast
+    min_unvalidated = (season + 1) if season else 5
+    # Minimum for validated band
+    need_validated = (2 * season + 1) if season else 5
+    if len(vals) < min_unvalidated:
+        out.error = f"need {min_unvalidated} points, have {len(vals)}"
         return out
     path = seasonal_naive_path(vals, steps, season)
     if not path:
@@ -661,41 +668,60 @@ def naive_forecast(values: Sequence[float], steps: int,
         out.steps.append(band)
     banded = sum(1 for s in out.steps if s.has_band)
     measured = sum(1 for s in out.steps if s.dev_pct is not None)
-    if banded == 0:
-        out.note = (f"point forecast only: fewer than {MIN_BACKTEST_ERRORS} "
-                    f"backtest errors available")
-        # Even with no band at all there may be a deviation, because its floor is
-        # lower. Not saying so leaves a populated column looking unexplained next
-        # to a note that reads as "nothing but the point estimate".
-        if measured:
-            out.note += (f"; the deviation is measured on the first "
-                         f"{measured} of {len(out.steps)} steps")
-    elif banded < len(out.steps):
-        # The near steps banded and the far ones did not, which is the normal
-        # case rather than an edge one: a walk-forward backtest observes a
-        # k-step error only at origins with k values left after them, so step k
-        # has (n - k - 2*season + 1) observations and the far steps fall under
-        # the threshold first. With quarterly sales this is the *common* outcome
-        # -- screener's page gives 13 quarters, which bands steps 1 and 2 and
-        # never step 3.
-        #
-        # It has to be said out loud. `total()` needs every step, so one
-        # unbanded far step empties the summed scenario columns, and a reader
-        # looking at a populated step-1 band beside a blank total would
-        # reasonably read it as a bug. Saying nothing is how the caveat gets
-        # lost -- the same mistake as filing it in `error`, from the other side.
-        need = len(out.steps) + 2 * (season or 4) + MIN_BACKTEST_ERRORS - 1
-        out.note = (f"band on the first {banded} of {len(out.steps)} steps: a "
-                    f"{len(out.steps)}-step error has fewer past observations "
-                    f"than a 1-step one, so the full band needs {need} points "
-                    f"and there are {len(vals)}")
-        # The deviation usually survives where the band does not, and saying so
-        # turns the caveat from a dead end into a redirection: the reader still
-        # gets a number for how much to trust the far steps.
-        if measured == len(out.steps):
-            out.note += "; the deviation columns cover every step"
-        elif measured > banded:
-            out.note += (f"; the deviation reaches step {measured}")
+    # Check if we have enough data for a validated band
+    if len(vals) < need_validated:
+        # Unvalidated forecast: note the lack of backtest data
+        if banded == 0:
+            out.note = (f"point forecast only: fewer than {MIN_BACKTEST_ERRORS} "
+                        f"backtest errors available ({len(vals)} points, "
+                        f"need {need_validated} for validated band)")
+            if measured:
+                out.note += (f"; the deviation is measured on the first "
+                             f"{measured} of {len(out.steps)} steps")
+        elif banded < len(out.steps):
+            need = len(out.steps) + 2 * (season or 4) + MIN_BACKTEST_ERRORS - 1
+            out.note = (f"band on the first {banded} of {len(out.steps)} steps: a "
+                        f"{len(out.steps)}-step error has fewer past observations "
+                        f"than a 1-step one; validated band needs {need_validated} points "
+                        f"and there are {len(vals)}")
+            if measured == len(out.steps):
+                out.note += "; the deviation columns cover every step"
+            elif measured > banded:
+                out.note += (f"; the deviation reaches step {measured}")
+    else:
+        # Validated forecast
+        if banded == 0:
+            out.note = (f"point forecast only: fewer than {MIN_BACKTEST_ERRORS} "
+                        f"backtest errors available")
+            if measured:
+                out.note += (f"; the deviation is measured on the first "
+                             f"{measured} of {len(out.steps)} steps")
+        elif banded < len(out.steps):
+            # The near steps banded and the far ones did not, which is the normal
+            # case rather than an edge one: a walk-forward backtest observes a
+            # k-step error only at origins with k values left after them, so step k
+            # has (n - k - 2*season + 1) observations and the far steps fall under
+            # the threshold first. With quarterly sales this is the *common* outcome
+            # -- screener's page gives 13 quarters, which bands steps 1 and 2 and
+            # never step 3.
+            #
+            # It has to be said out loud. `total()` needs every step, so one
+            # unbanded far step empties the summed scenario columns, and a reader
+            # looking at a populated step-1 band beside a blank total would
+            # reasonably read it as a bug. Saying nothing is how the caveat gets
+            # lost -- the same mistake as filing it in `error`, from the other side.
+            need = len(out.steps) + 2 * (season or 4) + MIN_BACKTEST_ERRORS - 1
+            out.note = (f"band on the first {banded} of {len(out.steps)} steps: a "
+                        f"{len(out.steps)}-step error has fewer past observations "
+                        f"than a 1-step one, so the full band needs {need} points "
+                        f"and there are {len(vals)}")
+            # The deviation usually survives where the band does not, and saying so
+            # turns the caveat from a dead end into a redirection: the reader still
+            # gets a number for how much to trust the far steps.
+            if measured == len(out.steps):
+                out.note += "; the deviation columns cover every step"
+            elif measured > banded:
+                out.note += (f"; the deviation reaches step {measured}")
     return out
 
 

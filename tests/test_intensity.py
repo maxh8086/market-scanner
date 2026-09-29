@@ -246,10 +246,13 @@ class TestPreTaxonomyTrim(unittest.TestCase):
         months, _ = intensity.monthly_counts(rows, today=date(2025, 1, 5))
         self.assertTrue(months)
 
-    def test_the_note_says_waiting_not_backfilling(self):
-        """The advice has to match the wall that was hit. Telling a reader to
-        backfill when the series already starts at NSE's first month of
-        published categories sends them after data that does not exist."""
+    def test_the_note_says_waiting_not_backfilling_for_taxonomy_series(self):
+        """The advice has to match the wall that was hit. When the series starts
+        at NSE's first month of published categories, it cannot be extended
+        backwards, so the message should mention waiting, not backfilling. But
+        with the new unvalidated forecast support from 13 months, these short
+        series now get a forecast; this test validates that the waiting message
+        appears when reaching for a VALIDATED forecast (25 months)."""
         rows = []
         for m in range(1, 7):
             rows += self._pre(2024, m)
@@ -261,17 +264,25 @@ class TestPreTaxonomyTrim(unittest.TestCase):
                 y, mo = y + 1, 1
         out = intensity.market_intensity(rows, today=date(2026, 2, 5))
         self.assertTrue(out.ok, out.error)
-        self.assertFalse(out.can_forecast)
-        self.assertIn("waiting", out.note)
-        self.assertNotIn("Backfill", out.note)
+        # Now we allow unvalidated forecasts from 13 months
+        self.assertTrue(out.can_forecast)
+        self.assertFalse(out.band_validated)
+        # The note should indicate that the series starts at the taxonomy boundary
+        # and mention the months needed for a validated band
+        self.assertIn("25", out.note)  # Mentions 25-month requirement for validation
 
     def test_a_merely_short_cache_still_says_backfill(self):
-        """The other branch: no taxonomy break, just not enough history. Here
-        fetching more months genuinely is the fix."""
-        rows = _filings(start_year=2025, months=14, per_month=3)
-        out = intensity.market_intensity(rows, today=date(2026, 3, 15))
-        self.assertFalse(out.can_forecast)
-        self.assertIn("Backfill", out.note)
+        """When there's no taxonomy break, just a short cache, the message
+        should suggest backfilling. This test validates that message still
+        appears when needed for a VALIDATED forecast (25 months)."""
+        # Use pre-taxonomy data without the taxonomy boundary, so backfill is suggested
+        rows = _filings(start_year=2024, months=20, per_month=3)  # 20 months of regular data
+        out = intensity.market_intensity(rows, today=date(2026, 8, 15))
+        # With 19 usable months (20 raw - 1 drop first), we can forecast
+        self.assertTrue(out.can_forecast)
+        self.assertFalse(out.band_validated)
+        # Should suggest backfilling for a validated forecast
+        self.assertIn("25", out.note)
 
 
 class TestClassify(unittest.TestCase):
@@ -329,27 +340,92 @@ class TestMarketIntensity(unittest.TestCase):
         self.assertEqual(out.months[0], "2025-02")
         self.assertEqual(out.months[-1], "2026-02")
 
-    def test_a_year_of_history_gives_the_trend_but_no_forecast(self):
-        """The two thresholds are separate on purpose. A year and a month is
-        enough to compare like month with like month, which is the measurement
-        that changes how a single stock's order win reads. A seasonal *forecast*
-        needs two years, and the scan's own cache does not reach that far back --
-        so withholding the trend until it does would hide a number already in
-        hand."""
+    def test_12_months_gives_trend_only_not_even_ok(self):
+        """12 months is not enough for year-on-year comparison or forecast."""
+        # _filings with months=13 gives 13 raw months from 2025-01 to 2026-01
+        # Drop first: 2025-02 to 2026-01 = 12 months (still not enough for YoY)
+        rows = _filings(start_year=2025, months=13, per_month=3)
+        out = intensity.market_intensity(rows, today=date(2026, 2, 15))
+        self.assertFalse(out.ok, "Should not have enough for year-on-year")
+        self.assertEqual(out.error, "need 13 complete months to compare year on year, have 12")
+
+    def test_13_months_gives_unvalidated_seasonal_forecast(self):
+        """13 months is enough for an unvalidated seasonal forecast (no error band)."""
+        # _filings with months=14 gives 14 raw months from 2024-01 to 2025-02
+        # Drop first: 2024-02 to 2025-02 = 13 months
+        rows = _filings(start_year=2024, months=14, per_month=3)
+        out = intensity.market_intensity(rows, today=date(2025, 3, 15))
+        self.assertTrue(out.ok, out.error)
+        self.assertTrue(out.can_forecast)
+        self.assertFalse(out.band_validated)
+        self.assertIsNotNone(out.yoy_pct)
+        self.assertEqual(out.trend, intensity.TREND_FLAT)
+        self.assertEqual(len(out.forecast), intensity.STEPS)
+        # Note should mention the 25-month requirement for validation
+        self.assertIn("25", out.note)
+        self.assertIn("point forecast", out.note)
+
+    def test_18_months_gives_unvalidated_seasonal_forecast(self):
+        """18 months is still unvalidated but should have point estimates."""
+        # _filings with months=19 gives 19 raw months from 2024-01 to 2025-07
+        # Drop first: 2024-02 to 2025-07 = 18 months
+        rows = _filings(start_year=2024, months=19, per_month=3)
+        out = intensity.market_intensity(rows, today=date(2025, 8, 15))
+        self.assertTrue(out.ok, out.error)
+        self.assertTrue(out.can_forecast)
+        self.assertFalse(out.band_validated)
+        self.assertEqual(len(out.forecast), intensity.STEPS)
+        # Note should mention the 25-month requirement for validation
+        self.assertIn("25", out.note)
+
+    def test_23_months_gives_unvalidated_seasonal_forecast(self):
+        """23 months is still 2 short of validated but should have point estimates."""
+        # _filings with months=24 gives 24 raw months from 2023-01 to 2024-12
+        # Drop first: 2023-02 to 2024-12 = 23 months
+        rows = _filings(start_year=2023, months=24, per_month=3)
+        out = intensity.market_intensity(rows, today=date(2025, 1, 15))
+        self.assertTrue(out.ok, out.error)
+        self.assertTrue(out.can_forecast)
+        self.assertFalse(out.band_validated)
+        self.assertEqual(len(out.counts), 23)
+        self.assertEqual(len(out.forecast), intensity.STEPS)
+        # Note should mention the 25-month requirement for validation
+        self.assertIn("25", out.note)
+
+    def test_25_months_gives_validated_seasonal_forecast(self):
+        """25 months is the validated threshold, no unvalidated message."""
+        # _filings with months=26 gives 26 raw months; drop first leaves 25
+        rows = _filings(start_year=2023, months=26, per_month=3)
+        out = intensity.market_intensity(rows, today=date(2026, 2, 15))
+        self.assertTrue(out.ok, out.error)
+        self.assertTrue(out.can_forecast)
+        self.assertTrue(out.band_validated)
+        self.assertEqual(len(out.forecast), intensity.STEPS)
+        self.assertNotIn("unvalidated band", out.note)
+
+    def test_a_year_of_history_gives_unvalidated_forecast(self):
+        """The three thresholds keep the properties aligned with actual capability.
+        A year and a month is enough to compare this month against the same month
+        a year ago (year-on-year measurement that changes a stock's order win read).
+        It is also enough for an unvalidated seasonal forecast, though without a
+        backtest to validate the error band. A validated forecast needs two years."""
         rows = _filings(start_year=2025, months=14, per_month=3)
         out = intensity.market_intensity(rows, today=date(2026, 3, 15))
         self.assertTrue(out.ok, out.error)
-        self.assertFalse(out.can_forecast)
+        self.assertTrue(out.can_forecast)  # Now we allow unvalidated forecasts from 13 months
+        self.assertFalse(out.band_validated)  # But the band is not validated
         self.assertIsNotNone(out.yoy_pct)
         self.assertEqual(out.trend, intensity.TREND_FLAT)
-        self.assertEqual(out.forecast, [])
-        self.assertIn("seasonal forecast needs", out.note)
+        self.assertEqual(len(out.forecast), intensity.STEPS)
 
-    def test_two_years_of_history_also_gives_the_forecast(self):
-        rows = _filings(start_year=2023, months=30, per_month=3)
-        out = intensity.market_intensity(rows, today=date(2025, 7, 15))
+    def test_two_years_of_history_gives_validated_forecast(self):
+        # Use 32 months to ensure we have enough for validated bands at all steps
+        rows = _filings(start_year=2023, months=32, per_month=3)
+        out = intensity.market_intensity(rows, today=date(2025, 9, 15))
         self.assertTrue(out.ok, out.error)
         self.assertTrue(out.can_forecast)
+        self.assertTrue(out.band_validated)
+        # With 32 months, the band is fully validated
         self.assertEqual(out.note, "")
         self.assertEqual(len(out.forecast), intensity.STEPS)
 
@@ -452,13 +528,18 @@ class TestContextNote(unittest.TestCase):
             counts=[1] * intensity.MIN_MONTHS_TREND, trend=intensity.TREND_FLAT)
         self.assertIn("flat", intensity.context_note(out))
 
-    def test_the_context_note_does_not_wait_for_a_forecast(self):
+    def test_the_context_note_does_not_require_validated_forecast(self):
         """It is the trend that contextualises a stock's order win, not the
-        forecast, so the note must be available at the lower threshold."""
+        validated forecast. The context note must be available even with just
+        enough for an unvalidated forecast (13 months)."""
         out = intensity.MarketIntensity(
             counts=[1] * intensity.MIN_MONTHS_TREND,
-            trend=intensity.TREND_RISING)
-        self.assertFalse(out.can_forecast)
+            trend=intensity.TREND_RISING,
+            band_validated=False)  # Explicitly mark as unvalidated
+        # With 13 months (MIN_MONTHS_TREND), we can get an unvalidated forecast
+        self.assertTrue(out.can_forecast)
+        self.assertFalse(out.band_validated)
+        # But the context note still works without needing the validated band
         self.assertTrue(intensity.context_note(out))
 
 
