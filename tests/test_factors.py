@@ -5,6 +5,8 @@ import unittest
 from datetime import date, timedelta
 
 from scanner.factors import (
+    _int_or_none,
+    _trim_announcement,
     classify_bonus,
     classify_demerger,
     classify_expansion,
@@ -439,6 +441,68 @@ class TestBuildFactorTable(unittest.TestCase):
         self.assertEqual(row["orderbook_signal"], "")
         self.assertEqual(row["expansion_signal"], "")
         self.assertEqual(row["factors_matched"], 0)
+
+
+class TestFileSize(unittest.TestCase):
+    """NSE sends attFileSize as a human string, not a byte count."""
+
+    def test_the_units_nse_actually_sends_are_parsed(self):
+        """Probed against the live API: '3.71 MB', '512 KB' are the real shape.
+
+        `int(float("3.71 MB"))` raises, so this returned None for every row and
+        the MAX_PDF_BYTES guard in `enrich.stage_filings` never fired -- its
+        `isinstance(size, (int, float))` test is False for None.
+        """
+        self.assertEqual(_int_or_none("3.71 MB"), int(3.71 * 1024 ** 2))
+        self.assertEqual(_int_or_none("512 KB"), 512 * 1024)
+        self.assertEqual(_int_or_none("1.5 GB"), int(1.5 * 1024 ** 3))
+        self.assertEqual(_int_or_none("900 B"), 900)
+
+    def test_a_bare_number_is_still_bytes(self):
+        """The column has always been documented as bytes; don't break that."""
+        self.assertEqual(_int_or_none("2048"), 2048)
+        self.assertEqual(_int_or_none(4096), 4096)
+
+    def test_unusable_values_give_none_rather_than_a_wrong_number(self):
+        for bad in (None, "", "   ", "unknown", "3.71 TB", "MB", True):
+            self.assertIsNone(_int_or_none(bad), f"{bad!r} should be None")
+
+    def test_a_size_over_the_cap_is_recognised_as_over_it(self):
+        """The guard's whole purpose: a 20 MB annual report must read as large.
+
+        Pinned as the comparison `stage_filings` actually makes, because the bug
+        was not a wrong number -- it was None silently failing an isinstance
+        check, which no assertion about parsing alone would have caught.
+        """
+        size = _int_or_none("20 MB")
+        self.assertIsInstance(size, int)
+        self.assertGreater(size, 5 * 1024 ** 2)
+
+
+class TestAnnouncementTrim(unittest.TestCase):
+    def test_nse_sends_seq_id_not_seqId(self):
+        """The field is snake_case among camelCase neighbours.
+
+        Reading `seqId` gave "" on every row, and since the trim runs before the
+        cache write, `_save_announcements`'s `or row.get("seq_id")` fallback never
+        saw the original key. Result: a blank column on all 391,074 cached rows,
+        and `enrich._candidate_filings` dropping every candidate on its
+        `if not f["seq_id"]` guard while reporting "no filing carried a PDF URL".
+        """
+        raw = {"sm_isin": "INE001A01036", "symbol": "X", "an_dt": "26-Sep-2026",
+               "desc": "Award of Order", "attchmntText": "t",
+               "sort_date": "2026-09-26 23:48:22", "seq_id": 106796207,
+               "attchmntFile": "https://x/y.pdf", "attFileSize": "3.71 MB"}
+        trimmed = _trim_announcement(raw)
+        self.assertEqual(trimmed["seqId"], 106796207)
+
+    def test_the_camelCase_spelling_is_still_accepted(self):
+        """Older cached payloads and the tests' own fixtures use seqId."""
+        self.assertEqual(_trim_announcement({"seqId": "42"})["seqId"], "42")
+
+    def test_a_missing_id_is_empty_not_absent(self):
+        """Callers index this key directly, so it must always exist."""
+        self.assertEqual(_trim_announcement({})["seqId"], "")
 
 
 if __name__ == "__main__":

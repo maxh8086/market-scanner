@@ -5,6 +5,7 @@ caches both to disk, and provides pure classifiers to enrich ATH scan output.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -266,13 +267,33 @@ def _to_iso(date_str: str) -> str:
     return parsed.isoformat() if parsed else ""
 
 
+_SIZE_UNITS = {"B": 1, "KB": 1024, "MB": 1024 ** 2, "GB": 1024 ** 3}
+_SIZE_RE = re.compile(r"^([0-9]*\.?[0-9]+)\s*(B|KB|MB|GB)?$", re.I)
+
+
 def _int_or_none(value) -> int | None:
-    """NSE reports attFileSize as a string, sometimes blank or absent."""
+    """NSE's attFileSize as a byte count, or None when unusable.
+
+    The value arrives as a human string with a unit -- "3.71 MB", "512 KB" --
+    which `int(float(...))` cannot parse at all, so this returned None for every
+    row and the `MAX_PDF_BYTES` guard in `enrich.stage_filings` was dead: its
+    `isinstance(size, (int, float))` test is False for None, so a 20 MB annual
+    report was downloaded like anything else. A bare number is still accepted and
+    read as bytes, since that is what the column has always been documented as.
+    """
     if value in (None, ""):
         return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    m = _SIZE_RE.match(str(value).strip())
+    if not m:
+        return None
+    number, unit = m.group(1), (m.group(2) or "B").upper()
     try:
-        return int(float(str(value).strip()))
-    except (TypeError, ValueError):
+        return int(float(number) * _SIZE_UNITS[unit])
+    except (TypeError, ValueError, KeyError):
         return None
 
 
@@ -367,6 +388,41 @@ def _save_corporate_actions(rows: list[dict]) -> None:
         conn.close()
 
 
+def _trim_announcement(r: dict) -> dict:
+    """One NSE announcement row, reduced to the fields the classifiers use.
+
+    NSE's raw rows carry a lot of metadata; keeping all of it for a multi-month
+    window runs to hundreds of megabytes. `attchmntFile` is kept from schema 3
+    onward despite being long: it is the filing PDF, which is the only place the
+    order value is actually stated. `attFileSize` lets a fetch skip an outsized
+    file before downloading it.
+
+    A named function rather than an inline comprehension inside
+    `fetch_announcements` because this is where the `seq_id` bug lived, and there
+    it could not be tested without a network call -- which is why nothing caught
+    a blank column across 391,074 rows. The renaming to camelCase is preserved
+    for the rest of the pipeline, which reads NSE's own spellings throughout.
+    """
+    return {
+        "sm_isin": r.get("sm_isin", ""),
+        "symbol": r.get("symbol", ""),
+        "an_dt": r.get("an_dt", ""),
+        "desc": r.get("desc", ""),
+        "attchmntText": r.get("attchmntText", ""),
+        "sort_date": r.get("sort_date", ""),
+        # NSE's field is `seq_id`, snake_case, unlike its camelCase neighbours.
+        # Reading `seqId` produced "" on every row, and because this trim runs
+        # *before* the cache write, the `or row.get("seq_id")` fallback in
+        # `_save_announcements` never saw the original key. So the column was
+        # blank for every cached row, and `enrich._candidate_filings` dropped
+        # 100% of candidates on its `if not f["seq_id"]` dedupe guard while the
+        # stage reported "no filing carried a PDF URL" -- false, 162,387 did.
+        "seqId": r.get("seq_id") or r.get("seqId") or "",
+        "attchmntFile": r.get("attchmntFile", ""),
+        "attFileSize": r.get("attFileSize"),
+    }
+
+
 def _save_announcements(rows: list[dict]) -> None:
     """Cache announcements to SQLite, storing only needed columns."""
     if not rows:
@@ -396,7 +452,23 @@ def _save_announcements(rows: list[dict]) -> None:
                 (isin, symbol, an_dt, desc, attchmnt_text, sort_date,
                  seq_id, attchmnt_file, att_file_size)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(isin, an_dt, desc) DO NOTHING
+            -- Backfill rather than DO NOTHING. These three columns arrived with
+            -- schema 3 and, for a while, were written wrong (`seqId` for NSE's
+            -- `seq_id`), so a large cache can hold rows that are present but
+            -- unusable. Under DO NOTHING a re-fetch could never repair them: the
+            -- row already existed, so the corrected value was discarded and the
+            -- only cure was deleting the cache.
+            --
+            -- NULLIF/COALESCE make the update one-way. A re-fetch that happens to
+            -- return a blank -- NSE occasionally omits the attachment on a row it
+            -- served fully before -- leaves the good stored value alone instead of
+            -- overwriting it with nothing. So repeated runs can only ever add
+            -- information here.
+            ON CONFLICT(isin, an_dt, desc) DO UPDATE SET
+                seq_id = COALESCE(NULLIF(excluded.seq_id, ''), seq_id),
+                attchmnt_file =
+                    COALESCE(NULLIF(excluded.attchmnt_file, ''), attchmnt_file),
+                att_file_size = COALESCE(excluded.att_file_size, att_file_size)
             """,
             data,
         )
@@ -550,29 +622,8 @@ def fetch_announcements(
             rows = resp.json()
             if not isinstance(rows, list):
                 rows = []
-            # Trim to the fields the classifiers use before accumulating. NSE's
-            # raw rows carry a lot of metadata; keeping all of it for a
-            # multi-month window runs to hundreds of megabytes.
-            #
-            # attchmntFile is kept from schema 3 onward despite being long: it
-            # is the filing PDF, which is the only place the order value is
-            # actually stated. attFileSize lets a fetch skip an outsized file
-            # before downloading it.
-            trimmed = [
-                {
-                    "sm_isin": r.get("sm_isin", ""),
-                    "symbol": r.get("symbol", ""),
-                    "an_dt": r.get("an_dt", ""),
-                    "desc": r.get("desc", ""),
-                    "attchmntText": r.get("attchmntText", ""),
-                    "sort_date": r.get("sort_date", ""),
-                    "seqId": r.get("seqId", ""),
-                    "attchmntFile": r.get("attchmntFile", ""),
-                    "attFileSize": r.get("attFileSize"),
-                }
-                for r in rows
-                if isinstance(r, dict)
-            ]
+            trimmed = [_trim_announcement(r) for r in rows
+                       if isinstance(r, dict)]
             # Persist per chunk so an interrupted or partly failed run still
             # leaves usable data behind.
             _save_announcements(trimmed)

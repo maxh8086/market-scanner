@@ -154,24 +154,35 @@ def stage_fundamentals(db, df: pd.DataFrame, force: bool = False,
 # Stage: filings
 # --------------------------------------------------------------------------
 
-def _candidate_filings(df: pd.DataFrame, today: date) -> list[dict]:
+def _candidate_filings(df: pd.DataFrame, today: date, refresh: bool = False
+                       ) -> tuple[list[dict], dict[str, int]]:
     """Every order/expansion/guidance filing belonging to a scanned symbol.
 
     Reuses the classifiers' own selection functions, so the filings fetched are
     exactly the filings the scan's factor columns counted.
+
+    Returns the candidates and a funnel of the counts at each narrowing step, so
+    an empty result can say *where* it emptied. Built here rather than recomputed
+    by the caller because every number in it is already on hand, and a second
+    pass would either re-hit the network or drift from what this function did.
     """
     lookback = max(factors.ORDERBOOK_LOOKBACK_MONTHS,
                    factors.EXPANSION_LOOKBACK_MONTHS,
                    factors.GUIDANCE_LOOKBACK_MONTHS)
     from_date = factors._subtract_months(today, lookback)
-    ann = factors.fetch_announcements(from_date, today, session=requests.Session())
+    ann = factors.fetch_announcements(from_date, today,
+                                      session=requests.Session(),
+                                      refresh=refresh)
+    funnel = {"announcements": len(ann), "scanned_isins": 0, "matched": 0,
+              "with_pdf": 0, "with_seq_id": 0, "unique": 0}
     if not ann:
-        return []
+        return [], funnel
 
     by_isin = {}
     for _, row in df.iterrows():
         if row.get("isin"):
             by_isin[row["isin"]] = row["symbol"]
+    funnel["scanned_isins"] = len(by_isin)
 
     def _guidance(ann_rows, isin, today):
         return factors.select_guidance_filings(ann_rows, isin, today,
@@ -183,9 +194,13 @@ def _candidate_filings(df: pd.DataFrame, today: date) -> list[dict]:
                              (KIND_EXPANSION, factors.select_expansion_filings),
                              (KIND_GUIDANCE, _guidance)):
             for row in select(ann, isin, today):
+                funnel["matched"] += 1
                 url = (row.get("attchmntFile") or "").strip()
                 if not url.lower().endswith(".pdf"):
                     continue
+                funnel["with_pdf"] += 1
+                if str(row.get("seqId") or "").strip():
+                    funnel["with_seq_id"] += 1
                 out.append({
                     "seq_id": str(row.get("seqId") or ""),
                     "symbol": symbol,
@@ -209,11 +224,24 @@ def _candidate_filings(df: pd.DataFrame, today: date) -> list[dict]:
             continue
         seen.add(f["seq_id"])
         unique.append(f)
-    return unique
+    funnel["unique"] = len(unique)
+    return unique, funnel
+
+
+def _format_funnel(funnel: dict[str, int]) -> str:
+    """The narrowing steps in order, so the first zero names the cause."""
+    return " -> ".join(
+        f"{label} {funnel[key]}"
+        for key, label in (("announcements", "announcements in window"),
+                           ("scanned_isins", "scanned ISINs"),
+                           ("matched", "classifier matches"),
+                           ("with_pdf", "with a .pdf URL"),
+                           ("with_seq_id", "with a seq_id"),
+                           ("unique", "unique filings")))
 
 
 def stage_filings(db, df: pd.DataFrame, limit: int | None = None,
-                  refetch: bool = False) -> None:
+                  refetch: bool = False, refresh_factors: bool = False) -> None:
     # load_scan fills this from the constituents CSV when the scan predates the
     # column, so reaching here means even that lookup failed.
     if "isin" not in df.columns or not (df["isin"].astype(str) != "").any():
@@ -223,12 +251,25 @@ def stage_filings(db, df: pd.DataFrame, limit: int | None = None,
              "is present and readable.\n"
              "  --report still works without it.")
     today = date.today()
-    candidates = _candidate_filings(df, today)
+    candidates, funnel = _candidate_filings(df, today, refresh=refresh_factors)
     if not candidates:
         print("\n=== Filings: nothing to fetch ===")
-        print("  No order/expansion filings carried a PDF URL. If the cache "
-              "predates schema 3, re-run with --refresh-factors to repopulate "
-              "it (the URL column did not exist before).")
+        # Deliberately does not guess a cause. The previous wording asserted one
+        # ("no filing carried a PDF URL") and was wrong -- 162,387 of them did,
+        # and the real break was a blank `seq_id` -- which sent the reader after
+        # the cache instead of the code. It also named `--refresh-factors`, which
+        # is an `ath_scan.py` flag and does nothing here, so following the advice
+        # printed could not help. Report the funnel and let it show its own zero.
+        print(f"  {_format_funnel(funnel)}")
+        print("  Nothing to fetch means one of those counts is zero; the first "
+              "zero from the left is the cause.")
+        if funnel["with_pdf"] and not funnel["with_seq_id"]:
+            # The one cause with a known cure, so name it specifically rather
+            # than leaving the reader to infer it from the funnel.
+            print("  Filings were matched but none carry a seq_id, which is how "
+                  "they are de-duplicated. The cache was written by a build that "
+                  "read NSE's field under the wrong name; re-run with "
+                  "--refresh-factors to repair those rows.")
         return
 
     todo = [c for c in candidates
@@ -845,6 +886,9 @@ def main() -> None:
                    help="refetch fundamentals even if cached today")
     p.add_argument("--refetch", action="store_true",
                    help="redownload filing PDFs already stored")
+    p.add_argument("--refresh-factors", action="store_true",
+                   help="re-fetch NSE announcements, ignoring today's cache "
+                        "(repairs cached rows missing seq_id or a PDF URL)")
     p.add_argument("--llm-all", action="store_true",
                    help="run the model on every filing, not just regex gaps")
     p.add_argument("--llm-rerun", action="store_true",
@@ -902,7 +946,8 @@ def main() -> None:
         if args.fundamentals or args.all:
             stage_fundamentals(db, df, force=args.force, limit=args.limit)
         if args.filings or args.all:
-            stage_filings(db, df, limit=args.limit, refetch=args.refetch)
+            stage_filings(db, df, limit=args.limit, refetch=args.refetch,
+                          refresh_factors=args.refresh_factors)
         if args.llm or args.all:
             cfg = llm.LLMConfig(base_url=args.llm_url, model=args.llm_model,
                                 api=args.llm_api)
