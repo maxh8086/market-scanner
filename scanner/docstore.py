@@ -7,11 +7,12 @@ parsing**. Re-parsing with a better regex must never re-download 450 PDFs, and
 an AI extraction is worth keeping verbatim so a prompt change can be re-run
 offline and diffed against the old answer.
 
-Three collections, keyed so a re-run is idempotent:
+Four collections, keyed so a re-run is idempotent:
 
   filings       one per NSE filing PDF, keyed `seq_id` (NSE's own id)
   fundamentals  one per symbol, keyed `symbol`
   extractions   one per (seq_id, kind), for AI-derived fields
+  conclusions   one per (symbol, as_of), the per-stock LLM reading
 
 Scope note: this holds only documents we actually download -- order and
 expansion filings for matched symbols, a few hundred -- not all 165,881
@@ -36,6 +37,7 @@ DB_PATH = Path("data/documents.json")
 FILINGS = "filings"
 FUNDAMENTALS = "fundamentals"
 EXTRACTIONS = "extractions"
+CONCLUSIONS = "conclusions"
 
 # Bump when a stored document's shape changes in a way parsers depend on.
 SCHEMA_VERSION = 1
@@ -167,6 +169,25 @@ def extractions_by_kind(db: TinyDB, kind: str) -> list[Document]:
 
 
 # --------------------------------------------------------------------------
+# conclusions (one per stock per scan date; the model's reading of the facts)
+# --------------------------------------------------------------------------
+
+def put_conclusion(db: TinyDB, symbol: str, as_of: str, payload: dict) -> None:
+    doc = dict(payload, symbol=symbol, as_of=as_of, stored_at=_now())
+    q = Query()
+    db.table(CONCLUSIONS).upsert(doc, (q.symbol == symbol) & (q.as_of == as_of))
+
+
+def get_conclusion(db: TinyDB, symbol: str, as_of: str) -> Optional[Document]:
+    q = Query()
+    return db.table(CONCLUSIONS).get((q.symbol == symbol) & (q.as_of == as_of))
+
+
+def conclusions_for(db: TinyDB, as_of: str) -> list[Document]:
+    return db.table(CONCLUSIONS).search(Query().as_of == as_of)
+
+
+# --------------------------------------------------------------------------
 
 def stats(db: TinyDB, path: Path | str = DB_PATH) -> dict[str, Any]:
     """Counts and on-disk size -- the memory ceiling made visible."""
@@ -178,5 +199,6 @@ def stats(db: TinyDB, path: Path | str = DB_PATH) -> dict[str, Any]:
         "filings_with_text": sum(1 for f in filings if f.get("raw_text")),
         "fundamentals": len(db.table(FUNDAMENTALS).all()),
         "extractions": len(db.table(EXTRACTIONS).all()),
+        "conclusions": len(db.table(CONCLUSIONS).all()),
         "bytes_on_disk": p.stat().st_size if p.exists() else 0,
     }

@@ -11,6 +11,8 @@ opens it. Run stop.ps1 when you are done.
 .PARAMETER Symbols        Comma-separated symbols to scan instead of the full index.
 .PARAMETER WithLlm        Start an Ollama container and run enrichment with --llm (first start pulls the model, several GB).
 .PARAMETER WithLaya       Also start the Laya decision-model service (first start downloads ~800 MB of weights). Not used by any stage yet.
+.PARAMETER WithTimesfm    After enrichment, re-run the report with the TimesFM forecaster (separate torch image; first run downloads the 200M checkpoint).
+.PARAMETER WithConclusions Start the vLLM container (Phi-4-mini-instruct, NVIDIA GPU required; first start downloads ~7.7 GB) and write a per-stock conclusion from the stored insights.
 .PARAMETER SkipEnrich     Skip enrichment.
 .PARAMETER SkipCrosscheck Skip the independent price cross-check.
 .PARAMETER SkipPortfolio  Skip the Kite holdings overlay.
@@ -24,6 +26,8 @@ param(
     [string]$Symbols,
     [switch]$WithLlm,
     [switch]$WithLaya,
+    [switch]$WithTimesfm,
+    [switch]$WithConclusions,
     [switch]$SkipEnrich,
     [switch]$SkipCrosscheck,
     [switch]$SkipPortfolio,
@@ -91,6 +95,8 @@ Write-Host ".env present."
 $profiles = @()
 if ($WithLlm)  { $profiles += @('--profile', 'llm') }
 if ($WithLaya) { $profiles += @('--profile', 'laya') }
+if ($WithTimesfm) { $profiles += @('--profile', 'timesfm') }
+if ($WithConclusions) { $profiles += @('--profile', 'vllm') }
 
 Write-Stage "Building images"
 $buildArgs = @('compose') + $profiles + @('build')
@@ -133,6 +139,35 @@ if ($SkipEnrich) {
     if ($WithLlm) { $enrichArgs += @('--llm', '--llm-url', 'http://llm:11434', '--llm-model', $LlmModel) }
     $code = Measure-Stage 'enrich' { Invoke-Docker $enrichArgs }
     if ($code -ne 0) { Stop-Pipeline "Enrichment failed (exit $code)." }
+}
+
+if ($WithTimesfm) {
+    if ($SkipEnrich) {
+        Write-Host "TimesFM skipped (it re-runs the enrichment report)."
+    } else {
+        Write-Stage "Enrich with TimesFM forecasts"
+        $code = Measure-Stage 'timesfm' { Invoke-Docker @('compose', '--profile', 'timesfm', 'run', '--rm', 'enrich-timesfm') }
+        if ($code -ne 0) { Stop-Pipeline "TimesFM enrichment failed (exit $code)." }
+    }
+}
+
+if ($WithConclusions) {
+    if ($SkipEnrich -and -not (Get-ChildItem -LiteralPath 'output' -Filter 'ath_enriched_*.csv' -ErrorAction SilentlyContinue)) {
+        Write-Host "Conclusions skipped: no output/ath_enriched_*.csv to read." -ForegroundColor Yellow
+    } else {
+        Write-Stage "Starting vLLM (Phi-4-mini-instruct; first start downloads ~7.7 GB and compiles kernels)"
+        $code = Invoke-Docker @('compose', '--profile', 'vllm', 'up', '-d', 'vllm')
+        if ($code -ne 0) { Stop-Pipeline "Could not start vLLM (is the NVIDIA runtime available to Docker?)." }
+        if (-not (Wait-Healthy 'ath-vllm' 30)) { Stop-Pipeline "vLLM did not become healthy within 30 minutes. See: docker logs ath-vllm" }
+        Write-Host "vLLM is healthy on http://127.0.0.1:8001" -ForegroundColor Green
+        Write-Stage "Per-stock conclusions"
+        $code = Measure-Stage 'conclude' { Invoke-Docker @('compose', '--profile', 'vllm', 'run', '--rm', 'conclude') }
+        if ($code -eq 2) {
+            Write-Host "Some conclusions failed -- a warning. Successful ones are in output/ath_conclusions_*.csv" -ForegroundColor Yellow
+        } elseif ($code -ne 0) {
+            Stop-Pipeline "Conclusions failed (exit $code)."
+        }
+    }
 }
 
 if ($SkipCrosscheck) {

@@ -3,12 +3,12 @@
 Shut the ATH Scanner Docker setup down.
 
 .DESCRIPTION
-Stops and removes every container of this project (including the optional llm
-and laya services, which live under compose profiles). Your data/, output/ and
+Stops and removes every container of this project (including the optional llm,
+laya and vllm services, which live under compose profiles). Your data/, output/ and
 logs/ folders are bind mounts and are never touched by this script.
 
 .PARAMETER Prune       Also remove the images built for this project.
-.PARAMETER PurgeModels Also delete the downloaded model volumes (Laya weights ~800 MB, Ollama model several GB; re-downloaded on the next start that uses them).
+.PARAMETER PurgeModels Also delete the downloaded model volumes (Laya weights ~800 MB, Ollama model several GB, Phi-4-mini ~7.7 GB, TimesFM checkpoint; re-downloaded on the next start that uses them).
 #>
 param(
     [switch]$Prune,
@@ -33,7 +33,7 @@ function Invoke-Docker {
 
 Write-Host "=== Stopping the ATH Scanner setup ===" -ForegroundColor Cyan
 
-$down = @('compose', '--profile', 'laya', '--profile', 'llm', 'down', '--remove-orphans')
+$down = @('compose', '--profile', 'laya', '--profile', 'llm', '--profile', 'timesfm', '--profile', 'vllm', 'down', '--remove-orphans')
 if ($Prune) { $down += @('--rmi', 'local') }
 if ($PurgeModels) {
     $down += '--volumes'   # the only named volumes are the model caches

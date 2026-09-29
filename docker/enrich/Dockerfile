@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY scanner/ ./scanner/
-COPY enrich.py .
+COPY enrich.py conclude.py ./
 
 # Permissions
 RUN chown -R appuser:appuser /app

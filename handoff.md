@@ -487,10 +487,105 @@ and is labelled "point forecast only (N points, need 25 for validated band)".
   ranking and is unmeasured. First `-WithLaya` start downloads ~808 MB.
 - `--llm` (which would fill `capacity_change`) and Neo4j need the Ollama
   profile (`-WithLlm`, multi-GB model). Neo4j itself is not built.
-- TimesFM is in no image (`timesfm[torch]` is optional and commented out in
-  `requirements.txt`). A separate `enrich-timesfm` image is recommended, not
-  built.
+- TimesFM lives only in the separate `enrich-timesfm` image (see the section below).
 - No scheduled task was created.
+
+## TimesFM image and per-stock conclusions (added 2026-09-29)
+
+Two more images, both optional compose profiles, both loopback-only, neither
+gets `.env`:
+
+- **`enrich-timesfm`** (`docker/timesfm/Dockerfile`, profile `timesfm`,
+  `./start.ps1 -WithTimesfm`): CPU torch + `timesfm[torch]==3.0.2`, runs
+  `enrich.py --report --timesfm`. Re-writes `output/ath_enriched_<date>.csv`
+  with the TimesFM forecast columns. Checkpoint downloads on first run into the
+  shared `huggingface_cache` volume. Kept out of the light `enrich` image so the
+  everyday run does not carry ~2 GB of torch.
+- **`vllm`** (`docker/vllm/Dockerfile`, profile `vllm`,
+  `./start.ps1 -WithConclusions`): `vllm/vllm-openai:v0.30.0` serving
+  `microsoft/Phi-4-mini-instruct` (MIT, ungated) as `phi-4-mini` on
+  `127.0.0.1:8001` (`http://vllm:8000` inside compose). Needs an NVIDIA GPU and
+  the NVIDIA container runtime. Tuning is by ENV in the Dockerfile
+  (`MAX_MODEL_LEN`, `GPU_MEMORY_UTILIZATION`, `QUANTIZATION`, `KV_CACHE_DTYPE`,
+  `EXTRA_ARGS`). **8 GB card note:** bf16 weights are ~7.7 GB and do not fit next
+  to the desktop, so the defaults are `QUANTIZATION=mxfp4` (4-bit weights) and
+  `KV_CACHE_DTYPE=fp8`. v0.30.0 with online FP8 weights fails on this card
+  ("Available KV cache memory: -1.7 GiB"); FP8 weights only worked on the older
+  v0.19.1 image. Set both to empty on a bigger card. Structured output uses
+  xgrammar with `disable_any_whitespace` (see serve.sh): without it the 4-bit
+  model ran into endless whitespace after the conclusion and ~70% of stocks
+  failed as "not JSON".
+- **`airllm`** (`docker/airllm/`, profile `airllm`, docker run only): a large model
+  streamed layer by layer from disk so it fits a small GPU, with an OpenAI-style
+  `/v1/chat/completions` on `127.0.0.1:8002`. No guided decoding (JSON is only
+  requested in the prompt; `conclude` validates). Model and compression come from
+  `AIRLLM_MODEL` / `AIRLLM_COMPRESSION`. `--bench` prints load/prefill/decode
+  timings: `docker compose --profile airllm run --rm airllm --bench`.
+  The 2024 MoE models need transformers 4.x (default `TRANSFORMERS_SPEC`);
+  transformers 5.x fuses the experts and AirLLM's loader fails on it.
+  Qwen3.8-Flash-Next needs a build with in-tree `qwen4_exp`, see the Dockerfile.
+- **`conclude`** is the client, not a third image: `conclude.py` ships in the
+  existing `ath-enrich` image and the compose service overrides the entrypoint.
+
+**What `conclude.py` does.** For each stock in the newest
+`ath_enriched_*.csv` it builds a flat `group.field` fact sheet (price/ATH
+position and trend, fundamentals, order book, corporate signals, forecast
+columns, plus up to 5 recent filings and any stored LLM extractions from the
+TinyDB store). The stance (`CONSTRUCTIVE`/`MIXED`/`CAUTIOUS`) is **not** chosen
+by the model: a fixed scorecard (`scorecard()` in `scanner/conclude.py`) sums six
+pillars (trend/distance, growth, quality, valuation, forecast, orders), each
+clipped to [-2,+2]; missing data scores 0 and fewer than 3 pillars with data is
+MIXED; total >=3 is CONSTRUCTIVE, <=-2 CAUTIOUS. The model writes a
+three-sentence conclusion plus positives and concerns citing fact-sheet keys and
+is told the stance. Data gaps are computed, not asked of the model (the 4-bit
+model invented them). Output: `output/ath_conclusions_<date>.csv` and a
+`conclusions` collection in `data/documents.json` keyed by (symbol, as_of).
+Re-runs skip stocks whose fact sheet, prompt version and model are unchanged
+(`--force` overrides). Exit 1 server unreachable, 2 some failed.
+
+**The model is not trusted.** Guards in `scanner/conclude.py`: an evidence key
+that is not a real field of that stock's sheet drops the point
+(`ungrounded_points`); every number in the prose is looked up in the sheet (sign
+and ticker digits ignored) and unmatched ones are listed in `unverified_numbers`
+(a smell test, not a proof); words like undervalued/overvalued/upside/opportunity
+are listed in `speculative_phrases`. An answer that is speculative or cut off gets
+one corrective retry naming the problem; the cleaner answer is kept. The
+conclusion never changes the ranking and is not investment advice.
+
+**Measured 2026-09-29 (RTX 4060 8 GB, 290 stocks, 8 workers).**
+- Pinned `vllm/vllm-openai:v0.30.0` pulls and serves fine now; the earlier failure
+  was low disk, not the image. With MXFP4 + FP8 KV: weights 2.77 GiB, KV cache
+  2.28 GiB (37,246 tokens, 9x concurrency) at `GPU_MEMORY_UTILIZATION=0.80`
+  (0.90 fails: the desktop holds ~0.9 GB). Healthy in ~2 min once cached.
+- Throughput: all 290 in about 10 minutes at 8 workers (about 5-12 s per stock).
+- Stance (scorecard): MIXED 140, CONSTRUCTIVE 107, CAUTIOUS 43. The positive skew
+  is expected: the universe is ATH-filtered, i.e. already momentum-selected. The
+  thresholds are a policy choice, not a finding. The earlier model-chosen stance
+  gave CAUTIOUS 216 / MIXED 57 / CONSTRUCTIVE 15 and was dropped.
+- Failures: 0 of 290 after the whitespace fix (207 of 300 before it).
+- Guard counts on the final run: 25 stocks with an unverified number (37 before
+  the corrective retry); 129 with speculative wording (178 before); 4
+  conclusions cut off (63 before); 93 with no positives and 80 with no concerns
+  because the 4-bit model returned an empty list. Earlier "45 flagged numbers"
+  were guard false positives (31 sign flips, 1 ticker digit), 13 ratios the model
+  computed itself, and 2 genuinely unsupported; none was a network or
+  unreported-filing problem.
+- Model quality caveat (4-bit Phi-4-mini): it still calls a fall from the high
+  "undervaluation" in a large share of stocks despite the prompt rule; the retry
+  reduces it but does not remove it. Read the conclusion as a summary of the
+  sheet, and check the cited keys and `speculative_phrases`.
+- AirLLM trial, `Qwen/Qwen1.5-MoE-A2.7B-Chat` (14.3B total, MoE) 4-bit,
+  `docker/airllm`: peak VRAM 1.56 GB, load 4 s once split, 1,528-token prefill
+  24.7 s, decode about 13 s per token (16 tokens in 222 s). A ~300-token
+  conclusion is over an hour per stock, so 290 stocks serially is roughly 2 weeks
+  against 10 minutes on vLLM; batching would help but was not tried. First run
+  downloads ~29 GB and splits the layers (~35 min). It does fit where vLLM does
+  not. DeepSeekMoE-16B was not run (~33 GB, same order of speed, custom code).
+- Docker daemon: no restarts since the disk was cleaned up (backend up, `ath-vllm`
+  RestartCount 0). The earlier restarts coincided with the low-disk period.
+- TimesFM stage: 5.6 min for 290 stocks in the `enrich-timesfm` image; loads
+  `google/timesfm-2.5-200m-pytorch`. Run it before `conclude` so the forecast
+  columns are in the fact sheet (`start.ps1` does).
 
 ## Possible improvement spotted, not implemented
 
@@ -523,7 +618,7 @@ so an environment gap otherwise costs you that time twice:
 ```bash
 .venv\Scripts\python.exe ath_scan.py --help
 # pytest is NOT installed in .venv -- use unittest, which needs no dependency
-.venv\Scripts\python.exe -m unittest discover -s tests -t . -q    # 570 tests, 2 skipped
+.venv\Scripts\python.exe -m unittest discover -s tests -t . -q    # 605 tests, 2 skipped
 ```
 
 Set `PYTHONIOENCODING=utf-8` for anything that prints a rupee sign, and

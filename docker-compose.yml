@@ -4,7 +4,8 @@
 #
 # Components do not call each other. They hand off through the bind-mounted
 # data/, output/ and logs/ folders (SQLite caches, TinyDB store, CSV outputs).
-# The only container-to-container traffic is enrich -> llm (Ollama HTTP).
+# The only container-to-container traffic is enrich -> llm (Ollama HTTP) and
+# conclude -> vllm (OpenAI-style HTTP).
 #
 # Secrets reach containers ONLY at runtime, through `env_file: .env` (compose
 # reads it; no image, build arg or log ever contains it). A service gets the
@@ -22,9 +23,21 @@ services:
     restart: "no"
 
   enrich:
+    image: ath-enrich
     build: {context: ., dockerfile: docker/enrich/Dockerfile}
     env_file: .env
     volumes: *persist
+    restart: "no"
+
+  enrich-timesfm:        # enrich + TimesFM forecaster (torch, CPU); profile `timesfm` (start.ps1 -WithTimesfm)
+    build: {context: ., dockerfile: docker/timesfm/Dockerfile}
+    # No env_file: the report/forecast stage reads only data/ and output/.
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - huggingface_cache:/home/appuser/.cache/huggingface   # TimesFM weights download once
+    profiles: ["timesfm"]
     restart: "no"
 
   crosscheck:            # independent of Upstox by design: no credentials
@@ -48,6 +61,58 @@ services:
     profiles: ["llm"]
     restart: "no"
 
+  vllm:                  # Phi-4-mini-instruct on the GPU; profile `vllm` (start.ps1 -WithConclusions)
+    build:
+      context: .
+      dockerfile: docker/vllm/Dockerfile
+      args:
+        VLLM_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai:v0.30.0}   # set to reuse a vllm image you already have
+    container_name: ath-vllm
+    # No env_file: public model, no credentials. Retune with the ENV knobs in the Dockerfile.
+    volumes:
+      - huggingface_vllm:/root/.cache/huggingface            # ~7.7 GB of weights, downloaded once
+    ports:
+      - "127.0.0.1:8001:8000"            # loopback only; conclude reaches it as http://vllm:8000
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - {driver: nvidia, count: 1, capabilities: [gpu]}
+    profiles: ["vllm"]
+    restart: "no"
+
+  airllm:                # large model streamed layer-by-layer on a small GPU; profile `airllm` (docker run only)
+    build: {context: ., dockerfile: docker/airllm/Dockerfile}
+    container_name: ath-airllm
+    # No env_file: public models, no credentials. Retune with MODEL / COMPRESSION in the shell.
+    environment:
+      - MODEL=${AIRLLM_MODEL:-Qwen/Qwen1.5-MoE-A2.7B-Chat}
+      - COMPRESSION=${AIRLLM_COMPRESSION:-4bit}
+    volumes:
+      - huggingface_airllm:/root/.cache/huggingface          # original weights + 4-bit layer shards
+    ports:
+      - "127.0.0.1:8002:8000"            # loopback only; conclude reaches it as http://airllm:8000
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - {driver: nvidia, count: 1, capabilities: [gpu]}
+    profiles: ["airllm"]
+    restart: "no"
+
+  conclude:              # per-stock conclusions from the stored insights; same image as enrich
+    image: ath-enrich
+    build: {context: ., dockerfile: docker/enrich/Dockerfile}
+    entrypoint: ["python", "conclude.py"]
+    environment:
+      - CONCLUDE_URL=http://vllm:8000     # so `run --rm conclude --limit 5` still finds the server
+    # No env_file: reads data/ and output/, talks only to the vllm service.
+    volumes: *persist
+    profiles: ["vllm"]
+    restart: "no"
+
   laya:                  # decision-model service; profile `laya` (start.ps1 -WithLaya). Not wired into ranking.
     build: {context: ., dockerfile: docker/laya/Dockerfile}
     container_name: ath-laya
@@ -64,4 +129,6 @@ services:
 
 volumes:
   huggingface_cache:
+  huggingface_vllm:
+  huggingface_airllm:
   ollama_models:
