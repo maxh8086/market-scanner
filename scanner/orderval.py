@@ -38,8 +38,13 @@ CONF_ANCHOR_SCALED = "anchor+scaled"   # label found, value had crore/lakh/mn
 CONF_ANCHOR_BARE = "anchor+bare"       # label found, plain rupee amount
 CONF_LOOSE = "loose"                   # no label; largest scaled figure. Weak.
 CONF_WITHHELD = "withheld"             # company explicitly declined to disclose
+CONF_UNQUANTIFIED = "unquantified"     # label found, answered without a rupee figure
+CONF_CUMULATIVE = "cumulative"         # a real figure, but a period total or order book
 CONF_FOREIGN = "foreign-currency"      # value quoted in USD/EUR; not converted
 CONF_NONE = "none"                     # nothing usable
+
+_RUPEE = r"(?:Rs\.?|INR|₹|Rupees)"
+_SCALE_WORD = r"(crores?|cr\.?|lakhs?|lacs?|millions?|mn\.?|billions?|bn\.?)"
 
 # The mandated field label, in the variants issuers actually type.
 _ANCHOR = re.compile(
@@ -50,12 +55,65 @@ _ANCHOR = re.compile(
     r"|value\s+of\s+the\s+(?:order|contract|project|work)"
     r"|contract\s+value"
     r"|total\s+order\s+value"
-    r"|aggregate\s+value)",
+    r"|aggregate\s+value"
+    # `worth` is the one label variant issuers actually use that is also an
+    # ordinary English word, so it is admitted only when a money token follows
+    # it immediately, and never after `net` or `book`. Net worth is a
+    # balance-sheet figure, and reading it as an order value is precisely the
+    # PIRAMALFIN misread that the `loose` tier used to produce.
+    r"|(?<!net)(?<!net\s)(?<!book\s)worth"
+    r"(?=\s+(?:of\s+)?(?:approximately\s+|about\s+|~\s*)?"
+    rf"(?:{_RUPEE}|USD|US\$|EUR|GBP|JPY|\$|\d)))",
     re.I,
 )
 
-_RUPEE = r"(?:Rs\.?|INR|₹|Rupees)"
-_SCALE_WORD = r"(crores?|cr\.?|lakhs?|lacs?|millions?|mn\.?|billions?|bn\.?)"
+# Language that makes a figure a RUNNING TOTAL rather than one order: an order
+# book, a year-to-date inflow, a quarterly aggregate. The figure is real and
+# worth keeping -- it is the best available read on a company's order momentum --
+# but it is not a single win, and ranking it as one overstates the event by
+# however many orders went into it.
+#
+# This guard exists because admitting `worth` as a label re-created the exact
+# misread the confidence gate had just removed, at the *trusted* tier, which is
+# strictly worse than the original: KPIL's "we have secured orders worth
+# Rs 13,219 crore so far in the current fiscal year (YTD FY27)" ranked as a
+# single order at 56% of market cap. The lesson is that widening a pattern needs
+# its own guard measured on the same corpus, not just a passing test.
+_CUMULATIVE = re.compile(
+    r"so\s+far"
+    r"|year[\s-]*to[\s-]*date|(?<![a-z])ytd(?![a-z])"
+    r"|cumulativ|till\s+date|to\s+date(?![a-z])"
+    r"|order\s*book|orders\s+in\s+hand"
+    r"|outstanding\s+order|unexecuted\s+order|pending\s+order"
+    r"|during\s+(?:the\s+)?(?:quarter|year|period|month|fiscal|half|FY)"
+    r"|for\s+the\s+(?:quarter|year|period|half)\s+end"
+    r"|aggregating\s+to.{0,40}(?:so\s+far|till|during)"
+    r"|as\s+(?:of|on|at)\s+(?:the\s+)?[^.]{0,24}"
+    r"(?:quarter|year|month|end(?:ed)?|date)(?![a-z])",
+    re.I,
+)
+
+# A DEFINITION is never a disclosure. KPIL's press releases footnote their own
+# size buckets -- "*Order Classification: Major indicates an order value
+# estimated over Rs 4,000 crore" -- and the anchored path read that threshold as
+# the order's value, ranking it third in the report at 17% of market cap. The
+# figure is not this order's value; it is the floor of a bucket the order falls
+# into, so the true value is unstated and larger. Same family as `cumulative`: a
+# real number attached to the wrong question.
+#
+# Two conditions, because either alone is unsafe. A definition verb must sit just
+# before the label, and the label's answer must open with a BOUND rather than an
+# amount. "Classification: Major order of Rs 500 crore" keeps its figure, and so
+# does "an order worth over Rs 500 crore", where the bound is the disclosure
+# itself. Measured over the 107 anchored documents: 1 match, the KPIL footnote,
+# and 0 correct readings demoted.
+_LEGEND_VERB = re.compile(
+    r"(?:indicates?|denotes?|defined?\s+as|means|refers?\s+to)"
+    r"\s+(?:\w+\s+){0,3}$", re.I)
+_LEGEND_BOUND = re.compile(
+    r"^\W*(?:estimated\s+)?(?:at\s+)?"
+    r"(?:over|above|exceeding|in\s+excess\s+of|more\s+than|greater\s+than"
+    r"|between|up\s*to|below|less\s+than)\b", re.I)
 
 # Rupee amount with an explicit scale word. The marker is captured rather than
 # merely optional, so `_figure_candidates` can require it where nothing else
@@ -119,6 +177,30 @@ MAX_RUPEES = 1e13
 # How far past the label to look. Long enough for "The Estimated Size of Order
 # as per LoA is Rs. ...", short enough not to reach the next field's value.
 _WINDOW = 240
+
+# Where the mandated field's ANSWER ends. A flat character count reaches into
+# the NEXT field's answer, and that is how a paid-up capital or a total-debt
+# figure gets read as the order value -- the same fabrication as `loose`, but
+# wearing the anchored tier's confidence. The SEBI order template's following
+# field always opens "Whether the promoter/promoter group ... have any
+# interest", and templates that renumber still enumerate.
+#
+# Measured over the 81 anchored order filings: `whether` appears in 57 of their
+# windows and in *zero* of them does it precede the figure currently read, so
+# cutting there discards only text that was never the answer. Same for the
+# enumerated markers, 15 and 4 appearances, 0 losses.
+_NEXT_FIELD = re.compile(
+    r"whether\b"
+    r"|(?:^|\s)\(?\d{1,2}\)?\s*[.)]\s+[A-Z]"
+    r"|(?:^|\s)\([a-z]\)\s+[A-Z]",
+    re.I,
+)
+
+
+def _cut_at_next_field(window: str) -> str:
+    """`window` truncated where the next mandated field begins."""
+    m = _NEXT_FIELD.search(window)
+    return window[: m.start()] if m else window
 
 
 @dataclass
@@ -192,6 +274,24 @@ def _figure_candidates(text: str, conf: str, require_marker: bool = False
     for sm in _SCALED.finditer(text):
         fx = _fx_before(text, sm.start())
         if fx:
+            # The issuer's own INR conversion, where it offered one. Taken at
+            # the foreign figure's position and at the caller's confidence, so
+            # an anchored window reports a *trustworthy* rupee value rather
+            # than throwing it away: MTARTECH's mandated field reads "orders
+            # worth USD 85.86 million (approximately Rs. 819.94 crores)", and
+            # the rupee figure the company itself supplied, in the field SEBI
+            # mandates, is as good as any direct answer. Measured over 964 real
+            # filings this pattern appears inside the anchor window far more
+            # often than outside it, which is why the conversion belongs here
+            # and not only in `parse_order_value`'s unanchored fallback.
+            conv = _FX_INR_CONVERSION.match(
+                text[sm.end(): sm.end() + _FX_INR_LOOKAHEAD])
+            if conv:
+                cv = _scaled_value(conv.group(1), conv.group(2))
+                if _in_bounds(cv):
+                    out.append((sm.start(), OrderValue(
+                        cv, conf, conv.group(0).strip())))
+                    continue
             out.append((sm.start(), OrderValue(
                 None, CONF_FOREIGN, sm.group(0).strip(), currency=fx)))
             continue
@@ -217,9 +317,22 @@ def _figure_candidates(text: str, conf: str, require_marker: bool = False
     return out
 
 
-def _read_window(window: str) -> Optional[OrderValue]:
+_CUMULATIVE_LOOKBACK = 160
+
+
+def _read_window(window: str, context: str = "") -> Optional[OrderValue]:
     """The reading for one label's window: whichever of a money figure or an
-    explicit refusal to disclose appears first."""
+    explicit refusal to disclose appears first.
+
+    `context` is the text immediately before the label, checked for cumulative
+    framing and for a definition verb. A running total is usually introduced before the number
+    rather than after it -- "our consolidated order book stands at orders worth
+    Rs 26,000 crore" puts `order book` outside any window that starts at the
+    label, which is how that figure was reported as a single order.
+    """
+    if _LEGEND_VERB.search(context) and _LEGEND_BOUND.match(window):
+        return None  # a classification threshold, not a value -- see `_LEGEND_VERB`
+
     nearest: Optional[tuple[int, OrderValue]] = None
     for pos, value in _figure_candidates(window, CONF_ANCHOR_SCALED):
         if nearest is None or pos < nearest[0]:
@@ -230,17 +343,33 @@ def _read_window(window: str) -> Optional[OrderValue]:
     wm = _WITHHELD.search(window)
     if wm and (nearest is None or wm.start() < nearest[0]):
         return OrderValue(None, CONF_WITHHELD, wm.group(0))
-    return nearest[1] if nearest else None
+    if nearest is None:
+        return None
+
+    # A figure the company itself frames as a running total is not one order.
+    # Kept, because order momentum is worth reporting, but never at a tier the
+    # ranking trusts -- see `_CUMULATIVE`.
+    found = nearest[1]
+    if found.rupees is not None and _CUMULATIVE.search(context + " " + window):
+        return OrderValue(found.rupees, CONF_CUMULATIVE, found.raw,
+                          currency=found.currency)
+    return found
 
 
 def parse_order_value(text: str) -> OrderValue:
     """Best-effort rupee value for one filing's text.
 
     Order of preference: the mandated label, then explicit withholding
-    language, then the issuer's own INR conversion of a foreign figure, then the
-    largest rupee figure anywhere (flagged `loose`), and only then a bare
-    foreign quote. Rupees outrank a foreign reading because the value wanted is
-    in INR and a foreign match used to pre-empt the rupee fallback entirely.
+    language, then `unquantified` when the label is there but its answer holds
+    no rupee figure, then the largest rupee figure anywhere (flagged `loose`),
+    and only then a bare foreign quote. A foreign figure with the issuer's own
+    INR conversion beside it is handled in `_figure_candidates`, so it is
+    available to the anchored path too and at the anchored confidence.
+
+    Once the mandated label is found, its answer is the answer -- the parse
+    never falls back to scanning the rest of the document, because a document
+    that contains the field and no figure in it is telling you there is no
+    figure, not inviting a search for the biggest number on the page.
     """
     t = normalise_text(text)
     if not t:
@@ -250,7 +379,9 @@ def parse_order_value(text: str) -> OrderValue:
     #    nearest reading wins, so "Order value: not disclosed ... paid up
     #    capital Rs. 500 crore" reports withheld instead of inventing 500 cr.
     for m in _ANCHOR.finditer(t):
-        found = _read_window(t[m.end(): m.end() + _WINDOW])
+        found = _read_window(
+            _cut_at_next_field(t[m.end(): m.end() + _WINDOW]),
+            t[max(0, m.start() - _CUMULATIVE_LOOKBACK): m.start()])
         if found is not None:
             return found
 
@@ -259,21 +390,17 @@ def parse_order_value(text: str) -> OrderValue:
     if wm:
         return OrderValue(None, CONF_WITHHELD, wm.group(0))
 
-    # 3. A foreign figure with the issuer's own INR conversion beside it, as in
-    #    "USD 412.5 Million (~ Rs 4,000 Crore)". Taken before the plain foreign
-    #    reading below, which used to return here with rupees=None and throw the
-    #    conversion away -- a rupee value, stated by the company, two characters
-    #    from the match. Tiered `loose` because we arrived here only after the
-    #    anchor failed: the number is the issuer's, but nothing labels it as the
-    #    order value rather than some other figure in the same sentence.
-    fm = _FOREIGN.search(t)
-    if fm:
-        conv = _FX_INR_CONVERSION.match(
-            t[fm.end(): fm.end() + _FX_INR_LOOKAHEAD])
-        if conv:
-            v = _scaled_value(conv.group(1), conv.group(2))
-            if _in_bounds(v):
-                return OrderValue(v, CONF_LOOSE, conv.group(0).strip())
+    # 3. The label is present, but the company answered it without a rupee
+    #    figure: "Size of the project - 190 MW ISTS connected wind solar", "at
+    #    a tariff of Rs. 4.35 per unit", "Not applicable", "Not ascertainable".
+    #    Measured on 56 of 222 real order filings. This used to fall through to
+    #    the largest-figure fallback below, which answers a question the company
+    #    did not answer -- that is how JSWINFRA reported a GST demand and
+    #    ADANIPORTS a debt slide as order values. `unquantified` says the true
+    #    thing: the mandated field was found and holds no rupee amount. It is
+    #    also the honest boundary of a regex, and the share a model is for.
+    if _ANCHOR.search(t):
+        return OrderValue(None, CONF_UNQUANTIFIED)
 
     # 4. Largest rupee figure anywhere, with the Rs marker required. Weak by
     #    construction -- this is the path that produced WELCORP's Rs 45,000 cr,
@@ -292,6 +419,7 @@ def parse_order_value(text: str) -> OrderValue:
     #    document -- captured but never converted; an FX rate would be another
     #    data source and a silent source of error. Last, so that a document
     #    stating a rupee amount reports it instead of reporting "USD".
+    fm = _FOREIGN.search(t)
     if fm:
         return OrderValue(None, CONF_FOREIGN, fm.group(0).strip(),
                           currency=fm.group(1).upper())
