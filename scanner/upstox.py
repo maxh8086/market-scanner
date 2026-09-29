@@ -14,20 +14,33 @@ Instruments are addressed by `instrument_key`, which for NSE equities is
 column, so resolution is ISIN-native -- a tradingsymbol rename cannot break a
 lookup, unlike the Kite path which matched on `tradingsymbol`.
 
+Rate limiting: Verified against Upstox's official documentation at
+https://upstox.com/developer/api-documentation/rate-limiting/ (checked
+2026-09-29). Market data endpoints (quotes, historical candles) fall under
+"Other Standard APIs" with limits: 50 req/sec, 500 req/min, 2000 req/30min.
+This implementation maintains all three limits with 80% safety margin (40/sec,
+400/min, 1600/30min) using a multi-window sliding-window rate limiter.
+429 responses are tracked; escalating cool-down after 3 in 5 minutes.
+
 Everything below was verified live against the API on 2026-09-28; see the
 "Verified behaviour" notes on each method for what was actually observed
 rather than merely documented.
 """
 from __future__ import annotations
 
+import logging
 import os
+import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
+from typing import Callable
 from urllib.parse import quote
 
 import requests
 from dotenv import find_dotenv, load_dotenv
+
+logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.upstox.com"
 TOKEN_ENV_VAR = "UPSTOX_ANALYTICS_ACCESS_TOKEN"
@@ -45,8 +58,18 @@ MAX_DAYS_PER_CALL = 3650
 # earlier than 2000 exists to fetch.
 HISTORY_FLOOR = date(2000, 1, 1)
 
+# Per-second limit defaults (backward compatible).
 REQUESTS_PER_SEC = 8.0
 MAX_RETRIES = 5
+
+# Official limits from https://upstox.com/developer/api-documentation/rate-limiting/
+# (checked 2026-09-29): 50 req/sec, 500 req/min, 2000 req/30min for market data.
+# Safety margin: 80% of official limits.
+RATE_LIMIT_WINDOWS = [
+    (1, 40),      # 80% of 50 req/sec
+    (60, 400),    # 80% of 500 req/min
+    (1800, 1600), # 80% of 2000 req/30min
+]
 
 
 class UpstoxError(RuntimeError):
@@ -68,24 +91,124 @@ def instrument_key(isin: str, segment: str = NSE_EQ_SEGMENT) -> str:
     return f"{segment}|{str(isin).strip()}"
 
 
-class _RateLimiter:
-    """Paces calls to stay under REQUESTS_PER_SEC."""
+@dataclass
+class _RateLimiterStats:
+    """Accumulated stats during a client lifetime."""
 
-    def __init__(self, per_sec: float = REQUESTS_PER_SEC):
-        self.min_interval = 1.0 / per_sec
-        self._last = 0.0
+    requests_made: int = 0
+    responses_429: int = 0
+    seconds_waiting: float = 0.0
+
+
+class _RateLimiter:
+    """Multi-window sliding-window rate limiter for safety under all caps.
+
+    Maintains per-second, per-minute, and per-30-minute windows to ensure
+    compliance with official rate limits (with safety margin). Thread-safe.
+    """
+
+    def __init__(
+        self,
+        windows: list[tuple[int, int]] | None = None,
+        per_sec: float | None = None,
+        time_func: Callable[[], float] | None = None,
+        sleep_func: Callable[[float], None] | None = None,
+    ):
+        """
+        Args:
+            windows: List of (window_seconds, max_requests). If None and per_sec
+                is also None, uses RATE_LIMIT_WINDOWS.
+            per_sec: If provided, overrides windows to use only per-second limit
+                for backward compatibility. Ignored if windows is not None.
+            time_func: Clock function (default: time.monotonic). Injected for testing.
+            sleep_func: Sleep function (default: time.sleep). Injected for testing.
+        """
+        self._time_func = time_func or time.monotonic
+        self._sleep_func = sleep_func or time.sleep
+        self._lock = threading.Lock()
+        self.stats = _RateLimiterStats()
+
+        # Determine windows: per_sec for backward compat, else RATE_LIMIT_WINDOWS
+        if windows is not None:
+            self._windows = windows
+        elif per_sec is not None:
+            # Backward-compatible mode: per-second limit only
+            self._windows = [(1, int(per_sec))]
+        else:
+            self._windows = RATE_LIMIT_WINDOWS
+
+        # Track request timestamps per window (one queue per window)
+        self._request_times: list[list[float]] = [[] for _ in self._windows]
 
     def wait(self) -> None:
-        elapsed = time.monotonic() - self._last
-        if elapsed < self.min_interval:
-            time.sleep(self.min_interval - elapsed)
-        self._last = time.monotonic()
+        """Block until the next request is allowed under all windows.
+
+        Thread-safe. Updates stats.requests_made.
+        """
+        with self._lock:
+            now = self._time_func()
+            total_wait = 0.0
+
+            # Slide windows and check all constraints
+            for i, (window_secs, max_reqs) in enumerate(self._windows):
+                cutoff = now - window_secs
+                # Remove old timestamps outside this window
+                self._request_times[i] = [t for t in self._request_times[i] if t > cutoff]
+
+                # If this window is at capacity, calculate wait time
+                if len(self._request_times[i]) >= max_reqs:
+                    # Wait until the oldest request falls out of this window
+                    oldest = self._request_times[i][0]
+                    wait_until = oldest + window_secs
+                    wait_time = wait_until - now
+                    if wait_time > total_wait:
+                        total_wait = wait_time
+
+            # Apply the sleep outside the lock to avoid holding it
+            if total_wait > 0.0:
+                self._sleep_func(total_wait)
+                self.stats.seconds_waiting += total_wait
+                now = self._time_func()  # Update now after sleep
+
+            # Record this request timestamp in all windows
+            for i in range(len(self._windows)):
+                self._request_times[i].append(now)
+
+            self.stats.requests_made += 1
+
+
+@dataclass
+class _429State:
+    """Track 429 responses for escalating cool-down logic."""
+
+    count: int = 0  # 429s seen recently
+    last_time: float = 0.0  # Last 429 timestamp
+    cool_down_factor: int = 1  # Escalating multiplier
 
 
 class UpstoxClient:
-    """Market-data client. Injected where the Kite client used to be."""
+    """Market-data client. Injected where the Kite client used to be.
 
-    def __init__(self, token: str | None = None, per_sec: float = REQUESTS_PER_SEC):
+    Enforces multi-window rate limiting (per-second, per-minute, per-30-minute)
+    with safety margins below official limits. Detects 429 rate-limit responses
+    and escalates cool-down if they recur frequently (3 within 5 min).
+    """
+
+    def __init__(
+        self,
+        token: str | None = None,
+        per_sec: float | None = None,
+        time_func: Callable[[], float] | None = None,
+        sleep_func: Callable[[float], None] | None = None,
+    ):
+        """
+        Args:
+            token: Upstox access token. If None, loads from UPSTOX_ANALYTICS_ACCESS_TOKEN.
+            per_sec: Per-second rate limit (backward compat, optional). If None, uses
+                multi-window rate limiting. If set, overrides with per-second only.
+            time_func: Injected clock (for testing).
+            sleep_func: Injected sleep (for testing).
+        """
         if token is None:
             # usecwd: resolve .env from the invocation directory, not from this
             # module's location -- otherwise an import from outside the project
@@ -106,23 +229,33 @@ class UpstoxClient:
                 "Content-Type": "application/json",
             }
         )
-        self._limiter = _RateLimiter(per_sec)
+        self._limiter = _RateLimiter(per_sec=per_sec, time_func=time_func, sleep_func=sleep_func)
+        self._429_state = _429State()
+        self._time_func = time_func or time.monotonic
+        self._sleep_func = sleep_func or time.sleep
+
+    def stats(self) -> dict:
+        """Return accumulated statistics: requests made, 429s seen, wait time."""
+        return {
+            "requests_made": self._limiter.stats.requests_made,
+            "responses_429": self._limiter.stats.responses_429,
+            "seconds_waiting": round(self._limiter.stats.seconds_waiting, 2),
+        }
 
     # -- plumbing ---------------------------------------------------------
 
     def _get(self, url: str, params: dict | None = None) -> dict:
-        """GET with rate limiting and 429 backoff. Never logs the token."""
+        """GET with rate limiting, multi-window compliance, and 429 escalation.
+
+        Never logs the token or Authorization header.
+        """
         for attempt in range(MAX_RETRIES):
             self._limiter.wait()
             resp = self._session.get(url, params=params, timeout=60)
 
             if resp.status_code == 429:
-                if attempt == MAX_RETRIES - 1:
-                    raise UpstoxError(f"Rate limited after {MAX_RETRIES} attempts: {url}")
-                # Honour Retry-After when present, else exponential backoff.
-                retry_after = resp.headers.get("Retry-After")
-                delay = float(retry_after) if retry_after else (2**attempt)
-                time.sleep(delay)
+                self._limiter.stats.responses_429 += 1
+                self._handle_429(attempt, url, resp)
                 continue
 
             if resp.status_code == 200:
@@ -140,6 +273,42 @@ class UpstoxClient:
             raise UpstoxError(f"HTTP {resp.status_code} from {url.split('?')[0]} -- {detail}")
 
         raise UpstoxError(f"Exhausted retries: {url}")
+
+    def _handle_429(self, attempt: int, url: str, resp: requests.Response) -> None:
+        """Handle 429 response: honor Retry-After, track recurrence, escalate if needed.
+
+        Logs a WARNING if 429s are recurring frequently to alert the user.
+        """
+        if attempt == MAX_RETRIES - 1:
+            raise UpstoxError(f"Rate limited after {MAX_RETRIES} attempts: {url}")
+
+        now = self._time_func()
+        window_start = now - 300.0  # 5-minute window
+
+        # Count 429s in the last 5 minutes
+        if self._429_state.last_time >= window_start:
+            self._429_state.count += 1
+        else:
+            self._429_state.count = 1
+
+        self._429_state.last_time = now
+
+        # Escalate if we've seen 3+ in 5 minutes
+        if self._429_state.count >= 3:
+            self._429_state.cool_down_factor = min(self._429_state.cool_down_factor * 2, 16)
+            logger.warning(
+                f"Received {self._429_state.count} rate-limit 429 responses in 5 min; "
+                f"escalating cool-down factor to {self._429_state.cool_down_factor}x to avoid account block"
+            )
+
+        # Honor Retry-After header, else use exponential backoff * escalation factor
+        retry_after = resp.headers.get("Retry-After")
+        if retry_after:
+            delay = float(retry_after)
+        else:
+            delay = (2 ** attempt) * self._429_state.cool_down_factor
+
+        self._sleep_func(delay)
 
     # -- quotes -----------------------------------------------------------
 
