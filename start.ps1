@@ -12,7 +12,7 @@ opens it. Run stop.ps1 when you are done.
 .PARAMETER WithLlm        Start an Ollama container and run enrichment with --llm (first start pulls the model, several GB).
 .PARAMETER WithLaya       Also start the Laya decision-model service (first start downloads ~800 MB of weights). Not used by any stage yet.
 .PARAMETER WithTimesfm    After enrichment, re-run the report with the TimesFM forecaster (separate torch image; first run downloads the 200M checkpoint).
-.PARAMETER WithConclusions Start the vLLM container (Phi-4-mini-instruct, NVIDIA GPU required; first start downloads ~7.7 GB) and write a per-stock conclusion from the stored insights.
+.PARAMETER WithConclusions Start the vLLM container (Qwen3-4B-Instruct-2507, NVIDIA GPU required; first start downloads ~8 GB) and write a per-stock conclusion from the stored insights.
 .PARAMETER SkipEnrich     Skip enrichment.
 .PARAMETER SkipCrosscheck Skip the independent price cross-check.
 .PARAMETER SkipPortfolio  Skip the Kite holdings overlay.
@@ -155,7 +155,7 @@ if ($WithConclusions) {
     if ($SkipEnrich -and -not (Get-ChildItem -LiteralPath 'output' -Filter 'ath_enriched_*.csv' -ErrorAction SilentlyContinue)) {
         Write-Host "Conclusions skipped: no output/ath_enriched_*.csv to read." -ForegroundColor Yellow
     } else {
-        Write-Stage "Starting vLLM (Phi-4-mini-instruct; first start downloads ~7.7 GB and compiles kernels)"
+        Write-Stage "Starting vLLM (Qwen3-4B-Instruct-2507; first start downloads ~8 GB and compiles kernels)"
         $code = Invoke-Docker @('compose', '--profile', 'vllm', 'up', '-d', 'vllm')
         if ($code -ne 0) { Stop-Pipeline "Could not start vLLM (is the NVIDIA runtime available to Docker?)." }
         if (-not (Wait-Healthy 'ath-vllm' 30)) { Stop-Pipeline "vLLM did not become healthy within 30 minutes. See: docker logs ath-vllm" }

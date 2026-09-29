@@ -7,7 +7,7 @@
 
 Reads the enriched CSV and the document store (data/documents.json), builds a
 fact sheet per stock, and asks an OpenAI-compatible server (the compose `vllm`
-service: microsoft/Phi-4-mini-instruct) to summarise it. Answers are checked
+service: Qwen/Qwen3-4B-Instruct-2507) to summarise it. Answers are checked
 against the fact sheet (see scanner/conclude.py) and stored in the document
 store; results are also written to output/ath_conclusions_<date>.csv.
 

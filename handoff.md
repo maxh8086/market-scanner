@@ -503,27 +503,27 @@ gets `.env`:
   everyday run does not carry ~2 GB of torch.
 - **`vllm`** (`docker/vllm/Dockerfile`, profile `vllm`,
   `./start.ps1 -WithConclusions`): `vllm/vllm-openai:v0.30.0` serving
-  `microsoft/Phi-4-mini-instruct` (MIT, ungated) as `phi-4-mini` on
+  `Qwen/Qwen3-4B-Instruct-2507` (Apache-2.0, ungated) as `qwen3-4b` on
   `127.0.0.1:8001` (`http://vllm:8000` inside compose). Needs an NVIDIA GPU and
   the NVIDIA container runtime. Tuning is by ENV in the Dockerfile
   (`MAX_MODEL_LEN`, `GPU_MEMORY_UTILIZATION`, `QUANTIZATION`, `KV_CACHE_DTYPE`,
-  `EXTRA_ARGS`). **8 GB card note:** bf16 weights are ~7.7 GB and do not fit next
-  to the desktop, so the defaults are `QUANTIZATION=mxfp4` (4-bit weights) and
-  `KV_CACHE_DTYPE=fp8`. v0.30.0 with online FP8 weights fails on this card
+  `EXTRA_ARGS`). **8 GB card note:** bf16 weights are ~8 GB and do not fit next
+  to the desktop, so the defaults are `QUANTIZATION=mxfp4` (4-bit weights),
+  `KV_CACHE_DTYPE=fp8` and `GPU_MEMORY_UTILIZATION=0.56` (~4.5 GB: weights
+  2.8 GiB + KV 0.7 GiB). v0.30.0 with online FP8 weights fails on this card
   ("Available KV cache memory: -1.7 GiB"); FP8 weights only worked on the older
   v0.19.1 image. Set both to empty on a bigger card. Structured output uses
   xgrammar with `disable_any_whitespace` (see serve.sh): without it the 4-bit
   model ran into endless whitespace after the conclusion and ~70% of stocks
   failed as "not JSON".
-- **`airllm`** (`docker/airllm/`, profile `airllm`, docker run only): a large model
-  streamed layer by layer from disk so it fits a small GPU, with an OpenAI-style
-  `/v1/chat/completions` on `127.0.0.1:8002`. No guided decoding (JSON is only
-  requested in the prompt; `conclude` validates). Model and compression come from
-  `AIRLLM_MODEL` / `AIRLLM_COMPRESSION`. `--bench` prints load/prefill/decode
-  timings: `docker compose --profile airllm run --rm airllm --bench`.
-  The 2024 MoE models need transformers 4.x (default `TRANSFORMERS_SPEC`);
-  transformers 5.x fuses the experts and AirLLM's loader fails on it.
-  Qwen3.8-Flash-Next needs a build with in-tree `qwen4_exp`, see the Dockerfile.
+- **Model bench**: `python bench_models.py` runs the fixed acceptance test in
+  `scanner/modelcheck.py` (tests: `tests/test_modelcheck.py`) on each candidate,
+  one throw-away vLLM container at a time (`ath-bench`, port 8003), same 4.5 GB
+  budget and FP8 KV. Fixed budgets: 600 s to healthy, 420 s for the first 40
+  stocks; ceilings on the share of stocks: 0% failed, 10% speculative, 10% empty
+  (or missing the side its stance needs), 5% truncated, 15% unverified numbers.
+  Results in `output/model_bench.csv`; failed startups keep `logs/bench_<key>.log`.
+  AirLLM was tried and dropped (see below).
 - **`conclude`** is the client, not a third image: `conclude.py` ships in the
   existing `ath-enrich` image and the compose service overrides the entrypoint.
 
@@ -570,17 +570,31 @@ conclusion never changes the ranking and is not investment advice.
   were guard false positives (31 sign flips, 1 ticker digit), 13 ratios the model
   computed itself, and 2 genuinely unsupported; none was a network or
   unreported-filing problem.
-- Model quality caveat (4-bit Phi-4-mini): it still calls a fall from the high
-  "undervaluation" in a large share of stocks despite the prompt rule; the retry
-  reduces it but does not remove it. Read the conclusion as a summary of the
-  sheet, and check the cited keys and `speculative_phrases`.
-- AirLLM trial, `Qwen/Qwen1.5-MoE-A2.7B-Chat` (14.3B total, MoE) 4-bit,
-  `docker/airllm`: peak VRAM 1.56 GB, load 4 s once split, 1,528-token prefill
-  24.7 s, decode about 13 s per token (16 tokens in 222 s). A ~300-token
-  conclusion is over an hour per stock, so 290 stocks serially is roughly 2 weeks
-  against 10 minutes on vLLM; batching would help but was not tried. First run
-  downloads ~29 GB and splits the layers (~35 min). It does fit where vLLM does
-  not. DeepSeekMoE-16B was not run (~33 GB, same order of speed, custom code).
+- Model quality caveat (4-bit Phi-4-mini MXFP4, the earlier default): it called a
+  fall from the high "undervaluation" in a large share of stocks despite the
+  prompt rule (129 of 290 speculative, 83 empty or stance-inconsistent). It was
+  replaced by Qwen3-4B-Instruct-2507, below.
+- **Qwen3-4B (current default), full run, 290 stocks:** 0 failed, 5 speculative,
+  10 unverified numbers, 0 truncated, 8 with nothing on either side (73 have no
+  positives, almost all of them CAUTIOUS, which is consistent), stance MIXED 140 /
+  CONSTRUCTIVE 107 / CAUTIOUS 43.
+- **Model comparison (`bench_models.py`, first 40 stocks, RTX 4060 8 GB, MXFP4/4-bit
+  + FP8 KV in ~4.5 GB):**
+
+  | model | result | run / startup | notes |
+  |---|---|---|---|
+  | Qwen3-4B-Instruct-2507 MXFP4 | **PASS** | 136 s / 157 s | 0 spec, 0 empty, 3 unverified; weights 2.81 GiB, KV 0.72 GiB |
+  | LFM2.5-1.2B-Thinking (bf16, FP8 KV worked) | **PASS** | 196 s / 262 s | 0 spec, 0 empty, 1 unverified; weights 2.2 GiB, KV 1.85 GiB; slower and less proven |
+  | Qwen3-1.7B GPTQ-Int4 | FAIL | 328 s / 233 s | 26 of 40 speculative (65%) |
+  | Phi-4-mini GPTQ and AWQ (compressed-tensors; retried with auto-detect) | FAIL | | weights 2.73 GiB, then "Available KV cache memory: -0.72 GiB": does not fit 4.5 GB (200k-vocab logits buffers; it needed 0.80 utilisation, ~6.4 GB, earlier) |
+  | DeepSeek-R1-Distill-Qwen-7B AWQ | FAIL | | engine did not start inside the 4.5 GB budget (expected: ~5.5 GB of weights) |
+
+  Verdict: keep Qwen3-4B (fastest, passes, best-documented). LFM2.5-1.2B is the
+  fallback if more headroom is needed.
+- AirLLM (dropped, `docker/airllm` removed): `Qwen/Qwen1.5-MoE-A2.7B-Chat` 4-bit
+  fit in 1.56 GB VRAM but decoded at ~13 s per token, i.e. ~2 weeks for 290
+  stocks against ~10 minutes on vLLM. DeepSeekMoE-16B and Qwen1.5-MoE do not fit
+  vLLM's 4.5 GB at 4-bit. AirLLM 4.0.0 also needs transformers 4.x for Qwen2-MoE.
 - Docker daemon: no restarts since the disk was cleaned up (backend up, `ath-vllm`
   RestartCount 0). The earlier restarts coincided with the low-disk period.
 - TimesFM stage: 5.6 min for 290 stocks in the `enrich-timesfm` image; loads
@@ -618,7 +632,7 @@ so an environment gap otherwise costs you that time twice:
 ```bash
 .venv\Scripts\python.exe ath_scan.py --help
 # pytest is NOT installed in .venv -- use unittest, which needs no dependency
-.venv\Scripts\python.exe -m unittest discover -s tests -t . -q    # 605 tests, 2 skipped
+.venv\Scripts\python.exe -m unittest discover -s tests -t . -q    # 621 tests, 2 skipped
 ```
 
 Set `PYTHONIOENCODING=utf-8` for anything that prints a rupee sign, and

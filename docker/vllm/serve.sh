@@ -12,12 +12,12 @@ args=(
   # A 4-bit model inside the JSON grammar drifted into endless whitespace after the
   # conclusion string (about 70% of stocks failed as "not JSON"); this bans it.
   --structured-outputs-config '{"backend":"xgrammar","disable_any_whitespace":true}'
-  # Phi-4-mini has a ~200k-token vocabulary, so the warm-up pass at the default 8192
+  # A model with a large (150-200k) vocabulary, so the warm-up pass at the default 8192
   # batched tokens needs a multi-GB logits buffer. v0.30.0 counts that against the
   # budget and leaves -1.7 GiB for the KV cache on an 8 GB card; 2048 fits.
   --max-num-batched-tokens "$MAX_NUM_BATCHED_TOKENS"
 )
-# Phi-4-mini in bf16 is ~7.7 GB, which does not fit an 8 GB card next to the
+# A 4B model in bf16 is ~8 GB, which does not fit an 8 GB card next to the
 # desktop. Online FP8 quantisation halves the weights (needs compute capability
 # 8.9+, i.e. RTX 40-series or newer). Set QUANTIZATION= to disable on bigger cards.
 [ -n "${QUANTIZATION:-}" ] && args+=(--quantization "$QUANTIZATION")

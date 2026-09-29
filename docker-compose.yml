@@ -61,7 +61,7 @@ services:
     profiles: ["llm"]
     restart: "no"
 
-  vllm:                  # Phi-4-mini-instruct on the GPU; profile `vllm` (start.ps1 -WithConclusions)
+  vllm:                  # Qwen3-4B-Instruct-2507 (MXFP4, FP8 KV) on the GPU; profile `vllm` (start.ps1 -WithConclusions)
     build:
       context: .
       dockerfile: docker/vllm/Dockerfile
@@ -80,26 +80,6 @@ services:
           devices:
             - {driver: nvidia, count: 1, capabilities: [gpu]}
     profiles: ["vllm"]
-    restart: "no"
-
-  airllm:                # large model streamed layer-by-layer on a small GPU; profile `airllm` (docker run only)
-    build: {context: ., dockerfile: docker/airllm/Dockerfile}
-    container_name: ath-airllm
-    # No env_file: public models, no credentials. Retune with MODEL / COMPRESSION in the shell.
-    environment:
-      - MODEL=${AIRLLM_MODEL:-Qwen/Qwen1.5-MoE-A2.7B-Chat}
-      - COMPRESSION=${AIRLLM_COMPRESSION:-4bit}
-    volumes:
-      - huggingface_airllm:/root/.cache/huggingface          # original weights + 4-bit layer shards
-    ports:
-      - "127.0.0.1:8002:8000"            # loopback only; conclude reaches it as http://airllm:8000
-    ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - {driver: nvidia, count: 1, capabilities: [gpu]}
-    profiles: ["airllm"]
     restart: "no"
 
   conclude:              # per-stock conclusions from the stored insights; same image as enrich
@@ -130,5 +110,4 @@ services:
 volumes:
   huggingface_cache:
   huggingface_vllm:
-  huggingface_airllm:
   ollama_models:

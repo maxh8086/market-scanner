@@ -8,7 +8,7 @@ laya and vllm services, which live under compose profiles). Your data/, output/ 
 logs/ folders are bind mounts and are never touched by this script.
 
 .PARAMETER Prune       Also remove the images built for this project.
-.PARAMETER PurgeModels Also delete the downloaded model volumes (Laya weights ~800 MB, Ollama model several GB, Phi-4-mini ~7.7 GB, TimesFM checkpoint; re-downloaded on the next start that uses them).
+.PARAMETER PurgeModels Also delete the downloaded model volumes (Laya weights ~800 MB, Ollama model several GB, Qwen3-4B ~8 GB, TimesFM checkpoint; re-downloaded on the next start that uses them).
 #>
 param(
     [switch]$Prune,

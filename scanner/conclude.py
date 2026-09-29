@@ -22,7 +22,7 @@ The conclusion never changes the ranking. It is a reading aid stored beside the
 data, keyed by (symbol, as_of), and it is not investment advice.
 
 Backend: an OpenAI-compatible chat endpoint. The compose `vllm` service serves
-microsoft/Phi-4-mini-instruct that way, but any such server works.
+Qwen/Qwen3-4B-Instruct-2507 that way, but any such server works.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from typing import Any, Mapping, Optional
 from . import llm
 
 PROMPT_VERSION = 3
-DEFAULT_MODEL = "phi-4-mini"          # the served name, see docker-compose.yml
+DEFAULT_MODEL = "qwen3-4b"            # the served name, see docker-compose.yml
 STANCES = ("CONSTRUCTIVE", "MIXED", "CAUTIOUS")
 MAX_FILINGS = 5
 
