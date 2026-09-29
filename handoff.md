@@ -432,6 +432,62 @@ placeholders only.
   scan.** Retained for the Kite portfolio side. Don't delete them assuming
   they're dead — but don't expect the scan to touch them either.
 
+## Docker, manual trigger, cross-check, portfolio (added 2026-09-29)
+
+**Run it:** `./start.ps1` (scan -> enrich -> crosscheck -> portfolio), then
+`./stop.ps1`. No scheduler; the 4 PM IST run was replaced by this manual
+trigger on request. Flags: `-Symbols`, `-WithLlm`, `-WithLaya`, `-SkipEnrich`,
+`-SkipCrosscheck`, `-SkipPortfolio`, `-Rebuild`. Credentials reach containers
+only at runtime through compose `env_file: .env` (scanner, enrich, portfolio);
+crosscheck, laya and llm get none. The scripts never open `.env`.
+
+**Images (one per entrypoint):** `scanner`, `enrich`, `crosscheck`, `portfolio`
+(light, non-root, `requirements.txt` only), plus optional `laya` (profile
+`laya`) and `llm` (Ollama, profile `llm`). Components talk only through the
+bind-mounted `data/`, `output/`, `logs/` (SQLite `history.db`/`factors.db`,
+TinyDB `documents.json`, CSVs). The one container-to-container call is
+enrich -> llm (`--llm-url http://llm:11434`). Laya and llm are published on
+127.0.0.1 only. PowerShell 5.1 gotcha: judge docker success by `$LASTEXITCODE`,
+not by stderr (`2>&1` plus `$ErrorActionPreference='Stop'` turns docker's
+progress output into terminating errors).
+
+**Market data stays Upstox.** NSE is only an independent check
+(`crosscheck.py`, bhavcopy `sec_bhavdata_full_DDMMYYYY.csv`); Screener is the
+documented manual fallback and is not implemented as a source. Verified on the
+2026-09-28 scan: LTP 298/298 and ATH 298/298 agree with NSE, exit 0. Bhavcopy
+facts that bit us: prices are raw (unadjusted), so the ATH window stops at a
+day-to-day close ratio outside 0.6-1.6 (a split/bonus); `CLOSE_PRICE` is a
+30-minute VWAP, so an LTP matching either close or `LAST_PRICE` is OK; series
+`EQ` and `BE` are both accepted. Its first version passed tests while parsing
+zero rows of the real file, which is why `tests/test_crosscheck_nse.py` uses a
+verbatim padded real layout.
+
+**Rate limits (Upstox docs: 50/s, 500/min, 2000/30 min).** `scanner/upstox.py`
+enforces 80% of each: 40/s, 400/min, 1600/30 min, with 429 escalation and
+`client.stats()`. A cold scan is ~2,252 requests (~42 min); an incremental one
+~752 (~14 min). Known small defects, not fixed: the limiter sleeps while
+holding its lock, and `float(Retry-After)` fails on an HTTP-date value.
+
+**Portfolio.** `portfolio.py` joins Kite holdings with the scan/enrichment
+output (read-only). Live Kite login is interactive: supply `KITE_ACCESS_TOKEN`
+or a `data/holdings.json`; exit 2 means no holdings source (start.ps1 treats it
+as a warning).
+
+**Seasonal forecast.** Runs from 13 months (`MIN_MONTHS_SEASONAL_UNVALIDATED`)
+and is labelled "point forecast only (N points, need 25 for validated band)".
+25 (`MIN_MONTHS`) is required only for the backtest-validated error band.
+
+**Not wired / not done, by decision:**
+- Laya is installed in the venv and containerised but is a classifier
+  (`/v1/systemone`), not compatible with `enrich --llm`; it is not used in
+  ranking and is unmeasured. First `-WithLaya` start downloads ~808 MB.
+- `--llm` (which would fill `capacity_change`) and Neo4j need the Ollama
+  profile (`-WithLlm`, multi-GB model). Neo4j itself is not built.
+- TimesFM is in no image (`timesfm[torch]` is optional and commented out in
+  `requirements.txt`). A separate `enrich-timesfm` image is recommended, not
+  built.
+- No scheduled task was created.
+
 ## Possible improvement spotted, not implemented
 
 Upstox supports `weeks` as a candle unit, and a weekly candle's high is the
@@ -463,7 +519,7 @@ so an environment gap otherwise costs you that time twice:
 ```bash
 .venv\Scripts\python.exe ath_scan.py --help
 # pytest is NOT installed in .venv -- use unittest, which needs no dependency
-.venv\Scripts\python.exe -m unittest discover -s tests -t . -q    # 479 tests
+.venv\Scripts\python.exe -m unittest discover -s tests -t . -q    # 570 tests, 2 skipped
 ```
 
 Set `PYTHONIOENCODING=utf-8` for anything that prints a rupee sign, and
@@ -500,7 +556,7 @@ verified against 3.0.6; add an upper bound if that ever needs freezing.
 
 ## Not done (explicitly deferred per spec's "Later" section)
 
-- Cron/scheduled 4 PM IST run on trading days. Now genuinely unblocked: the
-  ~1-year token means no interactive login stands in the way.
+- Cron/scheduled 4 PM IST run on trading days. Unblocked by the ~1-year token,
+  but deliberately replaced by the manual `start.ps1`/`stop.ps1` for now.
 - `scanner/ath.py` remains import-clean (no I/O, no broker dependency) and
   can be reused as-is as a pure ATH/bucketing library.

@@ -282,6 +282,9 @@ def main() -> int:
     report.write_skipped(skipped)
 
     print(f"\nWrote {csv_path} and {xlsx_path}")
+    st = client.stats()
+    print(f"Upstox: {st['requests_made']} requests, {st['responses_429']} rate-limited (429), "
+          f"{st['seconds_waiting']}s spent throttling")
     print(f"Skipped {len(skipped)} symbols — see logs/skipped.csv")
     if intraday:
         print("Note: run during market hours — today's high/LTP are intraday, not final.")
