@@ -465,7 +465,11 @@ verbatim padded real layout.
 **Rate limits (Upstox docs: 50/s, 500/min, 2000/30 min).** `scanner/upstox.py`
 enforces 80% of each: 40/s, 400/min, 1600/30 min, with 429 escalation and
 `client.stats()`. A cold scan is ~2,252 requests (~42 min); an incremental one
-~752 (~14 min). Known small defects, not fixed: the limiter sleeps while
+~752 (~14 min). **Measured 2026-09-29 (cold cache, isolated data dir, Docker):**
+1,969 requests, **0 HTTP 429s**, 1,664 s spent throttling by our own limiter, 0 skipped,
+~30 min wall clock; the scan now prints these stats. Its 290 matches had `ath_high`
+identical to the incremental run on all 290 (2 bucket changes = intraday LTP moved
+between runs 30 min apart). Known small defects, not fixed: the limiter sleeps while
 holding its lock, and `float(Retry-After)` fails on an HTTP-date value.
 
 **Portfolio.** `portfolio.py` joins Kite holdings with the scan/enrichment
