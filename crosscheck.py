@@ -144,16 +144,19 @@ def main() -> int:
                 f"source={worst['source_close']:.2f} diff={diff:+.2f}%"
             )
 
+    ath_summary = {"diverged": 0}
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     # Check ATH if column exists
     if "ath_high" in scan_df.columns and "ath_date" in scan_df.columns:
-        print("\nComparing ATH (historical highs)...")
-        ath_results = check_ath(scan_df, source, tol_pct=args.tol)
+        print("\nChecking scan ATH is not below recent source highs (45-day window)...")
+        ath_results = check_ath(scan_df, source, tol_pct=args.tol, on_date=scan_date)
         ath_summary = summarize_comparison(ath_results)
 
         print(f"  OK:       {ath_summary['ok']:4d}")
         print(f"  DIVERGED: {ath_summary['diverged']:4d}")
         print(f"  NO_DATA:  {ath_summary['no_data']:4d}")
         print(f"  TOTAL:    {ath_summary['total']:4d}")
+        ath_results.to_csv(Path(args.output_dir) / f"crosscheck_ath_{scan_date.isoformat()}.csv", index=False)
 
     # Write output CSV
     output_dir = Path(args.output_dir)
@@ -163,7 +166,7 @@ def main() -> int:
     print(f"\nResults written to {output_file}")
 
     # Exit with appropriate code
-    has_diverged = ltp_summary["diverged"] > 0
+    has_diverged = ltp_summary["diverged"] > 0 or ath_summary["diverged"] > 0
     if has_diverged:
         print("\n⚠ Divergences found. Exit code 1.")
         return 1

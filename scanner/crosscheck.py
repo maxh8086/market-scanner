@@ -27,6 +27,7 @@ class PriceSnapshot(NamedTuple):
     high: float
     low: float
     close: float
+    last: float | None = None   # last traded price; NSE's `close` is a 30-min VWAP
 
 
 class PriceSource(ABC):
@@ -36,6 +37,10 @@ class PriceSource(ABC):
     @abstractmethod
     def name(self) -> str:
         """Friendly name of this source (e.g. "NSE Bhavcopy")."""
+
+    def last_on(self, symbol: str, on_date: date) -> float | None:
+        """Last traded price on a date, if the source distinguishes it from close."""
+        return None
 
     @abstractmethod
     def close_on(self, symbol: str, on_date: date) -> float | None:
@@ -106,6 +111,10 @@ class NseBhavcopy(PriceSource):
         snapshot = self._get_snapshot(symbol, on_date)
         return snapshot.close if snapshot else None
 
+    def last_on(self, symbol: str, on_date: date) -> float | None:
+        snapshot = self._get_snapshot(symbol, on_date)
+        return snapshot.last if snapshot else None
+
     def high_between(
         self,
         symbol: str,
@@ -116,54 +125,65 @@ class NseBhavcopy(PriceSource):
         if from_date > to_date:
             return None
 
-        highs: list[float] = []
+        if (to_date - from_date).days > self.MAX_SPAN_DAYS:
+            from_date = to_date - timedelta(days=self.MAX_SPAN_DAYS)
+
+        snaps: list[PriceSnapshot] = []
         current = from_date
         while current <= to_date:
             snapshot = self._get_snapshot(symbol, current)
             if snapshot:
-                highs.append(snapshot.high)
+                snaps.append(snapshot)
             current += timedelta(days=1)
+
+        # Bhavcopy is raw, not split/bonus adjusted, while the scan's history is.
+        # A day-to-day close ratio outside 0.6-1.6 is far beyond any circuit limit,
+        # so it is a corporate action: only highs after the last such break are
+        # comparable with an adjusted series.
+        start = 0
+        for i in range(1, len(snaps)):
+            ratio = snaps[i - 1].close / snaps[i].close if snaps[i].close else 1.0
+            if ratio > 1.6 or ratio < 0.6:
+                start = i
+        highs = [x.high for x in snaps[start:]]
 
         return max(highs) if highs else None
 
+    # Longest window high_between will walk. Bhavcopy is one file per day, so a
+    # range is a request per weekday: unbounded, an all-time-high query would be
+    # thousands of requests per symbol. It cannot answer that question.
+    MAX_SPAN_DAYS = 90
+
     def _get_snapshot(self, symbol: str, on_date: date) -> PriceSnapshot | None:
-        """Fetch and cache one day's OHLC for a symbol."""
-        # Check in-memory cache first
+        """One symbol's OHLC on one day, from the day's whole-market file."""
+        return self._day(on_date).get(symbol)
+
+    def _day(self, on_date: date) -> dict[str, PriceSnapshot]:
+        """Every EQ symbol's OHLC on a date: memory, then disk, then NSE once.
+
+        A date that cannot be fetched (weekend, holiday, outage) is remembered as
+        empty for the life of this object, so a missing day costs one request
+        rather than one per symbol.
+        """
         if on_date in self._cache:
-            return self._cache[on_date].get(symbol)
+            return self._cache[on_date]
+        day: dict[str, PriceSnapshot] = {}
+        if on_date.weekday() < 5:            # NSE publishes nothing on weekends
+            day = self._load_day_file(on_date)
+            if not day:
+                day = self._fetch_day(on_date)
+        self._cache[on_date] = day
+        return day
 
-        # Try to load from disk
-        snapshot = self._load_from_cache_file(symbol, on_date)
-        if snapshot:
-            if on_date not in self._cache:
-                self._cache[on_date] = {}
-            self._cache[on_date][symbol] = snapshot
-            return snapshot
-
-        # Try to fetch from NSE
-        snapshot = self._fetch_from_nse(symbol, on_date)
-        if snapshot:
-            if on_date not in self._cache:
-                self._cache[on_date] = {}
-            self._cache[on_date][symbol] = snapshot
-            self._save_to_cache_file(on_date, self._cache[on_date])
-            return snapshot
-
-        return None
-
-    def _load_from_cache_file(self, symbol: str, on_date: date) -> PriceSnapshot | None:
-        """Load a day's bhavcopy from the cache directory."""
+    def _load_day_file(self, on_date: date) -> dict[str, PriceSnapshot]:
+        """Load a day's cached file whole; empty if absent or unreadable."""
         cache_file = self.cache_dir / f"bhavcopy_{on_date.strftime('%Y%m%d')}.csv"
         if not cache_file.exists():
-            return None
-
+            return {}
         try:
-            # Try to parse as cached format first (SYMBOL,DATE,OPEN,HIGH,LOW,CLOSE)
-            data = self._parse_cache_csv(cache_file.read_text(encoding="utf-8"))
-            return data.get(symbol)
+            return self._parse_cache_csv(cache_file.read_text(encoding="utf-8"))
         except Exception:
-            # Malformed or missing file; will re-fetch
-            return None
+            return {}     # malformed: fall through to a re-fetch
 
     def _save_to_cache_file(self, on_date: date, day_data: dict[str, PriceSnapshot]) -> None:
         """Save a day's bhavcopy to the cache directory."""
@@ -173,7 +193,7 @@ class NseBhavcopy(PriceSource):
         # Write as CSV: symbol,date,open,high,low,close
         with open(cache_file, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["SYMBOL", "DATE", "OPEN", "HIGH", "LOW", "CLOSE"])
+            writer.writerow(["SYMBOL", "DATE", "OPEN", "HIGH", "LOW", "CLOSE", "LAST"])
             for symbol, snapshot in sorted(day_data.items()):
                 writer.writerow(
                     [
@@ -183,34 +203,23 @@ class NseBhavcopy(PriceSource):
                         snapshot.high,
                         snapshot.low,
                         snapshot.close,
+                        "" if snapshot.last is None else snapshot.last,
                     ]
                 )
 
-    def _fetch_from_nse(self, symbol: str, on_date: date) -> PriceSnapshot | None:
-        """Fetch one day's bhavcopy from NSE and cache all symbols in it."""
+    def _fetch_day(self, on_date: date) -> dict[str, PriceSnapshot]:
+        """Fetch one day's bhavcopy from NSE, cache it to disk, return all symbols."""
         url = f"{self.BASE_URL}/sec_bhavdata_full_{on_date.strftime('%d%m%Y')}.csv"
-
         try:
-            resp = requests.get(
-                url,
-                timeout=self.TIMEOUT_SECS,
-                headers={"User-Agent": self.USER_AGENT},
-            )
+            resp = requests.get(url, timeout=self.TIMEOUT_SECS,
+                                headers={"User-Agent": self.USER_AGENT})
             resp.raise_for_status()
-        except requests.RequestException:
-            return None
-
-        try:
             day_data = self._parse_bhavcopy_csv(resp.text)
         except Exception:
-            return None
-
-        # Cache all symbols from this day
+            return {}
         if day_data:
-            self._cache[on_date] = day_data
             self._save_to_cache_file(on_date, day_data)
-
-        return day_data.get(symbol)
+        return day_data
 
     def _parse_cache_csv(self, csv_text: str) -> dict[str, PriceSnapshot]:
         """Parse our own cache format: SYMBOL,DATE,OPEN,HIGH,LOW,CLOSE."""
@@ -230,6 +239,8 @@ class NseBhavcopy(PriceSource):
                 high_price = float(row.get("HIGH", 0))
                 low_price = float(row.get("LOW", 0))
                 close_price = float(row.get("CLOSE", 0))
+                last_raw = (row.get("LAST") or "").strip()
+                last_price = float(last_raw) if last_raw else None
 
                 result[symbol] = PriceSnapshot(
                     date=snap_date,
@@ -237,6 +248,7 @@ class NseBhavcopy(PriceSource):
                     high=high_price,
                     low=low_price,
                     close=close_price,
+                    last=last_price,
                 )
             except (ValueError, TypeError):
                 continue
@@ -244,50 +256,54 @@ class NseBhavcopy(PriceSource):
         return result
 
     def _parse_bhavcopy_csv(self, csv_text: str) -> dict[str, PriceSnapshot]:
-        """Parse NSE Bhavcopy CSV (EQ series only) into symbol -> snapshot."""
-        result: dict[str, PriceSnapshot] = {}
+        """Parse NSE sec_bhavdata_full (EQ and BE series) into symbol -> snapshot.
 
-        # NSE Bhavcopy format: SYMBOL, SERIES, OPEN, HIGH, LOW, CLOSE, ...
-        # We only want EQ series (equity spot market).
-        reader = csv.DictReader(io.StringIO(csv_text))
-        if not reader.fieldnames:
+        The real file pads every header and value with spaces ("SYMBOL, SERIES,
+        ..." / "20MICRONS, EQ, ...") and names its columns OPEN_PRICE, HIGH_PRICE,
+        LOW_PRICE, CLOSE_PRICE and DATE1 ("28-Sep-2026"). The short names OPEN,
+        HIGH, LOW, CLOSE and TIMESTAMP (the older archive layout) are accepted too.
+        """
+        result: dict[str, PriceSnapshot] = {}
+        reader = csv.reader(io.StringIO(csv_text))
+        header = next(reader, None)
+        if not header:
+            return result
+        col = {name.strip().upper(): i for i, name in enumerate(header)}
+
+        def idx(*names: str) -> int | None:
+            for n in names:
+                if n in col:
+                    return col[n]
+            return None
+
+        i_sym, i_ser = idx("SYMBOL"), idx("SERIES")
+        i_open, i_high = idx("OPEN_PRICE", "OPEN"), idx("HIGH_PRICE", "HIGH")
+        i_low, i_close = idx("LOW_PRICE", "LOW"), idx("CLOSE_PRICE", "CLOSE")
+        i_date = idx("DATE1", "TIMESTAMP", "DATE")
+        i_last = idx("LAST_PRICE", "LAST")
+        if None in (i_sym, i_ser, i_open, i_high, i_low, i_close, i_date):
             return result
 
         for row in reader:
-            if not row or row.get("SERIES") != "EQ":
-                continue
-
             try:
-                symbol = row.get("SYMBOL", "").strip().upper()
+                if row[i_ser].strip() not in ("EQ", "BE"):   # BE = trade-for-trade, same securities
+                    continue
+                symbol = row[i_sym].strip().upper()
                 if not symbol:
                     continue
-
-                open_price = float(row.get("OPEN", 0))
-                high_price = float(row.get("HIGH", 0))
-                low_price = float(row.get("LOW", 0))
-                close_price = float(row.get("CLOSE", 0))
-
-                # Extract date from TIMESTAMP or DATE field (format varies)
-                date_str = row.get("TIMESTAMP") or row.get("DATE", "")
-                if "-" in date_str:
-                    # Format: DD-MMM-YYYY or YYYY-MM-DD
-                    try:
-                        snap_date = pd.to_datetime(date_str).date()
-                    except Exception:
-                        continue
-                else:
+                if row[i_ser].strip() == "BE" and symbol in result:
+                    continue          # EQ, when a symbol has both, is authoritative
+                date_str = row[i_date].strip()
+                if "-" not in date_str:
                     continue
-
                 result[symbol] = PriceSnapshot(
-                    date=snap_date,
-                    open=open_price,
-                    high=high_price,
-                    low=low_price,
-                    close=close_price,
+                    date=pd.to_datetime(date_str).date(),
+                    open=float(row[i_open]), high=float(row[i_high]),
+                    low=float(row[i_low]), close=float(row[i_close]),
+                    last=float(row[i_last]) if i_last is not None else None,
                 )
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, IndexError):
                 continue
-
         return result
 
 
@@ -360,6 +376,7 @@ def compare(
         scan_ltp = float(row["ltp"])
 
         source_close = source.close_on(symbol, on_date)
+        source_last = source.last_on(symbol, on_date)
 
         if source_close is None:
             results.append(
@@ -373,7 +390,14 @@ def compare(
                 )
             )
         else:
+            # NSE's close is a 30-minute VWAP, not the last trade, and a quote
+            # taken after the bell can legitimately return either. Diverged only
+            # if the scan matches neither.
             diff_pct = (scan_ltp - source_close) / source_close * 100
+            if source_last:
+                diff_last = (scan_ltp - source_last) / source_last * 100
+                if abs(diff_last) < abs(diff_pct):
+                    diff_pct = diff_last
             verdict = "OK" if abs(diff_pct) <= tol_pct else "DIVERGED"
             results.append(
                 ComparisonResult(
@@ -404,6 +428,8 @@ def check_ath(
     scan_df: pd.DataFrame,
     source: PriceSource,
     tol_pct: float = 0.5,
+    on_date: date | None = None,
+    lookback_days: int = 45,
 ) -> pd.DataFrame:
     """Verify scan's ATH high against source's max high in the history window.
 
@@ -429,10 +455,13 @@ def check_ath(
         scan_ath_high = float(row["ath_high"])
         scan_ath_date = pd.to_datetime(row["ath_date"]).date()
 
-        # Query source for the highest high from listing to scan date
-        # (we don't know the actual listing date, so use a far-past date)
-        far_past = date(1990, 1, 1)
-        source_high = source.high_between(symbol, far_past, scan_ath_date)
+        # Bounded window: a daily-file source cannot answer "highest ever". This
+        # is a lower-bound check -- the scan's ATH must not sit below a high the
+        # independent source saw in the last `lookback_days` (catches a missed
+        # spike or an unadjusted series), not a proof that the ATH is the ATH.
+        window_end = on_date or scan_ath_date
+        source_high = source.high_between(
+            symbol, window_end - timedelta(days=lookback_days), window_end)
 
         if source_high is None:
             results.append(

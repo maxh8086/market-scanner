@@ -254,10 +254,10 @@ class TestNseBhavcopyParsing(unittest.TestCase):
     """Test bhavcopy CSV parsing and filtering."""
 
     def test_parses_eq_series_only(self):
-        """Should only parse EQ series, ignore others."""
+        """EQ (and BE) series only; EQ wins when a symbol has both."""
         csv_text = "SYMBOL,SERIES,OPEN,HIGH,LOW,CLOSE,TIMESTAMP\n"
         csv_text += "INFY,EQ,100.0,105.0,99.0,102.5,29-Sep-2026\n"
-        csv_text += "INFY,BE,110.0,115.0,108.0,112.5,29-Sep-2026\n"  # Bulk Equities
+        csv_text += "INFY,BE,110.0,115.0,108.0,112.5,29-Sep-2026\n"  # BE = trade-for-trade; EQ wins when both exist
         csv_text += "TCS,EQ,200.0,205.0,198.0,202.5,29-Sep-2026\n"
 
         source = NseBhavcopy()
@@ -469,7 +469,7 @@ class TestNseBhavcopyCache(unittest.TestCase):
 
         # Create a new source instance (simulating fresh start)
         source2 = NseBhavcopy(cache_dir=self.cache_dir)
-        result = source2._load_from_cache_file("INFY", date(2026, 9, 29))
+        result = source2._load_day_file(date(2026, 9, 29)).get("INFY")
 
         self.assertIsNotNone(result)
         self.assertEqual(result.close, 102.5)
