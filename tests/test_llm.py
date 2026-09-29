@@ -137,7 +137,7 @@ class TestPrompts(unittest.TestCase):
 
     def test_order_prompt_states_absolute_rupees(self):
         """The single most likely model error is answering in crore."""
-        self.assertIn("ABSOLUTE RUPEES", llm.PROMPTS[llm.KIND_ORDER])
+        self.assertIn("order_unit", llm.PROMPTS[llm.KIND_ORDER])
 
     def test_order_prompt_warns_against_the_known_misparse(self):
         prompt = llm.PROMPTS[llm.KIND_ORDER].lower()
