@@ -127,10 +127,23 @@ placeholders only.
 ## Still open
 
 - **Expansion (factor 4) is the least trustworthy column** and has not been
-  eyeballed against actual filings. `Capacity addition` and `Commencement of
-  commercial production/operations` are the only two categories backing it;
-  worth checking whether `Acquisition` (1,213 filings) or
-  `Diversification/Disinvestment` (72) should count as expansion.
+  eyeballed against actual filings. The category question is **closed, 2026-09-29:
+  neither `Acquisition` nor `Diversification/Disinvestment` should be added.**
+  Measured over the cached announcements:
+  - `Acquisition` (2,602 rows) — **0%** of the metadata mentions capacity,
+    tonnage, MW or a plant. Not because acquisitions are irrelevant to
+    expansion, but because `attchmnt_text` is one-line boilerplate: 391,077
+    rows, none empty, average 139 characters. Whatever an acquisition says
+    about capacity is in the PDF, so this category cannot be decided from
+    metadata at all and would need the filings stage pointed at it.
+  - `Diversification/Disinvestment` (174 rows) — 0 mention capacity and **44
+    mention divestment**, which is the *opposite* of expansion. Adding it
+    would inject a contrary signal into the column.
+
+  The 0% figure was checked before being believed: an empty-text bug would
+  produce the same number, so the text column was counted first. It is
+  populated and uninformative, which is a different and more useful answer
+  than "no match".
 - **Order-book *value* — BUILT AND MEASURED 2026-09-29 over 964 real PDFs.**
   The value is in the attached filing PDF, and SEBI LODR Schedule III Part A
   para 4 mandates a template whose field (g) is literally
@@ -230,8 +243,91 @@ placeholders only.
   (WELENT ₹7,300 cr, ASTRAMICRO ₹2,205.23 cr, KPIL ₹4,000 cr, DATAPATTNS
   ₹585.76 cr, HFCL ₹2,666.09 cr, SAATVIKGL ₹1,041.63 cr). KPIL survives the
   cull on a *different* filing — a genuine ₹4,000 cr single order, not the
-  cumulative book. The other ten are the same tier but have not been read by
-  hand.
+  cumulative book. The other ten were not read by hand at that point; all of
+  them have been since — see the fifth block below, which supersedes these
+  counts.
+
+  A **fifth** round, 2026-09-29, and the same lesson twice more: *measure the
+  output, not the code.* 466 then 470 tests passed throughout, and neither
+  defect below was visible from a unit's contract.
+
+  Four fixes, each measured on the 964 stored documents before being kept:
+
+  1. **The window crossed a field boundary.** `_WINDOW` was a flat 240
+     characters, so the anchored read could reach into the *next* mandated field
+     and return paid-up capital (₹500 cr) or total debt (₹100 cr) as the order
+     value — the `loose` fabrication again, but wearing the anchored tier's
+     confidence, which is strictly worse. `_cut_at_next_field` ends the window
+     at the following field instead. Chosen by measurement rather than by tuning
+     a character count: over the 81 anchored order filings the word `whether`
+     opens the next field in 57 of their windows and in **zero** does it precede
+     the figure being read, so the cut discards only text that was never the
+     answer. The enumerated markers add 15 and 4 more, also with 0 losses.
+  2. **The FX conversion was on the wrong path.** `_FX_INR_CONVERSION` sat only
+     in `parse_order_value`'s unanchored fallback, so the *anchored* path threw
+     away `orders worth USD 85.86 million (approximately Rs. 819.94 crores)`.
+     A rupee figure the company itself supplied, inside the field SEBI mandates,
+     is as good as any direct answer. Moved into `_figure_candidates`, so both
+     paths get it at the caller's confidence.
+  3. **`unquantified`.** 25.2% of order filings match the label and hold no
+     rupee figure in it — `190 MW ISTS connected wind solar`, `a tariff of
+     Rs. 4.35 per unit`, `Not ascertainable`. That used to fall through to the
+     largest-figure fallback, which answers a question the company did not
+     answer; it is how JSWINFRA reported a GST demand and ADANIPORTS a debt
+     slide. Once the mandated label is found, its answer is now the answer — the
+     parse never falls back to scanning the rest of the document, because a
+     document containing the field and no figure in it is telling you there is
+     no figure, not inviting a search for the biggest number on the page.
+     34 documents.
+  4. **A `worth` label variant**, the one real miss the earlier measurement
+     found (9 filings). Admitted only when a money token follows immediately and
+     never after `net` or `book`, since `net worth` read as an order value is
+     precisely the PIRAMALFIN misread.
+
+  Fix 4 then **re-created the exact defect the confidence gate had just
+  removed, at the trusted tier.** KPIL's `secured orders worth ₹13,219 crore so
+  far in the current fiscal year (YTD FY27)` ranked as a single order at 56% of
+  market cap. Caught by hand-verifying the regenerated report against stored
+  source text — not by the suite, which was green. **Widening a pattern needs
+  its own guard, measured on the same corpus.** Two guards resulted:
+
+  - **`cumulative`** — a running total is not one order. An order book, a
+     year-to-date inflow, a quarterly aggregate. The figure is real and worth
+     keeping, being the best available read on order momentum, but never at a
+     tier the ranking trusts. **15 documents, 12% of everything then trusted.**
+     The framing usually *precedes* the number (`our order book stands at orders
+     worth ₹26,000 crore`), which a window starting at the label cannot see, so
+     `_read_window` takes a `context` argument — 160 characters of lookback.
+     Verified not to over-fire on a delivery timeline: `₹640 crore, to be
+     executed in FY27` stays trusted.
+  - **`unquantified` for a classification legend** — a definition is never a
+     disclosure. KPIL footnotes its own size buckets, `*Order Classification:
+     Major indicates an order value estimated over ₹4,000 crore`, and that
+     *threshold* ranked third in the report at 17% of market cap. It is the
+     floor of a bucket the order falls into, so the true value is unstated and
+     larger. Two conditions are required, because either alone is unsafe: a
+     definition verb immediately before the label, **and** the answer opening
+     with a bound rather than an amount. `Classification: Major order of Rs 500
+     crore` keeps its figure, and so does `an order worth over Rs 500 crore`,
+     where the bound is itself the disclosure. **1 document matched and 0
+     correct readings were demoted** across the 107 anchored documents.
+
+  Net: order-filing trusted yield **36.5% → 46.4%** against the 62.5%
+  hand-measured prior, `anchor+scaled` 86 → **106** documents. Trusted readings
+  deliberately *fell* from the intermediate 122 as the two guards landed — the
+  useful direction, since each removal was a fabrication. The report holds
+  **17 ranked rows, and all 17 were read against stored source text.** Every
+  one is a genuine single award or one announcement of a batch from one
+  counterparty. Two show the guards working on live data: MIDHANI takes its
+  ₹158 cr order and not the ₹2,590 cr open position in the very next sentence,
+  and WELENT takes its ₹7,300 cr project cost and not the ₹13,341 cr order book
+  two sentences later.
+
+  Pooled tier counts after all of it (964 documents): `loose` 471, `none` 261,
+  `anchor+scaled` 106, `foreign-currency` 60, `unquantified` 34, `withheld` 17,
+  `cumulative` 15. Note that **pooled yield is not comparable to the prior** —
+  the prior was measured on hand-picked order announcements, so the order column
+  is the only honest comparison. Pooled trusted is 11%.
 
   Anchoring does work where it fires: the naive "largest money figure" gave
   WELCORP **Rs 45,000 cr** from a global-market-size sentence; the anchored
@@ -272,6 +368,14 @@ placeholders only.
 
 ## Known limitations / deliberate design choices
 
+- **A mixed-currency order value keeps only its rupee leg.** LLOYDSENGG's
+  mandated field reads `₹613 Crore + €18 Million`, and the parse reports
+  ₹613 cr — understated by roughly ₹170 cr. Found by reading all 17 ranked
+  rows against source text (2026-09-29). This is a *partial* read rather than
+  a fabrication, so it errs toward under-ranking a real win, which is the safe
+  direction; summing the legs would need a EUR rate this project does not
+  carry, and the issuer offered no conversion of its own. Left alone
+  deliberately. One row of 17.
 - **`--symbols` only works for index members now.** A ticker outside the
   constituents CSV has no ISIN, so no instrument key can be built; it is
   skipped with "no ISIN available". Previously Kite's dump could resolve such
@@ -320,8 +424,12 @@ so an environment gap otherwise costs you that time twice:
 
 ```bash
 .venv\Scripts\python.exe ath_scan.py --help
-.venv\Scripts\python.exe -m pytest tests -q          # 49 tests
+# pytest is NOT installed in .venv -- use unittest, which needs no dependency
+.venv\Scripts\python.exe -m unittest discover -s tests -t . -q    # 470 tests
 ```
+
+Set `PYTHONIOENCODING=utf-8` for anything that prints a rupee sign, and
+`PYTHONPATH=.` for scratch scripts that import `scanner`.
 
 ### Environment history (resolved 2026-09-28)
 
