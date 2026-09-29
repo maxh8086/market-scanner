@@ -131,32 +131,75 @@ placeholders only.
   commercial production/operations` are the only two categories backing it;
   worth checking whether `Acquisition` (1,213 filings) or
   `Diversification/Disinvestment` (72) should count as expansion.
-- **Order-book *value* — MEASURED AS FEASIBLE 2026-09-28, not yet built.**
-  The earlier claim that "no free API publishes one" was too pessimistic. The
-  value is in the attached filing PDF, and SEBI LODR Schedule III Part A para 4
-  mandates a template whose field (g) is literally
-  `Broad consideration or size of order(s)/contract(s) (in INR)`. Anchoring on
-  that label and parsing the number after it, measured over 40 real filings:
-  **78% yield a value, 62.5% from the trusted anchor**, 1 explicitly withheld
-  by the company, 20% need AI or manual reading. Anchoring matters: the naive
-  "largest money figure in the document" gave WELCORP **Rs 45,000 cr** (it had
-  picked up a global-market-size sentence); the anchored parse gives Rs 4,000 cr.
-  Both gaps that blocked this are now **closed** — `scanner/orderval.py` is
-  built and `--filings` is ready to run:
+- **Order-book *value* — BUILT AND MEASURED 2026-09-29 over 964 real PDFs.**
+  The value is in the attached filing PDF, and SEBI LODR Schedule III Part A
+  para 4 mandates a template whose field (g) is literally
+  `Broad consideration or size of order(s)/contract(s) (in INR)`.
+  `scanner/orderval.py` anchors on that label. **The measured yield is well
+  below the pre-build prior** — the prior said 78% yield / 62.5% trusted
+  anchor from a hand read of 40 filings; over the real corpus:
+
+  | | order (222) | expansion (121) | guidance (621) | pooled (964) |
+  |---|---|---|---|---|
+  | trusted anchor | **36.5%** | 0.8% | 0.6% | **8.9%** |
+  | `loose` (untrustworthy) | 11.3% | 59.5% | 51.7% | 43.4% |
+  | `foreign-currency` | 33.8% | 2.5% | 18.2% | 19.8% |
+  | `none` | 16.2% | 33.1% | 28.3% | 26.1% |
+  | `withheld` | 2.3% | 4.1% | 1.1% | 1.8% |
+
+  Only the **order** column is comparable to the prior, and 36.5% vs 62.5% is
+  the honest gap. The 40-filing sample was hand-picked to look like order
+  announcements; the 224 here come from a keyword classifier, so part of the
+  gap is a wider, dirtier population and part is the parser. Broken down over
+  the 222 order filings:
+  - 36.5% anchored cleanly.
+  - 26.6% carry **no value label at all** — a genuine floor for regex; this is
+    the share that needs the LLM/Laya stage, not a better pattern.
+  - 25.2% match the label but have no figure in the 240-char window. Not a
+    window-width problem: the company answered the field with prose, a
+    non-rupee unit (`300 MW at a tariff of Rs. 6.00 per kWh`), or a decline.
+  - 11.7% use a label `_ANCHOR` does not cover — `worth` (9) is a real miss;
+    `order book` (12) is correctly excluded, being cumulative, not one order.
+
+  Three defects this measurement exposed, none of them known before:
+  1. **`foreign-currency` swallows the rupee value the filing already states.**
+     Step 3 of `parse_order_value` searches the *whole* document for a foreign
+     marker and returns before the rupee fallback runs, so
+     `USD 412.5 Million (~ ₹4,000 Crore)` reports "USD" with `rupees=None` and
+     discards the company's own conversion sitting in the adjacent parens.
+  2. **`_FOREIGN` fires on junk and on boilerplate.** 33 of 191 matches have no
+     scale word at all (`$100`, `$5`, `$1`); `USD 30 billion` (21 docs) and
+     `USD 32 billion` (17) are *market-size* sentences, the same class of error
+     as WELCORP's Rs 45,000 cr — but labelled with false confidence.
+  3. **`_SCALED` makes the rupee marker optional, so `loose` fabricates.** A
+     bare `183 Million` became ₹18 cr for JSWINFRA and `1 billion` became
+     ₹100 cr for ADANIPORTS — in both cases the mandated field said
+     *Not Applicable* / *Not ascertainable*. Only 4 filings use that decline
+     language and 2 were fabricated over, so this is small, but a fabricated
+     number is worse than `none` because it looks like data.
+
+  Anchoring does work where it fires: the naive "largest money figure" gave
+  WELCORP **Rs 45,000 cr** from a global-market-size sentence; the anchored
+  parse gives Rs 4,000 cr, and the naive read survives only as `loose`.
+  Prerequisites, both closed:
   1. ~~`factors.db` does not store `attchmntFile`~~ — schema 3 stores
-     `seq_id`, `attchmnt_file` and `att_file_size`. The local cache is already
-     at `user_version = 3` with the URL present on all 391,074 announcements,
-     so **no cache refresh is needed** before `--filings`.
+     `seq_id`, `attchmnt_file` and `att_file_size`.
   2. ~~Indian digit grouping misses~~ — `Rs. 21,57,48,840/-` parses to
-     ₹21.57 cr. The anchor/loose distinction survives into
-     `OrderValue.confidence`, so the WELCORP global-market-size sentence comes
-     back as `loose` rather than being trusted as the order value.
-  **Still to do: re-measure the 78% / 62.5% yield with the finished parser.**
-  Those figures come from the pre-parser manual read of 40 filings and are a
-  reasonable prior, not a measurement of the code that now exists.
-  Scope for the current 298: **274 PDFs across 42 symbols** (plus 176 expansion
-  PDFs across 60), 1–4 pages each, all digital text — `pypdf` extracted 40/40
-  with zero errors. `pypdf` 6.19.0 is now installed in `.venv`.
+     ₹21.57 cr.
+
+  A **third** prerequisite was missing and is now fixed (commit `c276562`): the
+  trim in `factors.py` read NSE's `seq_id` as `seqId`, so the column was blank
+  on all 391,074 cached rows and `--filings` dropped 100% of candidates while
+  reporting that none carried a PDF URL — false, 162,387 did. A cache written
+  before that commit needs `enrich.py --filings --refresh-factors` once; the
+  upsert now backfills rather than `DO NOTHING`, so the repair is a re-run.
+  Actual scope, from the completed run over the current 298 (superseding the
+  earlier "274 PDFs across 42 symbols" estimate): **968 unique filings — 224
+  order, 121 expansion, 623 guidance.** 964 fetched and text-extracted, 4 lost
+  to `pypdf` `PdfReadError`, **0 skipped as oversized**. That last number is
+  only meaningful because `att_file_size` now parses at all: NSE sends
+  `"3.71 MB"`, `int(float(...))` raised on every row, so the `MAX_PDF_BYTES`
+  guard had been silently dead. `pypdf` 6.19.0 is installed in `.venv`.
   `hasXbrl: True` on every announcement is announcement-type tagging only; the
   API exposes no XBRL payload and the order value is not in a tagged taxonomy.
 - **`NEW_ATH_TODAY` and `5-15%` buckets are now populated but not yet
