@@ -12,3 +12,8 @@ pypdf>=4.0.0           # text layer out of NSE filing PDFs
 # Optional. scanner/forecast.py works without these -- the empirical backend
 # has no dependencies, and load_timesfm() reports absence instead of raising.
 # timesfm[torch]>=1.2.0
+
+# Optional. scanner/layaclf.py (Laya decision model). `pip install laya` pulls
+# transformers + tokenizers; weights (~808 MB English) download on first use,
+# never at install time.
+# laya>=0.3.21
