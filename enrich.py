@@ -318,6 +318,51 @@ def stage_filings(db, df: pd.DataFrame, limit: int | None = None,
     _report_parse_yield(db)
 
 
+def stage_reparse(db) -> None:
+    """Re-run the order-value regex over stored text, downloading nothing.
+
+    `scanner/orderval.py` keeps parsing pure and separate from fetching so that
+    a better regex can be re-applied to `docstore` text for free. That was true
+    of the code and impossible from the CLI: the only way to get a corrected
+    parse onto stored rows was `--filings --refetch`, which re-downloads every
+    PDF at a one-second courtesy sleep -- sixteen minutes and ~1 GB of NSE's
+    bandwidth to re-run a regex that takes three seconds.
+
+    Prints the before/after tier counts, because a parser change that moves
+    nothing is the interesting outcome and the easiest one to assume away.
+    """
+    docs = [d for d in docstore.all_filings(db) if d.get("raw_text")]
+    print(f"\n=== Reparse: {len(docs)} stored documents, no downloads ===")
+    if not docs:
+        print("  nothing stored yet; run --filings first")
+        return
+
+    before: dict[str, int] = {}
+    after: dict[str, int] = {}
+    changed = 0
+    for d in docs:
+        old = d.get("regex_confidence") or "?"
+        before[old] = before.get(old, 0) + 1
+        parsed = orderval.parse_order_value(d["raw_text"])
+        after[parsed.confidence] = after.get(parsed.confidence, 0) + 1
+        if (parsed.confidence != d.get("regex_confidence")
+                or parsed.rupees != d.get("regex_rupees")):
+            changed += 1
+            docstore.put_filing(db, dict(
+                d, regex_rupees=parsed.rupees,
+                regex_confidence=parsed.confidence,
+                regex_raw=parsed.raw, regex_currency=parsed.currency))
+
+    print(f"  {changed} of {len(docs)} documents changed")
+    tiers = sorted(set(before) | set(after),
+                   key=lambda k: -(after.get(k, 0) + before.get(k, 0)))
+    print(f"    {'tier':<18} {'before':>7} {'after':>7} {'delta':>7}")
+    for tier in tiers:
+        b, a = before.get(tier, 0), after.get(tier, 0)
+        print(f"    {tier:<18} {b:>7} {a:>7} {a - b:>+7}")
+    _report_parse_yield(db)
+
+
 def _report_parse_yield(db) -> None:
     """What the regex actually got, by confidence tier -- the honest scoreboard."""
     docs = [d for d in docstore.all_filings(db) if d.get("raw_text")]
@@ -739,22 +784,44 @@ def _next_months(last: str, count: int) -> list[str]:
 # Stage: report
 # --------------------------------------------------------------------------
 
-def _best_order_for_symbol(db, symbol: str) -> tuple[float | None, str, str]:
-    """The largest credible order value for a symbol, and where it came from.
+_TRUSTED_TIERS = (orderval.CONF_ANCHOR_SCALED, orderval.CONF_ANCHOR_BARE)
 
-    Largest rather than latest: a symbol's biggest win in the window is what
-    moves the needle, and the scan's job is to draw attention.
+
+def _best_order_for_symbol(db, symbol: str) -> tuple[float | None, str, str]:
+    """The largest *trustworthy* order value for a symbol, and where it came from.
+
+    Only an anchored regex read or the model's extraction qualifies. A `loose`
+    figure is discarded outright rather than ranked, because measuring the output
+    over 964 real filings showed what `loose` actually reads:
+
+        PIRAMALFIN  Rs 109,542 cr  post-merger net worth, from an NCLT appeal
+        KPIL        Rs  26,000 cr  cumulative order book, not one order
+        CIPLA       Rs   2,205 cr  unsecured creditors in a scheme
+        JSWINFRA    Rs      97 cr  a GST demand the company is appealing
+        ADANIPORTS  Rs     100 cr  gross debt, off an investor deck
+
+    Ten of twenty-four ranked rows came from that tier, and they held the top of
+    the ranking -- because the enriched sheet sorts by significance, "largest"
+    selected for the misreads: net worth, debt, cumulative books and tax demands
+    are all systematically larger than any single order. The defect was
+    anti-correlated with correctness, which is the worst property a ranking key
+    can have. `_orderbook_series` already gated on these same tiers; this
+    function simply never did.
+
+    Largest rather than latest, among what survives the gate: a symbol's biggest
+    win in the window is what moves the needle, and the scan's job is to draw
+    attention. `order_value_source` still reports the tier, so a model-sourced
+    value is never mistaken for a filed one.
     """
     best: tuple[float | None, str, str] = (None, "", "")
     for doc in docstore.filings_for(db, symbol):
         if doc.get("kind") != KIND_ORDER:
             continue
         value, source = _num(doc.get("regex_rupees")), doc.get("regex_confidence", "")
-        if not (value and value > 0):
-            value = None
+        if not (value and value > 0 and source in _TRUSTED_TIERS):
+            value, source = None, ""
         # Fall back to the model only where the regex had nothing trustworthy.
-        if value is None or source not in (orderval.CONF_ANCHOR_SCALED,
-                                           orderval.CONF_ANCHOR_BARE):
+        if value is None:
             ex = docstore.get_extraction(db, doc["seq_id"], llm.KIND_ORDER)
             llm_value = _num((ex or {}).get("data", {}).get("order_value_inr"))
             if llm_value and llm_value > 0:
@@ -884,6 +951,10 @@ def main() -> None:
     p.add_argument("--limit", type=int, help="cap items per stage (trial runs)")
     p.add_argument("--force", action="store_true",
                    help="refetch fundamentals even if cached today")
+    p.add_argument("--reparse", action="store_true",
+                   help="re-run the order-value regex over already-stored "
+                        "filing text, downloading nothing (use after changing "
+                        "scanner/orderval.py)")
     p.add_argument("--refetch", action="store_true",
                    help="redownload filing PDFs already stored")
     p.add_argument("--refresh-factors", action="store_true",
@@ -923,13 +994,19 @@ def main() -> None:
                 else:
                     print(f"  {k:<20} {v}")
             if not any([args.fundamentals, args.filings, args.llm,
-                        args.report, args.all]):
+                        args.report, args.all, args.reparse]):
                 return
 
         # Before the scan CSV is touched: this stage reads only factors.db and
         # is useful on its own, with no scan in output/ at all.
         if args.backfill_announcements:
             stage_backfill_announcements(args.backfill_announcements)
+            if not any([args.fundamentals, args.filings, args.llm,
+                        args.report, args.all, args.reparse]):
+                return
+
+        if args.reparse:
+            stage_reparse(db)
             if not any([args.fundamentals, args.filings, args.llm,
                         args.report, args.all]):
                 return

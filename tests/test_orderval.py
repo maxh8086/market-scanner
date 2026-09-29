@@ -174,5 +174,85 @@ class TestOrderValueDataclass(unittest.TestCase):
             self.assertFalse(ov.OrderValue(1e8, conf).trustworthy)
 
 
+class TestForeignCurrencyRegressions(unittest.TestCase):
+    """Three defects found by measuring the parser's output over 964 real PDFs.
+
+    None of them raised, and none were visible from the test suite: each one
+    silently produced a confident-looking wrong answer, which is why they were
+    only ever going to be caught by looking at what the code actually returned.
+    """
+
+    def test_the_issuers_own_inr_conversion_is_kept(self):
+        """WELCORP states both currencies; the rupee value was being discarded.
+
+        The foreign step searched the whole document and returned with
+        rupees=None before the rupee fallback ran, throwing away a figure the
+        company had supplied two characters from the match.
+        """
+        text = ("Welspun Corp Wins Largest-Ever Order for HFIW Pipes, Valued "
+                "at approx. USD 412.5 Million (~ Rs 4,000 Crore), to be "
+                "Supplied from its USA Manufacturing Facility")
+        r = ov.parse_order_value(text)
+        self.assertIsNotNone(r.rupees, "the stated rupee value was dropped")
+        self.assertAlmostEqual(r.crore, 4_000.0)
+        self.assertFalse(r.trustworthy,
+                         "unanchored: the issuer's number, but not a filed "
+                         "answer to the mandated field")
+
+    def test_a_bare_dollar_figure_is_not_a_foreign_reading(self):
+        """33 of 191 foreign readings matched '$100', '$5', '$1'.
+
+        The scale word was optional, so a page artefact counted as a currency
+        quote -- and because a foreign reading pre-empted the rupee fallback,
+        each one suppressed that document's INR figure for nothing.
+        """
+        r = ov.parse_order_value("Page $100 of the annexure. Orders worth "
+                                 "Rs. 250 crore were received.")
+        self.assertEqual(r.confidence, ov.CONF_LOOSE)
+        self.assertAlmostEqual(r.crore, 250.0)
+
+    def test_a_rupee_figure_outranks_a_bare_foreign_quote(self):
+        """Market-size boilerplate was hiding real rupee figures.
+
+        'USD 30 billion' (21 documents) and 'USD 32 billion' (17) are global
+        market-size sentences. Matching one returned foreign-currency for the
+        whole filing, so any rupee amount in it was never read.
+        """
+        text = ("The global market is estimated at USD 30 billion. The Company "
+                "has received orders worth Rs. 1,200 crore.")
+        r = ov.parse_order_value(text)
+        self.assertAlmostEqual(r.crore, 1_200.0)
+
+    def test_a_foreign_quote_alone_still_reports_foreign(self):
+        """The reordering must not cost the signal where it is the only one."""
+        r = ov.parse_order_value("Contract awarded, valued at USD 50 million.")
+        self.assertEqual(r.confidence, ov.CONF_FOREIGN)
+        self.assertEqual(r.currency, "USD")
+        self.assertIsNone(r.rupees, "no FX rate should ever be applied")
+
+
+class TestUnanchoredRequiresARupeeMarker(unittest.TestCase):
+    """A scale word alone does not make a number rupees."""
+
+    def test_a_bare_scaled_number_is_not_read_as_rupees(self):
+        """ADANIPORTS got a Rs 100 cr 'order' from a bare '1 billion'.
+
+        With no label and no currency marker, a scaled number in a filing is as
+        likely to be USD, a share count or a tonnage as it is to be rupees.
+        """
+        r = ov.parse_order_value(
+            "Execution capacity of 183 Million units across 1 billion sq ft.")
+        self.assertIsNone(r.rupees)
+        self.assertEqual(r.confidence, ov.CONF_NONE)
+
+    def test_the_anchored_path_still_accepts_a_bare_scaled_number(self):
+        """The asymmetry is the point: the mandated field is headed '(in INR)',
+        so the label vouches for the unit where nothing else would."""
+        r = ov.parse_order_value(
+            "Broad consideration or size of the order(s)/contract(s): 5,482 crores")
+        self.assertEqual(r.confidence, ov.CONF_ANCHOR_SCALED)
+        self.assertAlmostEqual(r.crore, 5_482.0)
+
+
 if __name__ == "__main__":
     unittest.main()

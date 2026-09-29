@@ -2,9 +2,16 @@
 
 SEBI LODR Schedule III Part A para 4 mandates a disclosure template for order
 wins whose field (g) reads `Broad consideration or size of order(s)/contract(s)
-(in INR)`. That label is the anchor: the value follows it. Measured over 40 real
-filings, anchoring yields a trustworthy figure ~62% of the time and a value of
-some kind ~78% of the time.
+(in INR)`. That label is the anchor: the value follows it.
+
+Measured over 964 real filings (2026-09-29), the anchored parse yields a
+trustworthy figure on **36.5% of order filings** -- not the ~62% a hand read of
+40 filings had suggested. Of the rest: 26.6% carry no value label at all, which
+is this module's floor and the case for a model; 25.2% match the label but
+answer it with prose or a non-rupee unit ("300 MW at a tariff of Rs. 6.00 per
+kWh"); 11.7% use a label variant not covered here, of which `worth` is a real
+gap and `order book` is correctly excluded, being cumulative rather than one
+order.
 
 Anchoring is not a nicety. Taking the largest money figure in the document gave
 WELCORP Rs 45,000 cr -- it had picked up a global-market-size sentence. The
@@ -50,15 +57,33 @@ _ANCHOR = re.compile(
 _RUPEE = r"(?:Rs\.?|INR|₹|Rupees)"
 _SCALE_WORD = r"(crores?|cr\.?|lakhs?|lacs?|millions?|mn\.?|billions?|bn\.?)"
 
-# Rupee amount with an explicit scale word.
-_SCALED = re.compile(rf"{_RUPEE}?\s*([\d][\d,]*(?:\.\d+)?)\s*{_SCALE_WORD}", re.I)
+# Rupee amount with an explicit scale word. The marker is captured rather than
+# merely optional, so `_figure_candidates` can require it where nothing else
+# vouches for the unit -- see `require_marker` there.
+_SCALED = re.compile(
+    rf"({_RUPEE})?\s*([\d][\d,]*(?:\.\d+)?)\s*{_SCALE_WORD}", re.I)
 # Bare rupee amount -- requires the Rs marker, since a bare number in a filing
 # is more often a date, clause number or page number than a value.
 _BARE = re.compile(rf"{_RUPEE}\s*([\d][\d,]*(?:\.\d+)?)\s*(?:/-)?", re.I)
 
+# The scale word is required, not optional. Without it this fired on "$100",
+# "$5" and "$1" -- 33 of 191 foreign readings measured over 964 real filings had
+# no scale word at all, and a bare dollar figure that small is a page artefact,
+# not an order value. Since a foreign reading pre-empts the rupee fallback, each
+# one of those suppressed the whole document's INR figure for nothing.
 _FOREIGN = re.compile(
-    rf"(USD|US\$|EUR|GBP|JPY|\$)\s*([\d][\d,]*(?:\.\d+)?)\s*{_SCALE_WORD}?", re.I
+    rf"(USD|US\$|EUR|GBP|JPY|\$)\s*([\d][\d,]*(?:\.\d+)?)\s*{_SCALE_WORD}", re.I
 )
+
+# The INR conversion an issuer supplies next to a foreign figure, as in
+# "USD 412.5 Million (~ Rs 4,000 Crore)". Anchored at the start of the slice
+# following the foreign match, and requiring both the rupee marker and a scale
+# word, so it cannot drift onto an unrelated number further down the page.
+_FX_INR_CONVERSION = re.compile(
+    rf"^[\s(~\-]*"
+    rf"(?:approx\.?|approximately|equivalent\s+to|equal\s+to|circa|about)?"
+    rf"[\s~]*{_RUPEE}\s*([\d][\d,]*(?:\.\d+)?)\s*{_SCALE_WORD}", re.I)
+_FX_INR_LOOKAHEAD = 48
 # The currency marker alone, anchored to the end of a slice, so a figure can be
 # tested for "is this preceded by USD?". Necessary because _SCALED makes the
 # rupee marker optional: without this check "USD 45 million" parses as
@@ -145,13 +170,22 @@ def _fx_before(text: str, start: int) -> Optional[str]:
     return m.group(1).upper() if m else None
 
 
-def _figure_candidates(text: str, conf: str) -> list[tuple[int, OrderValue]]:
+def _figure_candidates(text: str, conf: str, require_marker: bool = False
+                       ) -> list[tuple[int, OrderValue]]:
     """Every readable money figure in `text`, as (position, OrderValue).
 
     Positions matter for the anchored path: the figure nearest the label is the
     label's value. A figure quoted in a foreign currency is returned as a
     `foreign-currency` reading with no rupee amount rather than being silently
     treated as rupees.
+
+    `require_marker` demands an explicit Rs/INR/rupee sign on a scaled figure.
+    The anchored path leaves it off, because the mandated field is headed
+    "(in INR)" and issuers routinely answer it with a bare "5,482 crores" -- the
+    label vouches for the unit. The unanchored path turns it on, because nothing
+    does: a bare "183 Million" or "1 billion" adrift in a filing is more often
+    USD, a share count or a tonnage than rupees. Read as rupees, that is how
+    ADANIPORTS acquired a Rs 100 cr "order" from an investor deck's debt slide.
     """
     out: list[tuple[int, OrderValue]] = []
 
@@ -161,7 +195,9 @@ def _figure_candidates(text: str, conf: str) -> list[tuple[int, OrderValue]]:
             out.append((sm.start(), OrderValue(
                 None, CONF_FOREIGN, sm.group(0).strip(), currency=fx)))
             continue
-        v = _scaled_value(sm.group(1), sm.group(2))
+        if require_marker and not sm.group(1):
+            continue
+        v = _scaled_value(sm.group(2), sm.group(3))
         if _in_bounds(v):
             out.append((sm.start(), OrderValue(v, conf, sm.group(0).strip())))
 
@@ -201,8 +237,10 @@ def parse_order_value(text: str) -> OrderValue:
     """Best-effort rupee value for one filing's text.
 
     Order of preference: the mandated label, then explicit withholding
-    language, then a foreign-currency quote, then the largest scaled rupee
-    figure anywhere (flagged `loose`).
+    language, then the issuer's own INR conversion of a foreign figure, then the
+    largest rupee figure anywhere (flagged `loose`), and only then a bare
+    foreign quote. Rupees outrank a foreign reading because the value wanted is
+    in INR and a foreign match used to pre-empt the rupee fallback entirely.
     """
     t = normalise_text(text)
     if not t:
@@ -221,23 +259,42 @@ def parse_order_value(text: str) -> OrderValue:
     if wm:
         return OrderValue(None, CONF_WITHHELD, wm.group(0))
 
-    # 3. Foreign currency -- captured but never converted; an FX rate would be
-    #    another data source and a silent source of error.
+    # 3. A foreign figure with the issuer's own INR conversion beside it, as in
+    #    "USD 412.5 Million (~ Rs 4,000 Crore)". Taken before the plain foreign
+    #    reading below, which used to return here with rupees=None and throw the
+    #    conversion away -- a rupee value, stated by the company, two characters
+    #    from the match. Tiered `loose` because we arrived here only after the
+    #    anchor failed: the number is the issuer's, but nothing labels it as the
+    #    order value rather than some other figure in the same sentence.
     fm = _FOREIGN.search(t)
     if fm:
-        return OrderValue(None, CONF_FOREIGN, fm.group(0).strip(),
-                          currency=fm.group(1).upper())
+        conv = _FX_INR_CONVERSION.match(
+            t[fm.end(): fm.end() + _FX_INR_LOOKAHEAD])
+        if conv:
+            v = _scaled_value(conv.group(1), conv.group(2))
+            if _in_bounds(v):
+                return OrderValue(v, CONF_LOOSE, conv.group(0).strip())
 
-    # 4. Largest scaled rupee figure anywhere. Weak by construction -- this is
-    #    the path that produced WELCORP's Rs 45,000 cr, hence the `loose` tier.
+    # 4. Largest rupee figure anywhere, with the Rs marker required. Weak by
+    #    construction -- this is the path that produced WELCORP's Rs 45,000 cr,
+    #    hence the `loose` tier, and `_best_order_for_symbol` in enrich.py must
+    #    not rank on it.
     best: Optional[OrderValue] = None
-    for _, value in _figure_candidates(t, CONF_LOOSE):
+    for _, value in _figure_candidates(t, CONF_LOOSE, require_marker=True):
         if value.rupees is None:
             continue
         if best is None or value.rupees > best.rupees:
             best = value
     if best is not None:
         return best
+
+    # 5. Foreign currency with no conversion offered and no rupee figure in the
+    #    document -- captured but never converted; an FX rate would be another
+    #    data source and a silent source of error. Last, so that a document
+    #    stating a rupee amount reports it instead of reporting "USD".
+    if fm:
+        return OrderValue(None, CONF_FOREIGN, fm.group(0).strip(),
+                          currency=fm.group(1).upper())
 
     return OrderValue(None, CONF_NONE)
 

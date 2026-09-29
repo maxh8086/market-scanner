@@ -223,5 +223,97 @@ class TestNum(unittest.TestCase):
         self.assertIsNone(enrich._num(True))
 
 
+class TestBestOrderForSymbol(_DocstoreCase):
+    """The value that feeds `order_significance`, and therefore the ranking.
+
+    This function had no tests, which is how it shipped a report whose top two
+    rows were a post-merger net worth figure and a cumulative order book, both
+    graded TRANSFORMATIONAL. `_orderbook_series`, forty lines up, gated on the
+    trusted tiers the whole time; this one never did.
+    """
+
+    def test_a_loose_value_is_never_ranked(self):
+        """PIRAMALFIN: Rs 109,542 cr of net worth, read off an NCLT appeal memo,
+        ranked first at 215% of market cap."""
+        docstore.put_filing(self.db, _filing(
+            "s1", rupees=109_542 * significance.CRORE,
+            confidence=orderval.CONF_LOOSE))
+        self.assertEqual(enrich._best_order_for_symbol(self.db, "ACME"),
+                         (None, "", ""))
+
+    def test_a_withheld_or_foreign_reading_is_not_a_value_either(self):
+        for conf in (orderval.CONF_WITHHELD, orderval.CONF_FOREIGN,
+                     orderval.CONF_NONE):
+            with self.subTest(conf=conf):
+                docstore.put_filing(self.db, _filing(
+                    f"w-{conf}", rupees=500 * significance.CRORE,
+                    confidence=conf))
+                value, _, _ = enrich._best_order_for_symbol(self.db, "ACME")
+                self.assertIsNone(value, f"{conf} must not rank")
+
+    def test_an_anchored_value_is_kept_with_its_tier(self):
+        docstore.put_filing(self.db, _filing(
+            "s2", rupees=7_300 * significance.CRORE,
+            confidence=orderval.CONF_ANCHOR_SCALED, an_date="2026-06-02"))
+        value, source, when = enrich._best_order_for_symbol(self.db, "ACME")
+        self.assertAlmostEqual(value, 7_300 * significance.CRORE)
+        self.assertEqual(source, orderval.CONF_ANCHOR_SCALED)
+        self.assertEqual(when, "2026-06-02")
+
+    def test_the_largest_anchored_value_wins_not_the_largest_overall(self):
+        """The defect in one assertion: a big loose figure must not beat a
+        smaller anchored one. Garbage reads -- net worth, gross debt, cumulative
+        order books, tax demands -- are systematically larger than any single
+        order, so 'largest' actively selected for them."""
+        docstore.put_filing(self.db, _filing(
+            "big", rupees=50_000 * significance.CRORE,
+            confidence=orderval.CONF_LOOSE))
+        docstore.put_filing(self.db, _filing(
+            "real", rupees=585 * significance.CRORE,
+            confidence=orderval.CONF_ANCHOR_SCALED))
+        value, source, _ = enrich._best_order_for_symbol(self.db, "ACME")
+        self.assertAlmostEqual(value, 585 * significance.CRORE)
+        self.assertEqual(source, orderval.CONF_ANCHOR_SCALED)
+
+    def test_the_largest_of_several_anchored_values_still_wins(self):
+        for i, cr in enumerate((400, 1_100, 900)):
+            docstore.put_filing(self.db, _filing(
+                f"a{i}", rupees=cr * significance.CRORE,
+                confidence=orderval.CONF_ANCHOR_SCALED))
+        value, _, _ = enrich._best_order_for_symbol(self.db, "ACME")
+        self.assertAlmostEqual(value, 1_100 * significance.CRORE)
+
+    def test_the_model_fills_a_gap_the_regex_could_not(self):
+        """A loose regex read is a gap, not an answer, so the model supersedes
+        it -- and is labelled `llm` so it is never read as a filed figure."""
+        docstore.put_filing(self.db, _filing(
+            "s3", rupees=88 * significance.CRORE,
+            confidence=orderval.CONF_LOOSE))
+        docstore.put_extraction(self.db, "s3", llm.KIND_ORDER,
+                                {"data": {"order_value_inr":
+                                          620 * significance.CRORE}})
+        value, source, _ = enrich._best_order_for_symbol(self.db, "ACME")
+        self.assertAlmostEqual(value, 620 * significance.CRORE)
+        self.assertEqual(source, "llm")
+
+    def test_an_anchored_regex_value_is_not_overridden_by_the_model(self):
+        docstore.put_filing(self.db, _filing(
+            "s4", rupees=300 * significance.CRORE,
+            confidence=orderval.CONF_ANCHOR_BARE))
+        docstore.put_extraction(self.db, "s4", llm.KIND_ORDER,
+                                {"data": {"order_value_inr":
+                                          9_999 * significance.CRORE}})
+        value, source, _ = enrich._best_order_for_symbol(self.db, "ACME")
+        self.assertAlmostEqual(value, 300 * significance.CRORE)
+        self.assertEqual(source, orderval.CONF_ANCHOR_BARE)
+
+    def test_only_order_filings_count(self):
+        docstore.put_filing(self.db, _filing(
+            "s5", kind=enrich.KIND_GUIDANCE, rupees=900 * significance.CRORE,
+            confidence=orderval.CONF_ANCHOR_SCALED))
+        self.assertEqual(enrich._best_order_for_symbol(self.db, "ACME"),
+                         (None, "", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

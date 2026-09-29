@@ -178,6 +178,61 @@ placeholders only.
      language and 2 were fabricated over, so this is small, but a fabricated
      number is worse than `none` because it looks like data.
 
+  A **fourth** defect, worse than the other three and found the same way — by
+  reading the first real report against the source PDFs rather than by running
+  the tests: **`_best_order_for_symbol` ranked on `loose`.** It took the
+  *largest* value for a symbol with no confidence gate at all, while
+  `_orderbook_series` 240 lines away had been gating on the anchored tiers the
+  whole time. Ten of twenty-four ranked rows came from `loose`, and they held
+  the *top* of the ranking, because the enriched sheet sorts by significance
+  descending and misreads are systematically larger than any single order:
+
+  | symbol | `loose` read | what it actually was |
+  |---|---|---|
+  | PIRAMALFIN | ₹109,542 cr | post-merger net worth, from an NCLT appeal |
+  | KPIL | ₹26,000 cr | cumulative order book, not one order |
+  | CIPLA | ₹2,205 cr | unsecured creditors in a scheme of arrangement |
+  | JSWINFRA | ₹97 cr | a GST demand the company is appealing |
+  | ADANIPORTS | ₹100 cr | gross debt, off an investor deck |
+
+  Four of six `TRANSFORMATIONAL` verdicts were wrong. A ranking key
+  anti-correlated with correctness is the worst property such a key can have,
+  and 433 passing tests could not have found it: `_best_order_for_symbol` had
+  **zero** tests, and the defect lived in the output, not in a unit's contract.
+
+  **All four are fixed, and the fix is measured.** `_SCALED` now captures the
+  rupee marker instead of making it optional, and `_figure_candidates` takes
+  `require_marker` — on for the unanchored path, off for the anchored one,
+  because `(in INR)` in the mandated field label vouches for the unit and
+  nothing vouches for a bare `1 billion` adrift in a deck. `_FOREIGN` requires
+  a scale word. A new `_FX_INR_CONVERSION` keeps the issuer's own conversion,
+  and `parse_order_value`'s steps are reordered so a bare foreign quote is the
+  *last* resort rather than pre-empting the rupee fallback.
+  `enrich._TRUSTED_TIERS` gates the ranking. 14 tests added (447 total); 3 of
+  them were confirmed to fail when `_TRUSTED_TIERS` is widened to include
+  `loose`, so they are load-bearing rather than decorative.
+
+  `enrich.py --reparse` re-runs the regex over stored `docstore` text and
+  downloads nothing, printing before/after tier counts. `orderval` was always
+  pure and separable from fetching, but there had been no CLI path to exploit
+  that: the only way to get a corrected parse onto stored rows was
+  `--filings --refetch`, which re-downloads all 964 PDFs at a 1s courtesy
+  sleep — sixteen minutes and ~1 GB of NSE's bandwidth to re-run a
+  three-second regex.
+
+  Measured over the same 964 documents after the fix: 160 changed,
+  `foreign-currency` 191 → 80, `none` 252 → 287, `loose` 418 → 494,
+  `anchor+scaled` unchanged at 86 — the anchored path was correct all along and
+  the repairs land where they should, in the tiers nothing ranks on. The report
+  fell from 24 ranked rows to **16, every one `anchor+scaled`**, and
+  `TRANSFORMATIONAL` from 6 to 2. Six of the 16 were re-read against source
+  text and all six answer the mandated field or an explicit "order value of"
+  (WELENT ₹7,300 cr, ASTRAMICRO ₹2,205.23 cr, KPIL ₹4,000 cr, DATAPATTNS
+  ₹585.76 cr, HFCL ₹2,666.09 cr, SAATVIKGL ₹1,041.63 cr). KPIL survives the
+  cull on a *different* filing — a genuine ₹4,000 cr single order, not the
+  cumulative book. The other ten are the same tier but have not been read by
+  hand.
+
   Anchoring does work where it fires: the naive "largest money figure" gave
   WELCORP **Rs 45,000 cr** from a global-market-size sentence; the anchored
   parse gives Rs 4,000 cr, and the naive read survives only as `loose`.
