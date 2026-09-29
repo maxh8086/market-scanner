@@ -1,0 +1,353 @@
+"""Local LLM extraction over stored filing text.
+
+Runs against any OpenAI-compatible or Ollama HTTP endpoint, so the backend is a
+config change rather than a code change -- llama.cpp's server image, Ollama, or
+anything else that speaks either protocol. Nothing here assumes a GPU.
+
+Why a text model and not a vision/OCR one: measured over 40 real filings, pypdf
+extracted a clean text layer from 40/40. These are digitally-generated PDFs, not
+scans. Running OCR would burn CPU re-deriving text that is already present. What
+regex cannot do is *comprehension* -- a value in a table cell whose label is in
+another cell, prose like "orders aggregating to about three hundred crore",
+several orders summed into one announcement. That is a language task.
+`OCR_FALLBACK_NOTE` records where a vision model would slot in if a scanned
+filing ever does turn up.
+
+Why one call per document rather than one per field: on CPU, prompt processing
+dominates (a 1-4 page filing is ~2-4k tokens, the answer is ~100). Asking for
+six fields in one pass costs almost exactly what asking for one costs; six
+separate passes costs six times as much.
+
+The counterparty fields are extracted even though nothing consumes them yet --
+they are what a supplier/customer graph would be built from, and re-running
+hours of CPU inference later to add one field would be the expensive mistake.
+
+Every response is stored verbatim in the document store (`extractions`), keyed
+by (seq_id, kind), so a prompt change can be re-run offline and diffed against
+the previous answer.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import time
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+# Where a vision model would go, if ever needed. Not built: 0 of 40 measured
+# filings lacked a text layer. The hook is `extract_pdf_text` returning '' --
+# that, and only that, is the signal that OCR is required.
+OCR_FALLBACK_NOTE = (
+    "If extract_pdf_text() returns '' the PDF is a scan and needs OCR. "
+    "Slot a vision model (LLaVA-class, or a CPU OCR engine such as RapidOCR) "
+    "in at that point only -- never ahead of the text layer."
+)
+
+KIND_ORDER = "order_v1"
+KIND_CAPACITY = "capacity_v1"
+# Management's own forward revenue target. A third forward estimate alongside the
+# extrapolated series and the order book, and the only one where a company has
+# staked its credibility on the number -- which is why the *direction* of a
+# revision matters more than its level.
+KIND_GUIDANCE = "guidance_v1"
+
+# Bumped when a prompt changes, so an old extraction is recognisably old rather
+# than silently mixed with new ones.
+PROMPT_VERSION = 1
+
+
+@dataclass
+class LLMConfig:
+    """Backend settings. Defaults point at Ollama's usual local port."""
+
+    base_url: str = "http://localhost:11434"
+    model: str = "qwen3:8b"
+    api: str = "ollama"        # "ollama" or "openai" (llama.cpp server, vLLM, ...)
+    timeout: int = 900         # CPU inference on a long filing is slow, not stuck
+    temperature: float = 0.0   # extraction, not writing: no sampling
+    max_input_chars: int = 12000
+    num_ctx: int = 8192
+
+    @property
+    def endpoint(self) -> str:
+        if self.api == "ollama":
+            return f"{self.base_url.rstrip('/')}/api/chat"
+        return f"{self.base_url.rstrip('/')}/v1/chat/completions"
+
+
+_ORDER_SCHEMA = """{
+  "order_value_inr": number or null,   // absolute rupees, NOT crore
+  "currency": "INR" | "USD" | "EUR" | "other",
+  "value_basis": "stated" | "computed" | "withheld" | "absent",
+  "counterparty": string or null,      // who placed the order, verbatim
+  "counterparty_type": "government" | "psu" | "private" | "foreign" | "unknown",
+  "execution_months": number or null,  // completion timeline, if stated
+  "order_count": number or null,       // >1 if the filing aggregates orders
+  "notes": string                      // one short sentence
+}"""
+
+_ORDER_PROMPT = """You extract facts from an Indian stock exchange filing. Return ONLY JSON.
+
+Rules:
+- SEBI mandates a field "Broad consideration or size of order(s)/contract(s) (in INR)". If present, that is the order value.
+- Report order_value_inr in ABSOLUTE RUPEES. "Rs. 450 crore" is 4500000000. "Rs. 12.5 lakh" is 1250000.
+- Indian digit grouping has no scale word: "Rs. 21,57,48,840/-" is 215748840.
+- If the value is given in a foreign currency, set currency accordingly and set order_value_inr to null. Do NOT convert.
+- If the company says the value is confidential, set value_basis "withheld" and order_value_inr null.
+- Do NOT use a figure that is the company's revenue, market size, paid-up capital, or a past order. If unsure, set order_value_inr null and say why in notes.
+- counterparty is the customer awarding the order, not the filing company.
+
+Schema:
+{schema}
+
+Filing text:
+---
+{text}
+---
+JSON:""".replace("{schema}", _ORDER_SCHEMA)
+
+
+_CAPACITY_SCHEMA = """{
+  "existing_capacity": string or null,   // verbatim, with unit, e.g. "1.2 MTPA"
+  "proposed_capacity": string or null,   // verbatim, with unit
+  "capacity_unit": string or null,
+  "capacity_multiple": number or null,   // proposed / existing, if both known
+  "capex_inr": number or null,           // absolute rupees
+  "commissioning_target": string or null,
+  "is_planned": true or false,           // false if aspirational/exploratory
+  "notes": string
+}"""
+
+_CAPACITY_PROMPT = """You extract facts from an Indian stock exchange filing about expansion. Return ONLY JSON.
+
+Rules:
+- existing_capacity and proposed_capacity must be quoted with their units exactly as the filing states them.
+- If the filing gives only a post-expansion total, put it in proposed_capacity and leave existing_capacity null.
+- capacity_multiple only when BOTH figures are known and in the same unit. Otherwise null.
+- capex_inr in ABSOLUTE RUPEES ("Rs. 300 crore" is 3000000000).
+- is_planned is false when the filing only says the board is "evaluating" or "exploring".
+- Never infer a number the filing does not state.
+
+Schema:
+{schema}
+
+Filing text:
+---
+{text}
+---
+JSON:""".replace("{schema}", _CAPACITY_SCHEMA)
+
+_GUIDANCE_SCHEMA = """{
+  "has_guidance": true or false,
+  "direction": "RAISED" or "LOWERED" or "REAFFIRMED" or "NEW" or "WITHDRAWN" or "NONE",
+  "metric": string or null,              // "revenue", "EBITDA margin", "volume"
+  "target_inr": number or null,          // absolute rupees, if a level is given
+  "growth_pct": number or null,          // if stated as growth instead
+  "margin_pct": number or null,          // if the guidance is a margin
+  "period": string or null,              // "FY27", "next 3 years", as filed
+  "is_management_statement": true or false,
+  "verbatim": string,                    // the sentence the numbers came from
+  "notes": string
+}"""
+
+_GUIDANCE_PROMPT = """You extract management's forward-looking guidance from an Indian listed company's disclosure. Return ONLY JSON.
+
+Rules:
+- Guidance is a forward TARGET management commits to or projects. It is NOT a past result.
+- "Revenue grew 22% last year" is a RESULT, not guidance. has_guidance false.
+- "We expect to reach Rs 1,200 crore revenue in FY27" is guidance: target_inr 12000000000, period "FY27".
+- "We guide to 18-20% growth" is guidance: growth_pct 19 (midpoint), and say in notes that it was a range.
+- direction: RAISED if the filing says the earlier target has been increased; LOWERED if cut; REAFFIRMED if restated unchanged; NEW if given for the first time; WITHDRAWN if management has pulled it.
+- If the filing does not say whether it revises an earlier target, use NEW.
+- target_inr in ABSOLUTE RUPEES ("Rs. 1,200 crore" is 12000000000).
+- is_management_statement false if the number comes from an analyst, a broker note, or a newspaper quoted in the filing. Only the company's own words count.
+- verbatim must be copied from the text, not paraphrased. If you cannot quote it, has_guidance is false.
+- Never infer a target from an order book, a capex plan, or a capacity figure. Those are different disclosures.
+
+Schema:
+{schema}
+
+Filing text:
+---
+{text}
+---
+JSON:""".replace("{schema}", _GUIDANCE_SCHEMA)
+
+PROMPTS = {KIND_ORDER: _ORDER_PROMPT, KIND_CAPACITY: _CAPACITY_PROMPT,
+           KIND_GUIDANCE: _GUIDANCE_PROMPT}
+
+# The filing text goes in at this placeholder. Substitution is `str.replace`,
+# not %-formatting and not str.format: the schemas above are JSON and are full of
+# braces, and a prompt that has to discuss percentage growth is full of percent
+# signs. Both of those are literals a prompt author should be able to write once,
+# without escaping them for a formatter.
+TEXT_SLOT = "{text}"
+
+
+@dataclass
+class LLMResult:
+    """One extraction. `data` is the parsed JSON, `raw` the model's own text."""
+
+    data: dict = field(default_factory=dict)
+    raw: str = ""
+    error: str = ""
+    seconds: float = 0.0
+    model: str = ""
+    prompt_version: int = PROMPT_VERSION
+
+    @property
+    def ok(self) -> bool:
+        return not self.error and bool(self.data)
+
+
+_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.S)
+
+
+def parse_json_response(text: str) -> Optional[dict]:
+    """Pull a JSON object out of a model response.
+
+    Small local models wrap JSON in prose or markdown fences and, when a
+    thinking-capable model is used, may emit a <think> block first. Each of
+    these is handled rather than treated as a failure, because re-running a
+    CPU inference to recover from punctuation is expensive.
+    """
+    if not text:
+        return None
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+
+    fenced = _FENCE.search(text)
+    candidates = [fenced.group(1)] if fenced else []
+    candidates.append(text)
+    # Outermost braces, for a response with prose on either side.
+    first, last = text.find("{"), text.rfind("}")
+    if first != -1 and last > first:
+        candidates.append(text[first: last + 1])
+
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _payload(cfg: LLMConfig, prompt: str) -> dict:
+    messages = [{"role": "user", "content": prompt}]
+    if cfg.api == "ollama":
+        return {
+            "model": cfg.model,
+            "messages": messages,
+            "stream": False,
+            "format": "json",  # Ollama constrains decoding to valid JSON
+            "options": {"temperature": cfg.temperature, "num_ctx": cfg.num_ctx},
+        }
+    return {
+        "model": cfg.model,
+        "messages": messages,
+        "temperature": cfg.temperature,
+        "response_format": {"type": "json_object"},
+    }
+
+
+def _content(cfg: LLMConfig, body: dict) -> str:
+    if cfg.api == "ollama":
+        return (body.get("message") or {}).get("content", "")
+    choices = body.get("choices") or [{}]
+    return (choices[0].get("message") or {}).get("content", "")
+
+
+def health(cfg: LLMConfig, timeout: int = 5) -> tuple[bool, str]:
+    """Is the backend reachable? Checked once before a long batch, so a wrong
+    port fails in a second instead of after the first 15-minute timeout."""
+    import requests
+
+    url = (f"{cfg.base_url.rstrip('/')}/api/tags" if cfg.api == "ollama"
+           else f"{cfg.base_url.rstrip('/')}/v1/models")
+    try:
+        resp = requests.get(url, timeout=timeout)
+        resp.raise_for_status()
+    except Exception as e:  # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"
+    names = ""
+    try:
+        body = resp.json()
+        items = body.get("models") or body.get("data") or []
+        names = ", ".join(
+            str(m.get("name") or m.get("id", "")) for m in items[:20])
+    except Exception:  # noqa: BLE001
+        pass
+    if names and cfg.model.split(":")[0] not in names:
+        return True, f"reachable, but '{cfg.model}' not in: {names}"
+    return True, names or "reachable"
+
+
+def extract(cfg: LLMConfig, text: str, kind: str = KIND_ORDER) -> LLMResult:
+    """Run one extraction. Never raises -- the error lands on the result."""
+    import requests
+
+    if kind not in PROMPTS:
+        return LLMResult(error=f"unknown extraction kind: {kind}")
+    if not text or not text.strip():
+        return LLMResult(error="no text to extract from")
+
+    # Truncating from the front: the mandated disclosure table is near the top
+    # of an order filing, and the tail is boilerplate and signatures.
+    prompt = PROMPTS[kind].replace(TEXT_SLOT, text[: cfg.max_input_chars])
+
+    started = time.time()
+    try:
+        resp = requests.post(cfg.endpoint, json=_payload(cfg, prompt),
+                             timeout=cfg.timeout)
+        resp.raise_for_status()
+        raw = _content(cfg, resp.json())
+    except Exception as e:  # noqa: BLE001
+        return LLMResult(error=f"{type(e).__name__}: {e}",
+                         seconds=round(time.time() - started, 1),
+                         model=cfg.model)
+
+    elapsed = round(time.time() - started, 1)
+    data = parse_json_response(raw)
+    if data is None:
+        return LLMResult(raw=raw, error="response was not JSON",
+                         seconds=elapsed, model=cfg.model)
+    return LLMResult(data=data, raw=raw, seconds=elapsed, model=cfg.model)
+
+
+# --------------------------------------------------------------------------
+# Cross-checking the model against the regex
+# --------------------------------------------------------------------------
+
+AGREE = "agree"
+DISAGREE = "disagree"
+LLM_ONLY = "llm-only"
+REGEX_ONLY = "regex-only"
+NEITHER = "neither"
+
+# Within 2% counts as agreement: the two paths round differently (a model may
+# read "about Rs 450 crore" as 450, the regex as 450.00) and that is not a
+# disagreement worth flagging.
+AGREE_TOLERANCE_PCT = 2.0
+
+
+def cross_check(regex_rupees: Optional[float],
+                llm_rupees: Optional[float]) -> str:
+    """Compare the two extraction paths for one filing.
+
+    Agreement between an anchored regex and a language model is strong evidence
+    the number is right. Disagreement is the interesting case: it means one of
+    them misread the document, and it is worth a human glance rather than a
+    silent pick. This is why the LLM does not simply overwrite the regex.
+    """
+    if regex_rupees is None and llm_rupees is None:
+        return NEITHER
+    if regex_rupees is None:
+        return LLM_ONLY
+    if llm_rupees is None:
+        return REGEX_ONLY
+    if regex_rupees <= 0:
+        return DISAGREE
+    delta = abs(llm_rupees - regex_rupees) / regex_rupees * 100.0
+    return AGREE if delta <= AGREE_TOLERANCE_PCT else DISAGREE

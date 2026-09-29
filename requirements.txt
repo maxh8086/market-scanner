@@ -4,3 +4,11 @@ openpyxl>=3.1.0
 requests>=2.31.0
 python-dotenv>=1.0.0
 rich>=13.0.0
+
+# Enrichment (enrich.py). Not needed for the daily ath_scan.py run.
+tinydb>=4.8.0          # document store for filings, fundamentals, extractions
+pypdf>=4.0.0           # text layer out of NSE filing PDFs
+
+# Optional. scanner/forecast.py works without these -- the empirical backend
+# has no dependencies, and load_timesfm() reports absence instead of raising.
+# timesfm[torch]>=1.2.0

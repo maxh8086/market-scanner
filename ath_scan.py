@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from scanner import ath, factors, history, report
+from scanner import ath, factors, history, indicators, report
 from scanner.constituents import load_constituents
 from scanner.upstox import QUOTE_BATCH_SIZE, UpstoxClient, instrument_key
 
@@ -176,9 +176,21 @@ def main() -> int:
         if result is None:
             continue  # more than max_dist below ATH; not an error, just excluded
 
+        # Moving averages. Cached candles stop at yesterday, so today's live
+        # price is appended as today's close -- otherwise "trading above" would
+        # answer yesterday's question. Costs no extra request.
+        closes = [float(c) for c in hist.candles["close"].tolist()]
+        closes.append(float(ltp))
+        trend = indicators.compute_trend(closes, float(ltp))
+
         rows.append(
             {
                 "symbol": sym,
+                # Carried through so enrich.py can match NSE announcements, which
+                # are keyed by ISIN and not by symbol. It is already in hand from
+                # the constituents CSV, and re-deriving it downstream would mean
+                # re-reading that file and re-doing the resolution.
+                "isin": info["key"].split("|")[1],
                 "company": info["company"],
                 "industry": info["industry"],
                 "ltp": ltp,
@@ -191,6 +203,7 @@ def main() -> int:
                 "days_since_ath": result.days_since_ath,
                 "listed_days": result.listed_days,
                 "recent_ipo": result.recent_ipo,
+                **trend,
             }
         )
 

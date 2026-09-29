@@ -42,6 +42,29 @@ placeholders only.
   (4,036 rows) and 13 monthly `corporate-announcements` requests for 12 months
   (165,881 rows, ~70s). Cached in `data/factors.db`, schema 2.
 
+- **MOVING-AVERAGE TREND ADDED 2026-09-28.** `scanner/indicators.py` (pure, no
+  I/O, like `scanner/ath.py`) adds 5 columns → **23 total**: `ema50`, `sma200`,
+  `above_ema50`, `above_sma200`, `trend`. Costs **zero extra API requests** —
+  the 2.6M cached candles already hold everything. Today's live LTP is appended
+  as today's close, since `history.py` never caches the forming candle.
+  Verified bit-exact against pandas `ewm(span=50, adjust=False)` / `rolling(200)`
+  on RELIANCE/INFY/TCS/LT/BEL (diff 0.00e+00). Distribution over the 298:
+  UPTREND 124 · ABOVE_200_ONLY 105 · BELOW_BOTH 61 · ABOVE_50_ONLY 3 ·
+  INSUFFICIENT_HISTORY 5. **39 rows are UPTREND *and* carry ≥1 corporate factor**
+  — that intersection is the actual shortlist.
+  Structural sanity: all `NEW_ATH_TODAY` and all `0-5%` are UPTREND (a stock at
+  its ATH cannot sit below its averages), and `BELOW_BOTH` concentrates in
+  `15-26%`. EMA is SMA-seeded on the oldest 50 and walked forward, so with years
+  of candles the seed is irrelevant (verified <0.001 divergence).
+- **`trend` uses `INSUFFICIENT_HISTORY`, never `"n/a"`.** `"n/a"` is in pandas'
+  default `na_values`, so a CSV round-trip silently turned the label into NaN
+  and erased the difference between "recent IPO, no 200-SMA" and "column
+  absent". Regression-tested.
+- **The Excel writer now survives a locked workbook.** A full run spends
+  minutes fetching before it reaches the writer; a workbook open in Excel used
+  to raise `PermissionError` and destroy that work. It now falls back to
+  `ath_scan_<date>_<HHMMSS>.xlsx` and says so.
+
 ## Questions closed this session
 
 1. **Split/bonus adjustment — ADJUSTED.** Verified on two stocks and two
@@ -108,11 +131,26 @@ placeholders only.
   commercial production/operations` are the only two categories backing it;
   worth checking whether `Acquisition` (1,213 filings) or
   `Diversification/Disinvestment` (72) should count as expansion.
-- **No order-book *value*.** Factor 3 counts announcements, it does not carry a
-  rupee order-book figure — no free API publishes one; it lives in quarterly
-  results and concall decks. The registered `screener-mcp` has
-  `get_forward_outlook` / `ask_company_research` for this, but MCP is
-  agent-loop-only, so bulk extraction needs the package imported as a library.
+- **Order-book *value* — MEASURED AS FEASIBLE 2026-09-28, not yet built.**
+  The earlier claim that "no free API publishes one" was too pessimistic. The
+  value is in the attached filing PDF, and SEBI LODR Schedule III Part A para 4
+  mandates a template whose field (g) is literally
+  `Broad consideration or size of order(s)/contract(s) (in INR)`. Anchoring on
+  that label and parsing the number after it, measured over 40 real filings:
+  **78% yield a value, 62.5% from the trusted anchor**, 1 explicitly withheld
+  by the company, 20% need AI or manual reading. Anchoring matters: the naive
+  "largest money figure in the document" gave WELCORP **Rs 45,000 cr** (it had
+  picked up a global-market-size sentence); the anchored parse gives Rs 4,000 cr.
+  Two gaps to close before building:
+  1. `factors.db` **does not store `attchmntFile`** (the PDF URL) or
+     `attFileSize`. Needs schema 3. NSE returns both.
+  2. Indian digit grouping (`Rs. 21,57,48,840/-`) has no scale word, so a
+     scale-word-only regex misses it — that alone made RAILTEL a false negative.
+  Scope for the current 298: **274 PDFs across 42 symbols** (plus 176 expansion
+  PDFs across 60), 1–4 pages each, all digital text — `pypdf` extracted 40/40
+  with zero errors. `pypdf` 6.19.0 is now installed in `.venv`.
+  `hasXbrl: True` on every announcement is announcement-type tagging only; the
+  API exposes no XBRL payload and the order value is not in a tagged taxonomy.
 - **`NEW_ATH_TODAY` and `5-15%` buckets are now populated but not yet
   eyeballed against a chart.** The full run finally put names in them
   (QPOWER 0.06%, DYNAMATIC 2.22%, and 122 names in `5-15%`), so this is

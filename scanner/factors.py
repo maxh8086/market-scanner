@@ -15,7 +15,8 @@ import pandas as pd
 import requests
 
 DB_PATH = Path("data/factors.db")
-SCHEMA_VERSION = 2  # 2: dates stored ISO-normalised so range filters work
+SCHEMA_VERSION = 3  # 2: dates ISO-normalised. 3: seq_id + attchmnt_file kept,
+                    #    so a filing's PDF can be fetched and re-read later.
 
 # Lookback windows for matching announcements
 BONUS_LOOKBACK_MONTHS = 24
@@ -111,6 +112,37 @@ DEMERGER_KEYWORDS = {
 DEMERGER_WEAK_DESC_CATEGORIES = {"SCHEME OF ARRANGEMENT"}
 DEMERGER_WEAK_KEYWORDS = {"SCHEME OF ARRANGEMENT"}
 
+# Documents where management states a forward revenue target. These are selected
+# by *document type* rather than by keyword, because guidance is a statement in
+# prose -- a sentence in a presentation deck or a concall answer -- and the
+# attachment-text snippet NSE caches is far too short (median 100 chars) to
+# contain it. So the rule is "fetch these document types and let the model read
+# them", which is the opposite of the order-value rule where a mandated template
+# field makes a regex the trusted path.
+GUIDANCE_DESC_CATEGORIES = {
+    "INVESTOR PRESENTATION",
+    "EARNINGS CALL TRANSCRIPT",
+    "ANALYSTS/INSTITUTIONAL INVESTOR MEETING/CON. CALL UPDATES",
+    "TRANSCRIPT",
+    "PRESS RELEASE / MEDIA RELEASE",
+    "FINANCIAL RESULT UPDATES",
+}
+GUIDANCE_KEYWORDS = {
+    "INVESTOR PRESENTATION",
+    "EARNINGS CALL",
+    "CONFERENCE CALL",
+    "CONCALL",
+    "ANALYST MEET",
+    "GUIDANCE",
+    "OUTLOOK FOR",
+    "TRANSCRIPT",
+}
+
+# Guidance is restated every quarter, so a year of documents is the useful
+# window -- long enough to see a revision, short enough that a withdrawn target
+# from two years ago does not still read as current.
+GUIDANCE_LOOKBACK_MONTHS = 12
+
 BONUS_DESC_CATEGORIES = {"BONUS"}
 
 
@@ -177,6 +209,13 @@ def _connect() -> sqlite3.Connection:
             desc TEXT,
             attchmnt_text TEXT,
             sort_date TEXT,
+            -- Schema 3. attchmnt_file is the filing PDF's direct URL, which is
+            -- where an order value actually lives; attchmnt_text is only a
+            -- truncated snippet (median 100 chars, 9.5% carry a money figure).
+            -- seq_id is NSE's own id, used as the document store's key.
+            seq_id TEXT,
+            attchmnt_file TEXT,
+            att_file_size INTEGER,
             PRIMARY KEY (isin, an_dt, desc)
         )
         """
@@ -225,6 +264,16 @@ def _to_iso(date_str: str) -> str:
     """
     parsed = _parse_date_str(date_str)
     return parsed.isoformat() if parsed else ""
+
+
+def _int_or_none(value) -> int | None:
+    """NSE reports attFileSize as a string, sometimes blank or absent."""
+    if value in (None, ""):
+        return None
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
 
 
 def _month_end(d: date) -> date:
@@ -335,13 +384,18 @@ def _save_announcements(rows: list[dict]) -> None:
                 # fall back to an_dt when NSE omits it, or the row becomes
                 # invisible to every cached read.
                 _to_iso(row.get("sort_date", "")) or _to_iso(row.get("an_dt", "")),
+                str(row.get("seqId") or row.get("seq_id") or ""),
+                row.get("attchmntFile", "") or "",
+                _int_or_none(row.get("attFileSize")),
             )
             for row in rows
         ]
         conn.executemany(
             """
-            INSERT INTO announcements (isin, symbol, an_dt, desc, attchmnt_text, sort_date)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO announcements
+                (isin, symbol, an_dt, desc, attchmnt_text, sort_date,
+                 seq_id, attchmnt_file, att_file_size)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(isin, an_dt, desc) DO NOTHING
             """,
             data,
@@ -381,7 +435,9 @@ def _load_cached_announcements(from_date: date, to_date: date) -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT isin, symbol, an_dt, desc, attchmnt_text, sort_date FROM announcements
+            SELECT isin, symbol, an_dt, desc, attchmnt_text, sort_date,
+                   seq_id, attchmnt_file, att_file_size
+            FROM announcements
             WHERE sort_date >= ? AND sort_date <= ?
             """,
             (from_date.isoformat(), to_date.isoformat()),
@@ -394,6 +450,9 @@ def _load_cached_announcements(from_date: date, to_date: date) -> list[dict]:
                 "desc": r[3],
                 "attchmntText": r[4],
                 "sort_date": r[5],
+                "seqId": r[6],
+                "attchmntFile": r[7],
+                "attFileSize": r[8],
             }
             for r in rows
         ]
@@ -491,9 +550,14 @@ def fetch_announcements(
             rows = resp.json()
             if not isinstance(rows, list):
                 rows = []
-            # Trim to the fields the classifiers use before accumulating. The
-            # raw NSE rows carry long attachment URLs and metadata; keeping all
-            # of them for a multi-month window runs to hundreds of megabytes.
+            # Trim to the fields the classifiers use before accumulating. NSE's
+            # raw rows carry a lot of metadata; keeping all of it for a
+            # multi-month window runs to hundreds of megabytes.
+            #
+            # attchmntFile is kept from schema 3 onward despite being long: it
+            # is the filing PDF, which is the only place the order value is
+            # actually stated. attFileSize lets a fetch skip an outsized file
+            # before downloading it.
             trimmed = [
                 {
                     "sm_isin": r.get("sm_isin", ""),
@@ -502,6 +566,9 @@ def fetch_announcements(
                     "desc": r.get("desc", ""),
                     "attchmntText": r.get("attchmntText", ""),
                     "sort_date": r.get("sort_date", ""),
+                    "seqId": r.get("seqId", ""),
+                    "attchmntFile": r.get("attchmntFile", ""),
+                    "attFileSize": r.get("attFileSize"),
                 }
                 for r in rows
                 if isinstance(r, dict)
@@ -645,6 +712,59 @@ def classify_demerger(ca_rows: list[dict], ann_rows: list[dict], isin: str, toda
     return ""
 
 
+def matches_orderbook(row: dict) -> tuple[bool, bool]:
+    """Is this announcement row an order win? Returns (matched, by_category).
+
+    The single order-win rule, extracted so every caller shares it: the
+    per-stock factor, the enrichment fetcher, and the market-wide intensity
+    series. Three copies of a keyword test would drift, and a market series
+    counting different filings than the per-stock column would be worse than no
+    market series at all.
+
+    Keys are the cached-row spelling (`desc`, `attchmntText`), which
+    `_load_cached_announcements` and `fetch_announcements` both produce.
+    """
+    desc = str(row.get("desc", "")).upper().strip()
+    if desc in ORDERBOOK_DESC_EXCLUDE:
+        return False, False      # regulatory action, not an order win
+    text = str(row.get("attchmntText", "") or "").upper()
+    is_category = desc in ORDERBOOK_DESC_CATEGORIES
+    if not (is_category or any(kw in text for kw in ORDERBOOK_KEYWORDS)):
+        return False, False
+    return True, is_category
+
+
+def select_orderbook_filings(
+    ann_rows: list[dict], isin: str, today: date
+) -> list[dict]:
+    """The announcement rows that count as order wins for `isin`.
+
+    Split out from `classify_orderbook` so the enrichment pipeline fetches the
+    PDFs of exactly the filings the summary counted. Duplicating the matching
+    rule in two places would let the count and the fetched set drift apart.
+
+    Each returned row is the cached announcement dict plus `an_date` (a parsed
+    `date`) and `by_category` (True when NSE's own category matched, rather than
+    an attachment-text keyword). Newest first.
+    """
+    cutoff = _subtract_months(today, ORDERBOOK_LOOKBACK_MONTHS)
+
+    out: list[dict] = []
+    for row in ann_rows:
+        if row.get("sm_isin") != isin:
+            continue
+        is_order, is_category = matches_orderbook(row)
+        if not is_order:
+            continue
+        an_dt = _parse_date_str(row.get("an_dt", ""))
+        if an_dt is None or an_dt < cutoff:
+            continue
+        out.append(dict(row, an_date=an_dt, by_category=is_category))
+
+    out.sort(key=lambda r: r["an_date"], reverse=True)
+    return out
+
+
 def classify_orderbook(ann_rows: list[dict], isin: str, today: date) -> str:
     """Classify order-book wins from announcements.
 
@@ -652,48 +772,28 @@ def classify_orderbook(ann_rows: list[dict], isin: str, today: date) -> str:
     suffixed ', text-match only' when no filing used one of NSE's own
     order-win categories and the match rests on attachment-text keywords.
     """
-    cutoff = _subtract_months(today, ORDERBOOK_LOOKBACK_MONTHS)
-
-    matches: list[date] = []
-    by_category = 0
-    for row in ann_rows:
-        if row.get("sm_isin") != isin:
-            continue
-        desc = str(row.get("desc", "")).upper().strip()
-        if desc in ORDERBOOK_DESC_EXCLUDE:
-            continue  # regulatory action, not an order win
-        text = str(row.get("attchmntText", "")).upper()
-        is_category = desc in ORDERBOOK_DESC_CATEGORIES
-        if not (is_category or any(kw in text for kw in ORDERBOOK_KEYWORDS)):
-            continue
-        an_dt = _parse_date_str(row.get("an_dt", ""))
-        if an_dt is None or an_dt < cutoff:
-            continue
-        matches.append(an_dt)
-        if is_category:
-            by_category += 1
-
-    if not matches:
+    matched = select_orderbook_filings(ann_rows, isin, today)
+    if not matched:
         return ""
 
-    matches.sort(reverse=True)
-    count = len(matches)
-    tier = "" if by_category else ", text-match only"
+    count = len(matched)
+    tier = "" if any(r["by_category"] for r in matched) else ", text-match only"
     return (
         f"{count} order announcement{'s' if count != 1 else ''}"
-        f"{tier} (latest {matches[0].isoformat()})"
+        f"{tier} (latest {matched[0]['an_date'].isoformat()})"
     )
 
 
-def classify_expansion(ann_rows: list[dict], isin: str, today: date) -> str:
-    """Classify expansion/capex announcements.
+def select_expansion_filings(
+    ann_rows: list[dict], isin: str, today: date
+) -> list[dict]:
+    """The announcement rows that count as expansion/capex for `isin`.
 
-    Returns empty string or 'N expansion announcement(s) (latest YYYY-MM-DD)'.
+    Same contract as `select_orderbook_filings`; see that docstring.
     """
     cutoff = _subtract_months(today, EXPANSION_LOOKBACK_MONTHS)
 
-    matches: list[date] = []
-    by_category = 0
+    matched: list[dict] = []
     for row in ann_rows:
         if row.get("sm_isin") != isin:
             continue
@@ -705,19 +805,64 @@ def classify_expansion(ann_rows: list[dict], isin: str, today: date) -> str:
         an_dt = _parse_date_str(row.get("an_dt", ""))
         if an_dt is None or an_dt < cutoff:
             continue
-        matches.append(an_dt)
-        if is_category:
-            by_category += 1
+        matched.append(dict(row, an_date=an_dt, by_category=is_category))
 
-    if not matches:
+    matched.sort(key=lambda r: r["an_date"], reverse=True)
+    return matched
+
+
+def select_guidance_filings(
+    ann_rows: list[dict], isin: str, today: date,
+    limit: int | None = None,
+) -> list[dict]:
+    """Documents likely to contain management's forward guidance, newest first.
+
+    No `classify_guidance` counterpart, and deliberately so: a company filing an
+    investor presentation is not a signal, it is a routine obligation. The
+    document only matters once a model has read it, so this returns candidates to
+    fetch rather than a factor to report.
+
+    `limit` caps how many are returned per symbol because these are the largest
+    PDFs NSE serves -- a presentation deck runs to megabytes where an order
+    announcement is one page. The newest documents carry the current target, so
+    truncating the oldest loses the least.
+    """
+    cutoff = _subtract_months(today, GUIDANCE_LOOKBACK_MONTHS)
+
+    matched: list[dict] = []
+    for row in ann_rows:
+        if row.get("sm_isin") != isin:
+            continue
+        desc = str(row.get("desc", "")).upper().strip()
+        text = str(row.get("attchmntText", "") or "").upper()
+        is_category = desc in GUIDANCE_DESC_CATEGORIES
+        if not (is_category
+                or any(kw in desc for kw in GUIDANCE_KEYWORDS)
+                or any(kw in text for kw in GUIDANCE_KEYWORDS)):
+            continue
+        an_dt = _parse_date_str(row.get("an_dt", ""))
+        if an_dt is None or an_dt < cutoff:
+            continue
+        matched.append(dict(row, an_date=an_dt, by_category=is_category))
+
+    matched.sort(key=lambda r: r["an_date"], reverse=True)
+    return matched[:limit] if limit else matched
+
+
+def classify_expansion(ann_rows: list[dict], isin: str, today: date) -> str:
+    """Classify expansion/capex announcements.
+
+    Returns empty string or 'N expansion announcement(s) (latest YYYY-MM-DD)'.
+    """
+    matched = select_expansion_filings(ann_rows, isin, today)
+    if not matched:
         return ""
 
-    matches.sort(reverse=True)
-    count = len(matches)
-    tier = "" if by_category else ", text-match only"
+    count = len(matched)
+    tier = "" if any(r["by_category"] for r in matched) else ", text-match only"
     return (
         f"{count} expansion announcement{'s' if count != 1 else ''}"
-        f"{tier} (latest {matches[0].isoformat()})"
+        f"{tier} (latest {matched[0]['an_date'].isoformat()})"
     )
 
 

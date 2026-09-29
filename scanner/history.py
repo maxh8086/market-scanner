@@ -23,6 +23,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Iterable
 
 import pandas as pd
 
@@ -131,6 +132,42 @@ def _load_cached_candles(conn: sqlite3.Connection, symbol: str) -> pd.DataFrame:
     if not df.empty:
         df["date"] = pd.to_datetime(df["date"]).dt.date
     return df
+
+
+def cached_closes(symbols: Iterable[str], min_rows: int = 1
+                  ) -> dict[str, list[float]]:
+    """Closes already in the cache, per symbol, oldest first. No network.
+
+    For consumers that derive something from price history but must never cause
+    a fetch: the volatility read, for one, is an optional enrichment and has no
+    business spending API calls or making a stale cache look like a data error.
+    Symbols with fewer than `min_rows` closes are left out entirely, so a caller
+    can ask for "only symbols with enough history" in one step.
+
+    Returns nothing rather than raising when the database does not exist yet.
+    """
+    wanted = [s for s in symbols if s]
+    if not wanted or not DB_PATH.exists():
+        return {}
+    out: dict[str, list[float]] = {}
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        # Chunked: sqlite's default host-parameter limit is 999, and this is
+        # called with the whole scan (~750 symbols) or more.
+        for start in range(0, len(wanted), 500):
+            chunk = wanted[start:start + 500]
+            placeholders = ",".join("?" * len(chunk))
+            cur = conn.execute(
+                f"SELECT symbol, close FROM candles WHERE symbol IN "
+                f"({placeholders}) AND close IS NOT NULL ORDER BY symbol, date",
+                chunk)
+            for symbol, close in cur.fetchall():
+                out.setdefault(symbol, []).append(float(close))
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    return {s: v for s, v in out.items() if len(v) >= min_rows}
 
 
 def _save_candles(conn: sqlite3.Connection, symbol: str, df: pd.DataFrame) -> None:

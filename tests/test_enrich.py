@@ -1,0 +1,227 @@
+"""Tests for the glue in enrich.py, narrowed to where a wrong answer is silent.
+
+Most of this project's logic lives in `scanner/` and is tested there. What is
+left in enrich.py is plumbing, and plumbing fails quietly: a unit conversion at
+the wrong boundary, a "newest wins" comparison that picks the oldest, a column
+filled from the wrong source. None of those raise. All of them poison a column
+that a reader will take at face value.
+"""
+
+import tempfile
+import unittest
+from pathlib import Path
+
+import pandas as pd
+
+import enrich
+from scanner import docstore, llm, orderval, revenue, significance
+
+
+def _filing(seq_id, symbol="ACME", kind=enrich.KIND_ORDER, an_date="2026-05-01",
+            rupees=None, confidence=None):
+    return {"seq_id": seq_id, "symbol": symbol, "kind": kind,
+            "an_date": an_date, "regex_rupees": rupees,
+            "regex_confidence": confidence, "isin": "INE000A01001"}
+
+
+class _DocstoreCase(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.db = docstore.open_db(Path(self._tmp.name) / "docs.json")
+        self.addCleanup(self._tmp.cleanup)
+        self.addCleanup(self.db.close)
+
+
+class TestOrdersForSymbol(_DocstoreCase):
+    def test_a_trusted_regex_value_is_converted_to_crore(self):
+        """The load-bearing assertion in this file. Screener revenue is in crore
+        and order values are in rupees, so `order_backed` divides one by the
+        other and a missed conversion is out by a factor of ten million."""
+        docstore.put_filing(self.db, _filing(
+            "s1", rupees=2_000 * significance.CRORE,
+            confidence=orderval.CONF_ANCHOR_SCALED))
+        orders = enrich._orders_for_symbol(self.db, "ACME")
+        self.assertEqual(len(orders), 1)
+        self.assertAlmostEqual(orders[0]["value"], 2_000.0)
+
+    def test_an_untrusted_regex_value_falls_back_to_the_model(self):
+        """A bare number with no anchor is the case the regex gets wrong, so the
+        model's reading wins -- and it must be converted too."""
+        docstore.put_filing(self.db, _filing("s2", rupees=999 * significance.CRORE,
+                                             confidence="guess"))
+        docstore.put_extraction(self.db, "s2", llm.KIND_ORDER,
+                                {"data": {"order_value_inr": 150 * significance.CRORE,
+                                          "execution_months": 18}})
+        orders = enrich._orders_for_symbol(self.db, "ACME")
+        self.assertAlmostEqual(orders[0]["value"], 150.0)
+        self.assertEqual(orders[0]["execution_months"], 18)
+
+    def test_a_filing_with_no_value_from_either_source_is_dropped(self):
+        docstore.put_filing(self.db, _filing("s3"))
+        self.assertEqual(enrich._orders_for_symbol(self.db, "ACME"), [])
+
+    def test_a_zero_value_is_not_an_order(self):
+        docstore.put_filing(self.db, _filing(
+            "s4", rupees=0, confidence=orderval.CONF_ANCHOR_SCALED))
+        self.assertEqual(enrich._orders_for_symbol(self.db, "ACME"), [])
+
+    def test_only_order_filings_are_considered(self):
+        docstore.put_filing(self.db, _filing(
+            "s5", kind=enrich.KIND_EXPANSION, rupees=500 * significance.CRORE,
+            confidence=orderval.CONF_ANCHOR_SCALED))
+        self.assertEqual(enrich._orders_for_symbol(self.db, "ACME"), [])
+
+    def test_a_missing_execution_period_is_zero_not_none(self):
+        """`order_backed` divides by it, so None would be a TypeError on a path
+        that is otherwise working."""
+        docstore.put_filing(self.db, _filing(
+            "s6", rupees=100 * significance.CRORE,
+            confidence=orderval.CONF_ANCHOR_BARE))
+        self.assertEqual(enrich._orders_for_symbol(self.db, "ACME")[0]
+                         ["execution_months"], 0)
+
+    def test_every_order_is_returned_not_just_the_largest(self):
+        for i, cr in enumerate((100, 300, 200)):
+            docstore.put_filing(self.db, _filing(
+                f"m{i}", rupees=cr * significance.CRORE,
+                confidence=orderval.CONF_ANCHOR_SCALED))
+        values = sorted(o["value"] for o in
+                        enrich._orders_for_symbol(self.db, "ACME"))
+        self.assertEqual(values, [100.0, 200.0, 300.0])
+
+
+class TestGuidanceForSymbol(_DocstoreCase):
+    def _put(self, seq_id, an_date, data):
+        docstore.put_filing(self.db, _filing(seq_id, kind=enrich.KIND_GUIDANCE,
+                                             an_date=an_date))
+        docstore.put_extraction(self.db, seq_id, llm.KIND_GUIDANCE,
+                                {"data": data})
+
+    def test_the_newest_target_wins_not_the_largest(self):
+        """The opposite rule from order values, and the reason is the point: an
+        order win stays true, but a target is superseded the moment management
+        issues a new one. Reporting last year's raise after this year's cut
+        would be worse than reporting nothing."""
+        self._put("g1", "2025-05-01", {
+            "has_guidance": True, "is_management_statement": True,
+            "direction": revenue.GUIDANCE_RAISED, "growth_pct": 25.0,
+            "verbatim": "raising our outlook"})
+        self._put("g2", "2026-05-01", {
+            "has_guidance": True, "is_management_statement": True,
+            "direction": revenue.GUIDANCE_LOWERED, "growth_pct": 5.0,
+            "verbatim": "moderating our outlook"})
+        g = enrich._guidance_for_symbol(self.db, "ACME")
+        self.assertEqual(g.direction, revenue.GUIDANCE_LOWERED)
+        self.assertAlmostEqual(g.growth_pct, 5.0)
+
+    def test_a_broker_forecast_is_not_guidance(self):
+        """A third party's number quoted inside a company presentation is not a
+        commitment by management, and the prompt is asked to say which it is."""
+        self._put("g3", "2026-05-01", {
+            "has_guidance": True, "is_management_statement": False,
+            "direction": revenue.GUIDANCE_NEW, "growth_pct": 30.0})
+        self.assertFalse(enrich._guidance_for_symbol(self.db, "ACME").ok)
+
+    def test_a_filing_with_no_guidance_in_it_is_skipped(self):
+        self._put("g4", "2026-05-01", {"has_guidance": False,
+                                       "is_management_statement": True})
+        self.assertFalse(enrich._guidance_for_symbol(self.db, "ACME").ok)
+
+    def test_no_guidance_filings_gives_an_empty_guidance_not_none(self):
+        g = enrich._guidance_for_symbol(self.db, "ACME")
+        self.assertIsInstance(g, revenue.Guidance)
+        self.assertFalse(g.ok)
+
+    def test_the_verbatim_quote_is_carried_through(self):
+        """The column exists so a reader can judge the model's reading rather
+        than trust it, which only works if the words survive."""
+        self._put("g5", "2026-05-01", {
+            "has_guidance": True, "is_management_statement": True,
+            "direction": revenue.GUIDANCE_NEW, "growth_pct": 18.0,
+            "verbatim": "we guide to 18-20% revenue growth"})
+        g = enrich._guidance_for_symbol(self.db, "ACME")
+        self.assertIn("18-20%", g.verbatim)
+
+
+class TestFillIsin(unittest.TestCase):
+    """The scan CSV's `isin` is what announcements are matched on. Filled from
+    the wrong column, or matched case-sensitively, every per-stock filing factor
+    silently comes back empty -- which reads as "no filings" rather than as a
+    bug."""
+
+    def setUp(self):
+        self._real = enrich.load_constituents
+        enrich.load_constituents = lambda *a, **k: pd.DataFrame([
+            {"Symbol": "ACME", "ISIN Code": "INE000A01001"},
+            {"Symbol": "BETA", "ISIN Code": "INE000B01002"},
+        ])
+        self.addCleanup(lambda: setattr(enrich, "load_constituents", self._real))
+
+    def test_isin_is_filled_from_the_constituents_csv(self):
+        df = pd.DataFrame([{"symbol": "ACME"}, {"symbol": "BETA"}])
+        out = enrich._fill_isin(df, Path("scan.csv"))
+        self.assertEqual(out["isin"].tolist(),
+                         ["INE000A01001", "INE000B01002"])
+
+    def test_a_symbol_outside_the_index_gets_an_empty_isin(self):
+        """Reachable via the scan's own --symbols flag, where there is no ISIN to
+        be had. Empty is what the scan itself would have written."""
+        df = pd.DataFrame([{"symbol": "ACME"}, {"symbol": "NOTLISTED"}])
+        out = enrich._fill_isin(df, Path("scan.csv"))
+        self.assertEqual(out["isin"].tolist(), ["INE000A01001", ""])
+
+    def test_lookup_is_case_and_whitespace_insensitive(self):
+        df = pd.DataFrame([{"symbol": " acme "}])
+        out = enrich._fill_isin(df, Path("scan.csv"))
+        self.assertEqual(out["isin"].tolist(), ["INE000A01001"])
+
+    def test_the_input_frame_is_not_mutated(self):
+        df = pd.DataFrame([{"symbol": "ACME"}])
+        enrich._fill_isin(df, Path("scan.csv"))
+        self.assertNotIn("isin", df.columns)
+
+    def test_an_unreadable_constituents_csv_is_a_warning_not_a_crash(self):
+        """--report needs no ISIN at all, so failing here must not take the whole
+        run down with it."""
+        def boom(*a, **k):
+            raise FileNotFoundError("no constituents CSV")
+        enrich.load_constituents = boom
+        df = pd.DataFrame([{"symbol": "ACME"}])
+        out = enrich._fill_isin(df, Path("scan.csv"))
+        self.assertNotIn("isin", out.columns)
+
+
+class TestNextMonths(unittest.TestCase):
+    def test_counts_forward_from_the_month_given(self):
+        self.assertEqual(enrich._next_months("2026-03", 3),
+                         ["2026-04", "2026-05", "2026-06"])
+
+    def test_crosses_a_year_boundary(self):
+        self.assertEqual(enrich._next_months("2026-11", 3),
+                         ["2026-12", "2027-01", "2027-02"])
+
+    def test_the_month_given_is_not_included(self):
+        """It is the last actual, and labelling a forecast with it would put a
+        prediction in the same column as the observation it was made from."""
+        self.assertNotIn("2026-03", enrich._next_months("2026-03", 3))
+
+
+class TestNum(unittest.TestCase):
+    def test_a_number_passes_through_as_float(self):
+        self.assertEqual(enrich._num(5), 5.0)
+        self.assertEqual(enrich._num(5.5), 5.5)
+
+    def test_a_string_from_a_model_is_none_not_a_crash(self):
+        """The model returns JSON it wrote itself, so a number can arrive as a
+        string, as null, or as prose. None of those should reach arithmetic."""
+        for value in ("20%", "", None, "about 500 crore", [], {}):
+            self.assertIsNone(enrich._num(value), repr(value))
+
+    def test_a_bool_is_not_a_number(self):
+        """`isinstance(True, int)` is True in Python, so a model answering true
+        where a value was asked for would otherwise become 1.0."""
+        self.assertIsNone(enrich._num(True))
+
+
+if __name__ == "__main__":
+    unittest.main()

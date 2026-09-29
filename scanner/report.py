@@ -1,6 +1,7 @@
 """Excel / CSV / terminal output for the scan results."""
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -25,6 +26,14 @@ BASE_COLUMNS = [
     "recent_ipo",
 ]
 
+TREND_COLUMNS = [
+    "ema50",
+    "sma200",
+    "above_ema50",
+    "above_sma200",
+    "trend",
+]
+
 FACTOR_COLUMNS = [
     "bonus_issue",
     "demerger",
@@ -35,11 +44,15 @@ FACTOR_COLUMNS = [
 
 
 def _get_output_columns(df: pd.DataFrame) -> list[str]:
-    """Return the actual columns to output, adaptive based on what's present in the DataFrame."""
+    """Return the actual columns to output, adaptive based on what's present in the DataFrame.
+
+    Trend and factor groups are both optional -- `--no-factors` omits one, and a
+    DataFrame from an older run may lack either -- so neither is allowed to turn
+    a missing column into a KeyError at write time.
+    """
     cols = BASE_COLUMNS.copy()
-    for fc in FACTOR_COLUMNS:
-        if fc in df.columns:
-            cols.append(fc)
+    for group in (TREND_COLUMNS, FACTOR_COLUMNS):
+        cols.extend(c for c in group if c in df.columns)
     return cols
 
 
@@ -72,6 +85,20 @@ def write_outputs(
 
     df.to_csv(csv_path, index=False)
 
+    # A workbook open in Excel is locked, and a full scan spends minutes of
+    # fetching before it reaches this line -- so a lock must not destroy the
+    # run's output. Fall back to a suffixed filename and report where it went.
+    try:
+        with open(xlsx_path, "a+b"):
+            pass
+    except PermissionError:
+        stamp = datetime.now().strftime("%H%M%S")
+        xlsx_path = out_dir / f"ath_scan_{as_of}_{stamp}.xlsx"
+        print(
+            f"Warning: {out_dir / f'ath_scan_{as_of}.xlsx'} is locked "
+            f"(open in Excel?) -- writing {xlsx_path.name} instead."
+        )
+
     with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
         for bucket in bucket_order:
             sheet_df = df[df["bucket"] == bucket]
@@ -89,6 +116,12 @@ def write_outputs(
         if not df.empty:
             for industry, count in df["industry"].value_counts().items():
                 summary_rows.append((industry, int(count)))
+
+        if not df.empty and "trend" in df.columns:
+            summary_rows.append(("", ""))
+            summary_rows.append(("By trend (50 EMA / 200 SMA)", ""))
+            for label, count in df["trend"].value_counts().items():
+                summary_rows.append((f"  {label}", int(count)))
 
         # Add factors_matched distribution if present
         if not df.empty and "factors_matched" in df.columns:
@@ -120,6 +153,14 @@ def print_summary(df: pd.DataFrame, as_of: str, intraday: bool, max_dist: float 
     if df.empty:
         console.print("\n[yellow]No symbols matched.[/yellow]")
         return
+
+    if "trend" in df.columns:
+        trend_table = Table(title="Trend (50 EMA / 200 SMA)")
+        trend_table.add_column("Trend")
+        trend_table.add_column("Count", justify="right")
+        for label, count in df["trend"].value_counts().items():
+            trend_table.add_row(str(label), str(int(count)))
+        console.print(trend_table)
 
     top = sort_results(df, max_dist).head(20)
     detail = Table(title="Top matches (first 20)")
