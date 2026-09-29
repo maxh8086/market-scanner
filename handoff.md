@@ -141,11 +141,19 @@ placeholders only.
   by the company, 20% need AI or manual reading. Anchoring matters: the naive
   "largest money figure in the document" gave WELCORP **Rs 45,000 cr** (it had
   picked up a global-market-size sentence); the anchored parse gives Rs 4,000 cr.
-  Two gaps to close before building:
-  1. `factors.db` **does not store `attchmntFile`** (the PDF URL) or
-     `attFileSize`. Needs schema 3. NSE returns both.
-  2. Indian digit grouping (`Rs. 21,57,48,840/-`) has no scale word, so a
-     scale-word-only regex misses it — that alone made RAILTEL a false negative.
+  Both gaps that blocked this are now **closed** — `scanner/orderval.py` is
+  built and `--filings` is ready to run:
+  1. ~~`factors.db` does not store `attchmntFile`~~ — schema 3 stores
+     `seq_id`, `attchmnt_file` and `att_file_size`. The local cache is already
+     at `user_version = 3` with the URL present on all 391,074 announcements,
+     so **no cache refresh is needed** before `--filings`.
+  2. ~~Indian digit grouping misses~~ — `Rs. 21,57,48,840/-` parses to
+     ₹21.57 cr. The anchor/loose distinction survives into
+     `OrderValue.confidence`, so the WELCORP global-market-size sentence comes
+     back as `loose` rather than being trusted as the order value.
+  **Still to do: re-measure the 78% / 62.5% yield with the finished parser.**
+  Those figures come from the pre-parser manual read of 40 filings and are a
+  reasonable prior, not a measurement of the code that now exists.
   Scope for the current 298: **274 PDFs across 42 symbols** (plus 176 expansion
   PDFs across 60), 1–4 pages each, all digital text — `pypdf` extracted 40/40
   with zero errors. `pypdf` 6.19.0 is now installed in `.venv`.
