@@ -574,10 +574,15 @@ conclusion never changes the ranking and is not investment advice.
   fall from the high "undervaluation" in a large share of stocks despite the
   prompt rule (129 of 290 speculative, 83 empty or stance-inconsistent). It was
   replaced by Qwen3-4B-Instruct-2507, below.
-- **Qwen3-4B (current default), full run, 290 stocks:** 0 failed, 5 speculative,
-  10 unverified numbers, 0 truncated, 8 with nothing on either side (73 have no
-  positives, almost all of them CAUTIOUS, which is consistent), stance MIXED 140 /
-  CONSTRUCTIVE 107 / CAUTIOUS 43.
+- **Qwen3-4B (current default), full run, 290 stocks (~10 min, 4 workers):** 0
+  failed, 4 speculative, 10 unverified numbers, 0 truncated, 7 empty or
+  stance-inconsistent (many stocks have no positives, almost all CAUTIOUS, which
+  is consistent), stance MIXED 140 / CONSTRUCTIVE 107 / CAUTIOUS 43.
+- **Disk:** the `kite-ath-scanner-vllm` image is the upstream vLLM image plus two
+  thin layers, so the ~30.7 GB is paid once (the two tags share layers); there is
+  no smaller vLLM image with CUDA. Trial models cache in the `huggingface_vllm`
+  volume (Qwen3-4B ~8 GB, LFM2.5 ~2.4 GB kept); `docker builder prune -a` frees
+  the build cache (was 22 GB).
 - **Model comparison (`bench_models.py`, first 40 stocks, RTX 4060 8 GB, MXFP4/4-bit
   + FP8 KV in ~4.5 GB):**
 
