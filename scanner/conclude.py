@@ -137,7 +137,8 @@ def _clean(value: Any) -> Any:
 
 
 def build_packet(row: Mapping[str, Any],
-                 filings: Optional[list[Mapping[str, Any]]] = None) -> dict[str, Any]:
+                 filings: Optional[list[Mapping[str, Any]]] = None,
+                 graph_facts: Optional[Mapping[str, Any]] = None) -> dict[str, Any]:
     """Flatten one enriched row (+ document-store filings) into `group.field` facts.
 
     Flat dotted keys, not nested objects, so an evidence citation is a plain string
@@ -162,6 +163,16 @@ def build_packet(row: Mapping[str, Any],
             ex_val = _clean(ex_val)
             if ex_val is not None:
                 packet[f"filing{i}.{ex_key}"] = ex_val
+
+    # Facts from the Neo4j graph (customers across all stored order filings). Counts
+    # only, and only when the graph found a named customer.
+    customers = _clean((graph_facts or {}).get("distinct_customers"))
+    if customers:
+        packet["graph.distinct_customers"] = customers
+        packet["graph.repeat_customers"] = len((graph_facts or {}).get("repeat_customers") or [])
+        peers = (graph_facts or {}).get("peers_sharing_customer") or []
+        if peers:
+            packet["graph.peers_sharing_customer"] = ", ".join(str(x) for x in peers)
     return packet
 
 

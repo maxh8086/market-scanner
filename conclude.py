@@ -20,6 +20,7 @@ Exit codes: 0 all stocks concluded, 1 model server unreachable, 2 some failed.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -31,6 +32,7 @@ from scanner import conclude, docstore, llm
 
 OUTPUT_DIR = Path("output")
 ORDER_KIND = llm.KIND_ORDER
+GRAPH_FACTS = Path("data/graph_facts.json")
 
 
 def newest_enriched() -> Path:
@@ -51,6 +53,14 @@ def _filings(db, symbol: str) -> list[dict]:
                               if data.get(k) not in (None, "")}
         out.append(item)
     return out
+
+
+def _graph_facts() -> dict:
+    """Per-symbol facts from graph_sync.py facts; empty when the graph step did not run."""
+    try:
+        return json.loads(GRAPH_FACTS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
 
 
 def _cached(db, symbol: str, as_of: str, digest: str, model: str):
@@ -94,14 +104,17 @@ def main(argv: list[str] | None = None) -> int:
     reachable, detail = llm.health(cfg)
     print(f"Model server {args.url}: {detail}")
     if not reachable:
-        print("Start it with: docker compose --profile vllm up -d vllm  (or ./start.ps1 -WithConclusions)")
+        print("Start it with: docker compose up -d vllm  (start.ps1 does this for you)")
         return 1
 
     db = docstore.open_db()
+    facts = _graph_facts()
+    if facts:
+        print(f"Graph facts for {len(facts)} companies ({GRAPH_FACTS})")
     jobs, reused = [], 0
     for row in df.to_dict("records"):
         symbol = row["symbol"]
-        packet = conclude.build_packet(row, _filings(db, symbol))
+        packet = conclude.build_packet(row, _filings(db, symbol), facts.get(symbol))
         digest = conclude.packet_hash(packet)
         if not args.force and _cached(db, symbol, stem, digest, cfg.model):
             reused += 1

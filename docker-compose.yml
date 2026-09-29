@@ -1,15 +1,16 @@
-# One image per component. Everything except `laya` and `llm` is a one-shot job:
+# One image per component, all in this one compose file. Everything except `laya`,
+# `vllm` and `neo4j` is a one-shot job:
 #   docker compose run --rm scanner --symbols INFY,TCS
 # start.ps1 drives the whole sequence; stop.ps1 tears it down.
 #
-# Components do not call each other. They hand off through the bind-mounted
-# data/, output/ and logs/ folders (SQLite caches, TinyDB store, CSV outputs).
-# The only container-to-container traffic is enrich -> llm (Ollama HTTP) and
-# conclude -> vllm (OpenAI-style HTTP).
+# Components hand off through the bind-mounted data/, output/ and logs/ folders
+# (SQLite caches, TinyDB store, CSV/XLSX outputs). Container-to-container traffic:
+# enrich and conclude -> vllm (OpenAI-style HTTP), graph -> neo4j (bolt).
 #
-# Secrets reach containers ONLY at runtime, through `env_file: .env` (compose
-# reads it; no image, build arg or log ever contains it). A service gets the
-# file only if it needs credentials: crosscheck, laya and llm deliberately do not.
+# Secrets reach containers ONLY at runtime, through `env_file` (compose reads the
+# file; no image, build arg or log ever contains it). A service gets a file only if
+# it needs it: .env (Upstox/Kite) for scanner, enrich and portfolio; .env.neo4j
+# (the database password start.ps1 generates) for neo4j and graph.
 x-persist: &persist
   - ./data:/app/data
   - ./output:/app/output
@@ -26,10 +27,14 @@ services:
     image: ath-enrich
     build: {context: ., dockerfile: docker/enrich/Dockerfile}
     env_file: .env
-    volumes: *persist
+    volumes: &persist-config
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
     restart: "no"
 
-  enrich-timesfm:        # enrich + TimesFM forecaster (torch, CPU); profile `timesfm` (start.ps1 -WithTimesfm)
+  enrich-timesfm:        # enrich + TimesFM forecaster (torch, CPU)
     build: {context: ., dockerfile: docker/timesfm/Dockerfile}
     # No env_file: the report/forecast stage reads only data/ and output/.
     volumes:
@@ -37,7 +42,7 @@ services:
       - ./output:/app/output
       - ./logs:/app/logs
       - huggingface_cache:/home/appuser/.cache/huggingface   # TimesFM weights download once
-    profiles: ["timesfm"]
+      - ./config:/app/config:ro
     restart: "no"
 
   crosscheck:            # independent of Upstox by design: no credentials
@@ -51,17 +56,7 @@ services:
     volumes: *persist
     restart: "no"
 
-  llm:                   # extraction model for `enrich --llm`; profile `llm` (start.ps1 -WithLlm)
-    image: ollama/ollama:latest
-    container_name: ath-llm
-    volumes:
-      - ollama_models:/root/.ollama      # multi-GB model, pulled once
-    ports:
-      - "127.0.0.1:11434:11434"          # loopback only; enrich reaches it as http://llm:11434
-    profiles: ["llm"]
-    restart: "no"
-
-  vllm:                  # Qwen3-4B-Instruct-2507 (MXFP4, FP8 KV) on the GPU; profile `vllm` (start.ps1 -WithConclusions)
+  vllm:                  # Qwen3-4B-Instruct-2507 (MXFP4, FP8 KV) on the GPU: filing extraction and conclusions
     build:
       context: .
       dockerfile: docker/vllm/Dockerfile
@@ -79,7 +74,48 @@ services:
         reservations:
           devices:
             - {driver: nvidia, count: 1, capabilities: [gpu]}
-    profiles: ["vllm"]
+    restart: "no"
+
+  neo4j:                 # graph of filings/extractions/conclusions; data purged by graph_sync.py purge
+    image: neo4j:5-community
+    container_name: ath-neo4j
+    env_file:                            # NEO4J_AUTH=neo4j/<generated password>; written by start.ps1
+      - {path: .env.neo4j, required: false}   # optional only so `down` works without it
+    environment:
+      - NEO4J_server_memory_heap_initial__size=512m
+      - NEO4J_server_memory_heap_max__size=1g
+      - NEO4J_server_memory_pagecache_size=512m
+    volumes:
+      - neo4j_data:/data
+    ports:
+      - "127.0.0.1:7474:7474"            # browser UI, loopback only
+      - "127.0.0.1:7687:7687"            # bolt, loopback only
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$${NEO4J_AUTH#*/}\" 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    restart: "no"
+
+  graph:                 # loads the document store into neo4j, reads graph facts, purges expired data
+    image: ath-enrich
+    build: {context: ., dockerfile: docker/enrich/Dockerfile}
+    entrypoint: ["python", "graph_sync.py"]
+    env_file:
+      - {path: .env.neo4j, required: false}
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+    volumes: *persist-config
+    depends_on:
+      neo4j: {condition: service_healthy}
+    restart: "no"
+
+  report:                # final workbook: every stock in sheet 1, summary in sheet 2
+    image: ath-enrich
+    build: {context: ., dockerfile: docker/enrich/Dockerfile}
+    entrypoint: ["python", "final_report.py"]
+    volumes: *persist
     restart: "no"
 
   conclude:              # per-stock conclusions from the stored insights; same image as enrich
@@ -90,7 +126,6 @@ services:
       - CONCLUDE_URL=http://vllm:8000     # so `run --rm conclude --limit 5` still finds the server
     # No env_file: reads data/ and output/, talks only to the vllm service.
     volumes: *persist
-    profiles: ["vllm"]
     restart: "no"
 
   laya:                  # decision-model service; profile `laya` (start.ps1 -WithLaya). Not wired into ranking.
@@ -110,4 +145,4 @@ services:
 volumes:
   huggingface_cache:
   huggingface_vllm:
-  ollama_models:
+  neo4j_data:

@@ -201,7 +201,7 @@ def main(argv=None) -> int:
     cands = [c for c in mc.CANDIDATES if not wanted or c.key in wanted]
 
     print("Stopping the compose vllm service to free the GPU ...")
-    sh("docker", "compose", "--profile", "vllm", "stop", "vllm")
+    sh("docker", "compose", "stop", "vllm")
     results = []
     for i, cand in enumerate(cands, 1):
         print(f"\n[{i}/{len(cands)}] {cand.key}  ({cand.model}, {cand.quantization or 'no quant'}, "
@@ -226,7 +226,7 @@ def main(argv=None) -> int:
     print(f"\nResults: {out_path}")
     if args.restore != "none":
         print("Restoring the compose vllm service ...")
-        sh("docker", "compose", "--profile", "vllm", "up", "-d", "vllm")
+        sh("docker", "compose", "up", "-d", "vllm")
     return 0
 
 

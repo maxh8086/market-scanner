@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from pathlib import Path
 
@@ -392,15 +394,13 @@ def _report_parse_yield(db) -> None:
 # --------------------------------------------------------------------------
 
 def stage_llm(db, cfg: llm.LLMConfig, limit: int | None = None,
-              only_gaps: bool = True, rerun: bool = False) -> None:
+              only_gaps: bool = True, rerun: bool = False, workers: int = 1) -> None:
     reachable, detail = llm.health(cfg)
     if not reachable:
         _die(f"LLM backend unreachable at {cfg.base_url} ({detail}).\n"
-             f"  Start one, e.g.:\n"
-             f"    docker run -d -p 11434:11434 -v ollama:/root/.ollama "
-             f"--name ollama ollama/ollama\n"
-             f"    docker exec ollama ollama pull {cfg.model}\n"
-             f"  or point --llm-url at a llama.cpp server with --llm-api openai")
+             f"  Start the vLLM service (docker compose up -d vllm), then pass\n"
+             f"    --llm-url http://vllm:8000 --llm-model qwen3-4b --llm-api openai\n"
+             f"  (start.ps1 does all of this). Any OpenAI-compatible or Ollama server works.")
     print(f"\n=== LLM: {cfg.model} at {cfg.base_url} ({detail}) ===")
 
     docs = [d for d in docstore.all_filings(db) if d.get("raw_text")]
@@ -431,29 +431,36 @@ def stage_llm(db, cfg: llm.LLMConfig, limit: int | None = None,
     print(f"  {len(docs)} documents to extract"
           f"{' (regex gaps and expansions only)' if only_gaps else ''}")
     ok = bad = 0
-    total_seconds = 0.0
-    for i, d in enumerate(docs, 1):
-        kind = _kind_for(d)
-        result = llm.extract(cfg, d["raw_text"], kind)
-        total_seconds += result.seconds
-        docstore.put_extraction(db, d["seq_id"], kind, {
-            "symbol": d.get("symbol", ""),
-            "data": result.data,
-            "raw": result.raw,
-            "error": result.error,
-            "seconds": result.seconds,
-            "model": result.model,
-            "prompt_version": result.prompt_version,
-        })
-        if result.ok:
-            ok += 1
-        else:
-            bad += 1
-        if i % 5 == 0 or i == len(docs):
-            rate = total_seconds / i
-            left = (len(docs) - i) * rate / 60
-            print(f"  {i}/{len(docs)}  {ok} ok, {bad} failed  "
-                  f"({rate:.0f}s/doc, ~{left:.0f} min left)")
+    workers = max(1, workers)
+    started = time.time()
+
+    def _extract(d):
+        return d, llm.extract(cfg, d["raw_text"], _kind_for(d))
+
+    # Requests run concurrently (vLLM batches them); results are stored from this
+    # thread only, because TinyDB is not safe for concurrent writers.
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_extract, d) for d in docs]
+        for i, fut in enumerate(as_completed(futures), 1):
+            d, result = fut.result()
+            docstore.put_extraction(db, d["seq_id"], _kind_for(d), {
+                "symbol": d.get("symbol", ""),
+                "data": result.data,
+                "raw": result.raw,
+                "error": result.error,
+                "seconds": result.seconds,
+                "model": result.model,
+                "prompt_version": result.prompt_version,
+            })
+            if result.ok:
+                ok += 1
+            else:
+                bad += 1
+            if i % 5 == 0 or i == len(docs):
+                rate = (time.time() - started) / i
+                left = (len(docs) - i) * rate / 60
+                print(f"  {i}/{len(docs)}  {ok} ok, {bad} failed  "
+                      f"({rate:.1f}s/doc, ~{left:.0f} min left)", flush=True)
 
     _report_cross_check(db)
 
@@ -1036,6 +1043,8 @@ def main() -> None:
                    help="run the model on every filing, not just regex gaps")
     p.add_argument("--llm-rerun", action="store_true",
                    help="re-extract documents that already have an extraction")
+    p.add_argument("--llm-workers", type=int, default=1,
+                   help="concurrent extraction requests (vLLM batches them; use 4 there)")
     p.add_argument("--llm-url", default=llm.LLMConfig.base_url)
     p.add_argument("--llm-model", default=llm.LLMConfig.model)
     p.add_argument("--llm-api", default=llm.LLMConfig.api,
@@ -1101,7 +1110,7 @@ def main() -> None:
             cfg = llm.LLMConfig(base_url=args.llm_url, model=args.llm_model,
                                 api=args.llm_api)
             stage_llm(db, cfg, limit=args.limit, only_gaps=not args.llm_all,
-                      rerun=args.llm_rerun)
+                      rerun=args.llm_rerun, workers=args.llm_workers)
         if args.report or args.all:
             stage_report(db, df, scan_path,
                          with_forecast=not args.no_forecast,

@@ -1,19 +1,29 @@
 <#
 .SYNOPSIS
-Manually run the ATH Scanner pipeline in Docker: scan -> enrich -> crosscheck -> portfolio.
+Run the whole ATH Scanner pipeline in Docker, start to finish, with no extra switches.
 
 .DESCRIPTION
-No scheduler; you trigger it. Data, output and logs are bind-mounted from this
-folder, so caches survive between runs. Credentials are read by docker compose
-from .env at runtime; this script only checks that the file exists and never
-opens it. Run stop.ps1 when you are done.
+scan -> enrich (filings, fundamentals, AI extraction on vLLM) -> TimesFM forecasts ->
+Neo4j graph load -> per-stock conclusions -> graph purge of expired data -> final
+workbook -> cross-check -> portfolio.
+
+Every component is its own container under one docker-compose.yml; this script is the
+only thing that runs on the host. No scheduler; you trigger it. data/, output/ and
+logs/ are bind-mounted from this folder, so caches survive between runs.
+
+Credentials: .env (Upstox/Kite) is read by docker compose at runtime; this script only
+checks that it exists and never opens it. The Neo4j password is generated here into
+.env.neo4j (git-ignored) the first time and reused after that.
+
+Needs an NVIDIA GPU with the container runtime (vLLM runs Qwen3-4B-Instruct-2507).
+The first run downloads ~8 GB of model weights and the TimesFM checkpoint.
+
+Data retention (how long stored documents are kept before the purge step deletes them)
+is set in config/retention.json -- 3 years by default, "purge": false turns it off.
 
 .PARAMETER Symbols        Comma-separated symbols to scan instead of the full index.
-.PARAMETER WithLlm        Start an Ollama container and run enrichment with --llm (first start pulls the model, several GB).
-.PARAMETER WithLaya       Also start the Laya decision-model service (first start downloads ~800 MB of weights). Not used by any stage yet.
-.PARAMETER WithTimesfm    After enrichment, re-run the report with the TimesFM forecaster (separate torch image; first run downloads the 200M checkpoint).
-.PARAMETER WithConclusions Start the vLLM container (Qwen3-4B-Instruct-2507, NVIDIA GPU required; first start downloads ~8 GB) and write a per-stock conclusion from the stored insights.
-.PARAMETER SkipEnrich     Skip enrichment.
+.PARAMETER WithLaya       Also start the Laya decision-model service (not used by any stage yet).
+.PARAMETER SkipEnrich     Skip enrichment (and the stages that build on it can still use the last enriched file).
 .PARAMETER SkipCrosscheck Skip the independent price cross-check.
 .PARAMETER SkipPortfolio  Skip the Kite holdings overlay.
 .PARAMETER Rebuild        Rebuild images without the cache.
@@ -24,10 +34,7 @@ opens it. Run stop.ps1 when you are done.
 #>
 param(
     [string]$Symbols,
-    [switch]$WithLlm,
     [switch]$WithLaya,
-    [switch]$WithTimesfm,
-    [switch]$WithConclusions,
     [switch]$SkipEnrich,
     [switch]$SkipCrosscheck,
     [switch]$SkipPortfolio,
@@ -37,7 +44,8 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-Location -Path $PSScriptRoot
 
-$LlmModel = 'qwen3:8b'   # keep in step with scanner/llm.py LLMConfig.model
+$ModelName = 'qwen3-4b'                 # SERVED_NAME in docker/vllm/Dockerfile
+$VllmUrl   = 'http://vllm:8000'         # as seen from the other containers
 
 # Run docker and return its exit code. Under Windows PowerShell 5.1 a native
 # command's stderr becomes an error record, and docker writes ordinary build
@@ -83,6 +91,17 @@ function Measure-Stage([string]$Name, [scriptblock]$Body) {
     return $code
 }
 
+# The graph is an accelerator, never a dependency: exit 3 means Neo4j was unreachable
+# and the run carries on without graph facts.
+function Invoke-Graph([string]$Name, [string[]]$GraphArgs) {
+    $code = Measure-Stage $Name { Invoke-Docker (@('compose', 'run', '--rm', 'graph') + $GraphArgs) }
+    if ($code -eq 3) {
+        Write-Host "Graph step '$Name' skipped: Neo4j unreachable (a warning, not a failure)." -ForegroundColor Yellow
+    } elseif ($code -ne 0) {
+        Write-Host "Graph step '$Name' failed (exit $code) -- continuing without it." -ForegroundColor Yellow
+    }
+}
+
 Write-Stage "Preflight"
 $code = Invoke-Docker @('info', '--format', '{{.ServerVersion}}')
 if ($code -ne 0) { Stop-Pipeline "Docker is not responding. Start Docker Desktop and retry." }
@@ -91,31 +110,27 @@ if (-not (Test-Path -LiteralPath '.env')) {
     Stop-Pipeline ".env not found. Copy .env.example to .env and fill in your credentials."
 }
 Write-Host ".env present."
-
+# The database password is ours to generate: random, written once, never printed.
+if (-not (Test-Path -LiteralPath '.env.neo4j')) {
+    $bytes = New-Object byte[] 30
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    $rng.GetBytes($bytes)
+    $password = ([Convert]::ToBase64String($bytes) -replace '[^A-Za-z0-9]', '').Substring(0, 24)
+    [IO.File]::WriteAllText((Join-Path $PSScriptRoot '.env.neo4j'), "NEO4J_AUTH=neo4j/$password`n",
+                            (New-Object Text.UTF8Encoding($false)))
+    Remove-Variable password, bytes
+    Write-Host ".env.neo4j created (generated database password; git-ignored)."
+} else {
+    Write-Host ".env.neo4j present."
+}
 $profiles = @()
-if ($WithLlm)  { $profiles += @('--profile', 'llm') }
 if ($WithLaya) { $profiles += @('--profile', 'laya') }
-if ($WithTimesfm) { $profiles += @('--profile', 'timesfm') }
-if ($WithConclusions) { $profiles += @('--profile', 'vllm') }
 
 Write-Stage "Building images"
 $buildArgs = @('compose') + $profiles + @('build')
 if ($Rebuild) { $buildArgs += '--no-cache' }
 $code = Measure-Stage 'build' { Invoke-Docker $buildArgs }
 if ($code -ne 0) { Stop-Pipeline "Docker build failed." }
-
-if ($WithLlm) {
-    Write-Stage "Starting the extraction model (Ollama, $LlmModel)"
-    $code = Invoke-Docker @('compose', '--profile', 'llm', 'up', '-d', 'llm')
-    if ($code -ne 0) { Stop-Pipeline "Could not start the llm container." }
-    # No healthcheck on the stock image; retry the pull until the server is up.
-    $pulled = $false
-    for ($i = 0; $i -lt 30 -and -not $pulled; $i++) {
-        $code = Invoke-Docker @('exec', 'ath-llm', 'ollama', 'pull', $LlmModel)
-        if ($code -eq 0) { $pulled = $true } else { Start-Sleep -Seconds 5 }
-    }
-    if (-not $pulled) { Stop-Pipeline "Could not pull model $LlmModel." }
-}
 
 if ($WithLaya) {
     Write-Stage "Starting Laya (first start downloads weights; this can take several minutes)"
@@ -125,49 +140,63 @@ if ($WithLaya) {
     Write-Host "Laya is healthy on http://127.0.0.1:8000" -ForegroundColor Green
 }
 
+# Both services warm up while the scan runs (vLLM loads its weights, ~2-3 minutes once cached).
+Write-Stage "Starting Neo4j and vLLM (Qwen3-4B-Instruct-2507; first start downloads ~8 GB)"
+$code = Invoke-Docker @('compose', 'up', '-d', 'neo4j', 'vllm')
+if ($code -ne 0) { Stop-Pipeline "Could not start neo4j/vllm (is the NVIDIA runtime available to Docker?)." }
+
 Write-Stage "Scan"
 $scanArgs = @('compose', 'run', '--rm', 'scanner')
 if ($Symbols) { $scanArgs += @('--symbols', $Symbols) }
 $code = Measure-Stage 'scan' { Invoke-Docker $scanArgs }
 if ($code -ne 0) { Stop-Pipeline "Scan failed (exit $code)." }
 
+Write-Stage "Waiting for vLLM"
+if (-not (Wait-Healthy 'ath-vllm' 30)) { Stop-Pipeline "vLLM did not become healthy within 30 minutes. See: docker logs ath-vllm" }
+Write-Host "vLLM is healthy on http://127.0.0.1:8001" -ForegroundColor Green
+
 if ($SkipEnrich) {
     Write-Host "Enrichment skipped."
 } else {
-    Write-Stage "Enrich"
-    $enrichArgs = @('compose') + $profiles + @('run', '--rm', 'enrich', '--all')
-    if ($WithLlm) { $enrichArgs += @('--llm', '--llm-url', 'http://llm:11434', '--llm-model', $LlmModel) }
+    Write-Stage "Enrich (filings, fundamentals, AI extraction on vLLM)"
+    $enrichArgs = @('compose', 'run', '--rm', 'enrich', '--all',
+                    '--llm-url', $VllmUrl, '--llm-model', $ModelName, '--llm-api', 'openai', '--llm-workers', '4')
     $code = Measure-Stage 'enrich' { Invoke-Docker $enrichArgs }
     if ($code -ne 0) { Stop-Pipeline "Enrichment failed (exit $code)." }
+
+    Write-Stage "Enrich with TimesFM forecasts"
+    $code = Measure-Stage 'timesfm' { Invoke-Docker @('compose', 'run', '--rm', 'enrich-timesfm') }
+    if ($code -ne 0) { Stop-Pipeline "TimesFM enrichment failed (exit $code)." }
 }
 
-if ($WithTimesfm) {
-    if ($SkipEnrich) {
-        Write-Host "TimesFM skipped (it re-runs the enrichment report)."
-    } else {
-        Write-Stage "Enrich with TimesFM forecasts"
-        $code = Measure-Stage 'timesfm' { Invoke-Docker @('compose', '--profile', 'timesfm', 'run', '--rm', 'enrich-timesfm') }
-        if ($code -ne 0) { Stop-Pipeline "TimesFM enrichment failed (exit $code)." }
+$haveEnriched = [bool](Get-ChildItem -LiteralPath 'output' -Filter 'ath_enriched_*.csv' -ErrorAction SilentlyContinue)
+if (-not $haveEnriched) {
+    Write-Host "Graph, conclusions and report skipped: no output/ath_enriched_*.csv to read." -ForegroundColor Yellow
+} else {
+    Write-Stage "Graph: load filings and extractions into Neo4j"
+    Invoke-Graph 'graph-load' @('load')
+    Invoke-Graph 'graph-facts' @('facts')
+
+    Write-Stage "Per-stock conclusions"
+    $code = Measure-Stage 'conclude' { Invoke-Docker @('compose', 'run', '--rm', 'conclude') }
+    if ($code -eq 2) {
+        Write-Host "Some conclusions failed -- a warning. Successful ones are in output/ath_conclusions_*.csv" -ForegroundColor Yellow
+    } elseif ($code -ne 0) {
+        Stop-Pipeline "Conclusions failed (exit $code)."
     }
+
+    Write-Stage "Graph: store conclusions, purge expired data (config/retention.json)"
+    Invoke-Graph 'graph-conclusions' @('conclusions')
+    Invoke-Graph 'graph-purge' @('purge')
 }
 
-if ($WithConclusions) {
-    if ($SkipEnrich -and -not (Get-ChildItem -LiteralPath 'output' -Filter 'ath_enriched_*.csv' -ErrorAction SilentlyContinue)) {
-        Write-Host "Conclusions skipped: no output/ath_enriched_*.csv to read." -ForegroundColor Yellow
-    } else {
-        Write-Stage "Starting vLLM (Qwen3-4B-Instruct-2507; first start downloads ~8 GB and compiles kernels)"
-        $code = Invoke-Docker @('compose', '--profile', 'vllm', 'up', '-d', 'vllm')
-        if ($code -ne 0) { Stop-Pipeline "Could not start vLLM (is the NVIDIA runtime available to Docker?)." }
-        if (-not (Wait-Healthy 'ath-vllm' 30)) { Stop-Pipeline "vLLM did not become healthy within 30 minutes. See: docker logs ath-vllm" }
-        Write-Host "vLLM is healthy on http://127.0.0.1:8001" -ForegroundColor Green
-        Write-Stage "Per-stock conclusions"
-        $code = Measure-Stage 'conclude' { Invoke-Docker @('compose', '--profile', 'vllm', 'run', '--rm', 'conclude') }
-        if ($code -eq 2) {
-            Write-Host "Some conclusions failed -- a warning. Successful ones are in output/ath_conclusions_*.csv" -ForegroundColor Yellow
-        } elseif ($code -ne 0) {
-            Stop-Pipeline "Conclusions failed (exit $code)."
-        }
-    }
+Write-Stage "Freeing the GPU and memory (Neo4j data stays in its volume)"
+Invoke-Docker @('compose', 'stop', 'vllm', 'neo4j') | Out-Null
+
+if ($haveEnriched) {
+    Write-Stage "Final workbook (sheet 1: every stock, sheet 2: summary)"
+    $code = Measure-Stage 'report' { Invoke-Docker @('compose', 'run', '--rm', 'report') }
+    if ($code -ne 0) { Stop-Pipeline "Final report failed (exit $code)." }
 }
 
 if ($SkipCrosscheck) {
@@ -195,7 +224,7 @@ if ($SkipPortfolio) {
 }
 
 Write-Stage "Done"
-foreach ($k in $timings.Keys) { Write-Host ("  {0,-11} {1,5} s" -f $k, $timings[$k]) }
+foreach ($k in $timings.Keys) { Write-Host ("  {0,-17} {1,5} s" -f $k, $timings[$k]) }
 Write-Host ""
 Write-Host "Newest files in output/:"
 Get-ChildItem -LiteralPath 'output' -File -ErrorAction SilentlyContinue |

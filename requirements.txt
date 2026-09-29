@@ -7,6 +7,7 @@ rich>=13.0.0
 
 # Enrichment (enrich.py). Not needed for the daily ath_scan.py run.
 tinydb>=4.8.0          # document store for filings, fundamentals, extractions
+neo4j>=5.20.0          # graph store (Neo4j service); imported lazily by scanner/graph.py
 pypdf>=4.0.0           # text layer out of NSE filing PDFs
 
 # Optional. scanner/forecast.py works without these -- the empirical backend

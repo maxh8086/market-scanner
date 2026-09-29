@@ -1,0 +1,6 @@
+{
+  "description": "How long stored documents are kept. Every filing, extraction, conclusion and fundamentals record carries an expires_at date (filing/scan date + years). purge:true deletes records past that date once they are processed; purge:false keeps everything (use it, or raise years, if you want no deletions). Override for one run with RETENTION_YEARS / RETENTION_PURGE.",
+  "years": 3,
+  "purge": true,
+  "only_when_processed": true
+}

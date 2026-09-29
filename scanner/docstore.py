@@ -59,6 +59,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _expiry(base) -> str:
+    """Date after which the record may be purged (see scanner/retention.py)."""
+    from scanner import retention          # retention imports this module
+    return retention.expires_at(base, retention.load())
+
+
 def open_db(path: Path | str = DB_PATH) -> TinyDB:
     """Open (creating if needed) the document store and record its schema."""
     p = Path(path)
@@ -86,6 +92,7 @@ def put_filing(db: TinyDB, filing: dict) -> None:
     if not seq_id:
         raise ValueError("filing needs a seq_id")
     doc = dict(filing, seq_id=seq_id, stored_at=_now())
+    doc["expires_at"] = _expiry(doc.get("an_date") or doc["stored_at"])
     db.table(FILINGS).upsert(doc, Query().seq_id == seq_id)
 
 
@@ -120,6 +127,7 @@ def all_filings(db: TinyDB) -> list[Document]:
 
 def put_fundamentals(db: TinyDB, symbol: str, payload: dict) -> None:
     doc = dict(payload, symbol=symbol, stored_at=_now())
+    doc["expires_at"] = _expiry(doc["stored_at"])
     db.table(FUNDAMENTALS).upsert(doc, Query().symbol == symbol)
 
 
@@ -155,6 +163,7 @@ def fundamentals_age_days(db: TinyDB, symbol: str) -> Optional[float]:
 
 def put_extraction(db: TinyDB, seq_id: str, kind: str, payload: dict) -> None:
     doc = dict(payload, seq_id=str(seq_id), kind=kind, stored_at=_now())
+    doc["expires_at"] = _expiry(doc["stored_at"])
     q = Query()
     db.table(EXTRACTIONS).upsert(doc, (q.seq_id == str(seq_id)) & (q.kind == kind))
 
@@ -174,6 +183,7 @@ def extractions_by_kind(db: TinyDB, kind: str) -> list[Document]:
 
 def put_conclusion(db: TinyDB, symbol: str, as_of: str, payload: dict) -> None:
     doc = dict(payload, symbol=symbol, as_of=as_of, stored_at=_now())
+    doc["expires_at"] = _expiry(as_of)
     q = Query()
     db.table(CONCLUSIONS).upsert(doc, (q.symbol == symbol) & (q.as_of == as_of))
 
