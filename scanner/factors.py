@@ -100,6 +100,30 @@ EXPANSION_KEYWORDS = {
     "DEBOTTLENECK",
 }
 
+# Senses of an expansion keyword that are not expansion of anything physical.
+# "margin expansion" is a profitability metric and appears in ordinary earnings
+# headlines -- "EBITDA up 24.6% with margin expansion" put AXISCADES in the
+# expansion column and mislabelled its order as backed by a capacity plan. 8 of
+# 285 keyword-only EXPANSION matches over 24 months of announcements, so this is
+# small, but it is a wrong answer rather than a missing one.
+#
+# Removed from the text before matching rather than used to reject the row, so a
+# release that mentions both still qualifies on its real content: "commissioned
+# the new line, with margin expansion" keeps COMMISSIONED.
+EXPANSION_FALSE_SENSES = (
+    "MARGIN EXPANSION",
+    "MARGINS EXPANSION",
+    "MULTIPLE EXPANSION",
+)
+
+
+def _expansion_text(raw) -> str:
+    """Announcement text upper-cased, with non-physical senses removed."""
+    text = str(raw or "").upper()
+    for phrase in EXPANSION_FALSE_SENSES:
+        text = text.replace(phrase, " ")
+    return text
+
 # "DEMERGER" is the exact category name. "SCHEME OF ARRANGEMENT" is also a
 # category, but covers mergers, amalgamations and capital reductions too, so it
 # is reported as a weaker signal rather than a confirmed demerger.
@@ -573,6 +597,16 @@ def fetch_corporate_actions(
         return cached if cached else []
 
 
+def cached_announcements(from_date: date, to_date: date) -> list[dict]:
+    """Announcement metadata already on disk. Never the network.
+
+    `fetch_announcements` falls through to NSE when the cache is stale for the
+    day, which a report-only run must not do -- `enrich.py --report` promises no
+    downloads. This is the read-only door to the same rows.
+    """
+    return _load_cached_announcements(from_date, to_date)
+
+
 def fetch_announcements(
     from_date: date, to_date: date, session: requests.Session | None = None, refresh: bool = False
 ) -> list[dict]:
@@ -836,20 +870,27 @@ def classify_orderbook(ann_rows: list[dict], isin: str, today: date) -> str:
 
 
 def select_expansion_filings(
-    ann_rows: list[dict], isin: str, today: date
+    ann_rows: list[dict], isin: str, today: date, months: int | None = None
 ) -> list[dict]:
     """The announcement rows that count as expansion/capex for `isin`.
 
     Same contract as `select_orderbook_filings`; see that docstring.
+
+    `months` overrides the lookback, defaulting to the signal's own window.
+    `enrich` widens it to match the 12-month ORDER window when asking whether a
+    capacity plan preceded an order: a 6-month view cannot answer that about an
+    order nine months old, and its silence would read as "no plan" rather than
+    as "not looked at". The factor column itself keeps the 6-month default,
+    because recency is the point there.
     """
-    cutoff = _subtract_months(today, EXPANSION_LOOKBACK_MONTHS)
+    cutoff = _subtract_months(today, months or EXPANSION_LOOKBACK_MONTHS)
 
     matched: list[dict] = []
     for row in ann_rows:
         if row.get("sm_isin") != isin:
             continue
         desc = str(row.get("desc", "")).upper().strip()
-        text = str(row.get("attchmntText", "")).upper()
+        text = _expansion_text(row.get("attchmntText", ""))
         is_category = desc in EXPANSION_DESC_CATEGORIES
         if not (is_category or any(kw in text for kw in EXPANSION_KEYWORDS)):
             continue

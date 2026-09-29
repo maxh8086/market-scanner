@@ -5,6 +5,8 @@ import unittest
 from datetime import date, timedelta
 
 from scanner.factors import (
+    EXPANSION_KEYWORDS,
+    _expansion_text,
     _int_or_none,
     _trim_announcement,
     classify_bonus,
@@ -503,6 +505,45 @@ class TestAnnouncementTrim(unittest.TestCase):
     def test_a_missing_id_is_empty_not_absent(self):
         """Callers index this key directly, so it must always exist."""
         self.assertEqual(_trim_announcement({})["seqId"], "")
+
+
+class TestExpansionFalseSenses(unittest.TestCase):
+    """"margin expansion" is a profitability metric, not a bigger factory.
+
+    It put AXISCADES in the expansion column off an ordinary earnings headline,
+    and through that mislabelled its order as backed by a capacity plan. Found by
+    reading which announcement a report label pointed at, not by a unit test.
+    """
+
+    def test_margin_expansion_alone_does_not_qualify(self):
+        text = _expansion_text(
+            "AXISCADES reports FY26 revenue of Rs. 1,159 crore, up 12.4%; "
+            "EBITDA up 24.6% with margin expansion")
+        self.assertFalse(
+            any(kw in text for kw in EXPANSION_KEYWORDS),
+            "an earnings headline is not a capacity announcement")
+
+    def test_real_capacity_language_still_qualifies(self):
+        for phrase in ("Capacity expansion at the Hyderabad plant",
+                       "Commissioned the new line",
+                       "Board approved Capex of Rs 500 crore",
+                       "Greenfield facility at Sanand"):
+            with self.subTest(phrase=phrase):
+                text = _expansion_text(phrase)
+                self.assertTrue(
+                    any(kw in text for kw in EXPANSION_KEYWORDS))
+
+    def test_a_release_mentioning_both_keeps_its_real_content(self):
+        """The false sense is removed from the text rather than used to reject
+        the row, so genuine content in the same release survives."""
+        text = _expansion_text(
+            "Commissioned the new line, with margin expansion of 200 bps")
+        self.assertIn("COMMISSIONED", text)
+        self.assertNotIn("MARGIN EXPANSION", text)
+
+    def test_valuation_multiple_expansion_is_also_excluded(self):
+        text = _expansion_text("Re-rating driven by multiple expansion")
+        self.assertFalse(any(kw in text for kw in EXPANSION_KEYWORDS))
 
 
 if __name__ == "__main__":

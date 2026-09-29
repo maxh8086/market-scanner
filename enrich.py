@@ -831,6 +831,73 @@ def _best_order_for_symbol(db, symbol: str) -> tuple[float | None, str, str]:
     return best
 
 
+# Matched against the ORDER window, not the expansion signal's own 6 months --
+# see `factors.select_expansion_filings`'s `months` argument for why.
+CAPACITY_CONTEXT_MONTHS = factors.ORDERBOOK_LOOKBACK_MONTHS
+
+
+def _capacity_context(df: pd.DataFrame, today: date) -> dict[str, list[str]]:
+    """{symbol: capacity-announcement dates, newest first}.
+
+    The brief asked for "existing orderbook vs potential orderbook if its present
+    in advance, if there is no plan, present it as unplanned order book". This is
+    the half of that which needs no model: did the company announce a capacity
+    expansion in the same window it won the order?
+
+      PLANNED         a capacity announcement on or before the order
+      CAPACITY_AFTER  one, but only after the order was announced
+      UNPLANNED       none in the window
+
+    `UNPLANNED` says a capacity expansion was **not filed**, which is not the
+    same as no plan existing -- a company announces capacity when it chooses to,
+    and plenty deliver inside an envelope they already have. It is still worth
+    surfacing, because the two readings are both worth a human look: either the
+    company had the headroom already, or it has won work whose delivery it has
+    not addressed publicly. Which of those it is needs the PDFs, so this column
+    points attention rather than concluding. `CAPACITY_AFTER` is the most
+    interesting of the three and the reason the direction is reported at all
+    instead of a bare yes/no: capacity announced *after* a win is the company
+    telling you the order outgrew its plant.
+
+    Read from the announcement METADATA cache, so this touches no network -- the
+    text is irrelevant here, only that a filing exists and when. That also fixes
+    an asymmetry that would otherwise fabricate: the fetched expansion PDFs look
+    back 6 months and the orders 12, so a third of order winners would read
+    `UNPLANNED` for no reason except that nothing had looked.
+    """
+    from_date = factors._subtract_months(today, CAPACITY_CONTEXT_MONTHS)
+    ann = factors.cached_announcements(from_date, today)
+    if not ann:
+        return {}
+
+    out: dict[str, list[str]] = {}
+    for _, row in df.iterrows():
+        isin, symbol = row.get("isin"), row["symbol"]
+        if not isin:
+            continue
+        hits = factors.select_expansion_filings(
+            ann, isin, today, months=CAPACITY_CONTEXT_MONTHS)
+        if hits:  # already sorted newest first
+            out[symbol] = [h["an_date"].isoformat() for h in hits]
+    return out
+
+
+def _capacity_plan(cap_dates: list[str], order_date: str) -> tuple[str, str]:
+    """(label, the capacity date the label is about) for one symbol's order.
+
+    Blank for a symbol with no trustworthy order value: there is no order to call
+    planned or otherwise, and an empty cell says that better than a verdict would.
+    """
+    if not order_date:
+        return "", ""
+    before = [d for d in cap_dates if d <= order_date]
+    if before:
+        return "PLANNED", before[0]          # nearest preceding, newest first
+    if cap_dates:
+        return "CAPACITY_AFTER", cap_dates[-1]   # earliest one after the order
+    return "UNPLANNED", ""
+
+
 def _capacity_for_symbol(db, symbol: str) -> str:
     """'existing -> proposed' from the model's capacity extraction, if any."""
     for doc in docstore.filings_for(db, symbol):
@@ -865,10 +932,13 @@ def stage_report(db, df: pd.DataFrame, scan_path: Path,
 
     ind_pe = fundamentals.industry_pe(funds, industries)
 
+    cap_dates = _capacity_context(df, date.today())
+
     rows = []
     for symbol in df["symbol"]:
         f = funds.get(symbol)
         order_rupees, source, when = _best_order_for_symbol(db, symbol)
+        plan, plan_date = _capacity_plan(cap_dates.get(symbol, []), when)
         s = significance.score(
             order_rupees,
             mcap_cr=f.mcap_cr if f else None,
@@ -897,6 +967,8 @@ def stage_report(db, df: pd.DataFrame, scan_path: Path,
             "order_pct_of_sales": _round(s.order_to_ttm_sales_pct),
             "order_significance": s.verdict,
             "capacity_change": _capacity_for_symbol(db, symbol),
+            "order_capacity_plan": plan,
+            "capacity_filing_date": plan_date,
         })
 
     enriched = df.merge(pd.DataFrame(rows), on="symbol", how="left")

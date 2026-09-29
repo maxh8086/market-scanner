@@ -315,5 +315,41 @@ class TestBestOrderForSymbol(_DocstoreCase):
                          (None, "", ""))
 
 
+class TestCapacityPlan(unittest.TestCase):
+    """`order_capacity_plan` -- did a capacity filing precede the order?
+
+    The label reports what was FILED, not what was planned. A company announces
+    capacity when it chooses to, so `UNPLANNED` is an observation about the
+    filings, and the column exists to point a human at the PDFs rather than to
+    conclude anything.
+    """
+
+    def test_a_capacity_filing_before_the_order_is_planned(self):
+        label, when = enrich._capacity_plan(
+            ["2026-05-01", "2026-01-10"], "2026-06-17")
+        self.assertEqual(label, "PLANNED")
+        self.assertEqual(when, "2026-05-01",
+                         "the nearest preceding filing, not the oldest")
+
+    def test_capacity_only_after_the_order_says_so(self):
+        """The most interesting of the three: capacity announced after a win is
+        the company saying the order outgrew its plant."""
+        label, when = enrich._capacity_plan(["2026-08-01"], "2026-06-17")
+        self.assertEqual(label, "CAPACITY_AFTER")
+        self.assertEqual(when, "2026-08-01")
+
+    def test_no_capacity_filing_at_all_is_unplanned(self):
+        self.assertEqual(enrich._capacity_plan([], "2026-06-17"),
+                         ("UNPLANNED", ""))
+
+    def test_no_order_means_no_verdict(self):
+        """An empty cell says "no order to judge" better than a label would."""
+        self.assertEqual(enrich._capacity_plan(["2026-08-01"], ""), ("", ""))
+
+    def test_a_filing_on_the_order_date_counts_as_preceding(self):
+        label, _ = enrich._capacity_plan(["2026-06-17"], "2026-06-17")
+        self.assertEqual(label, "PLANNED")
+
+
 if __name__ == "__main__":
     unittest.main()
