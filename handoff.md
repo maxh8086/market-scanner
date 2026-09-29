@@ -470,7 +470,7 @@ Set `PYTHONIOENCODING=utf-8` for anything that prints a rupee sign, and
 `PYTHONPATH=.` for scratch scripts that import `scanner`.
 
 **Heredoc escape gotcha.** Inside a `<<'PYEOF'` heredoc feeding Python, a
-`` in a non-raw string literal becomes a literal *backspace* (``) and
+`\b` in a non-raw string literal becomes a literal *backspace* (`\x08`) and
 lands silently in the written file -- a regex word boundary that never
 matches. It cost a guard that silently did not fire (`_LEGEND_BOUND`,
 diagnosed by printing `repr(pattern)`). Avoid escape sequences in transit;
