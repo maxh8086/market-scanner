@@ -56,20 +56,24 @@ SEASON_MONTHS = 12
 # market read and the per-stock read cover the same period.
 STEPS = 3
 
-# Two thresholds, because the two halves of this module need different amounts of
+# Three thresholds, because the two halves of this module need different amounts of
 # history and conflating them threw away the useful half.
 #
 # A year and a month is enough to compare this month against the same month last
 # year, which is the measurement that actually changes a reading of a single
-# stock's order win. Two years and a month is what a *seasonal* model needs, so
-# that a repeating annual pattern can be separated from a trend.
+# stock's order win. One season (12 months) is what a *seasonal* forecast needs to
+# produce a point estimate from the value at t-12, but without a backtest to
+# validate the error band. Two years and a month is what a *validated seasonal*
+# model needs, so that a repeating annual pattern can be separated from a trend
+# and the error band can be backtested.
 #
 # The scan's own announcement cache only reaches back ORDERBOOK_LOOKBACK_MONTHS,
 # so in practice the trend is available from the existing cache and the forecast
 # needs a deliberate backfill. Reporting nothing until the backfill exists would
 # hide a number that is already there.
 MIN_MONTHS_TREND = SEASON_MONTHS + 1
-MIN_MONTHS = 2 * SEASON_MONTHS + 1
+MIN_MONTHS_SEASONAL_UNVALIDATED = SEASON_MONTHS + 1  # 13: one season for t-12 lookback
+MIN_MONTHS = 2 * SEASON_MONTHS + 1  # 25: two seasons for backtest validation
 
 # The current month is excluded from the series. It is incomplete by definition,
 # and a part-month count read as a full one looks like a collapse in order flow
@@ -124,6 +128,7 @@ class MarketIntensity:
     n_filings: int = 0
     note: str = ""
     error: str = ""
+    band_validated: bool = True  # False if seasonal forecast with unvalidated band
 
     @property
     def ok(self) -> bool:
@@ -132,8 +137,9 @@ class MarketIntensity:
 
     @property
     def can_forecast(self) -> bool:
-        """Enough history for a *seasonal* forecast, which is a higher bar."""
-        return not self.error and len(self.counts) >= MIN_MONTHS
+        """Enough history for a *seasonal* forecast (unvalidated from 13 months,
+        validated from 25)."""
+        return not self.error and len(self.counts) >= MIN_MONTHS_SEASONAL_UNVALIDATED
 
     def summary(self) -> str:
         if not self.ok:
@@ -329,22 +335,26 @@ def market_intensity(rows: Optional[Iterable[dict]] = None, model=None,
     out.trend = _classify(out.yoy_pct)
 
     if not out.can_forecast:
-        short = MIN_MONTHS - len(counts)
+        short = MIN_MONTHS_SEASONAL_UNVALIDATED - len(counts)
         if at_taxonomy_start:
             # Nothing to fetch: the series already starts where NSE began
             # publishing the order-win subject categories. Saying "backfill
             # further" here would send a reader after data that does not exist.
             out.note = (
-                f"trend only: a seasonal forecast needs {MIN_MONTHS} months and "
-                f"there are {len(counts)}. The series starts at {months[0]} "
+                f"trend only: a seasonal forecast needs {MIN_MONTHS_SEASONAL_UNVALIDATED} "
+                f"months and there are {len(counts)}. The series starts at {months[0]} "
                 f"because NSE's order-win announcement categories begin there -- "
                 f"earlier months cannot be counted the same way, so this is "
                 f"{short} month(s) of waiting, not of backfilling.")
         else:
-            out.note = (f"trend only: a seasonal forecast needs {MIN_MONTHS} "
+            out.note = (f"trend only: a seasonal forecast needs {MIN_MONTHS_SEASONAL_UNVALIDATED} "
                         f"months and there are {len(counts)}. Backfill the "
                         f"announcement cache further to get one.")
         return out
+
+    # Determine if the error band will be validated by backtest
+    band_validated = len(counts) >= MIN_MONTHS
+    out.band_validated = band_validated
 
     both = fc.forecast_series([float(c) for c in counts], STEPS,
                               season=SEASON_MONTHS, model=model,
@@ -354,6 +364,20 @@ def market_intensity(rows: Optional[Iterable[dict]] = None, model=None,
         out.backend = chosen.backend
         out.forecast = chosen.good_path
         out.forecast_total = chosen.total("good")
+        # For unvalidated forecasts, enhance the note with waiting time if applicable
+        if not band_validated and not chosen.note:
+            short_validated = MIN_MONTHS - len(counts)
+            if at_taxonomy_start:
+                out.note = (
+                    f"seasonal (unvalidated band, {len(counts)} months): "
+                    f"validated band needs {MIN_MONTHS} months "
+                    f"({short_validated} month(s) of waiting)")
+            else:
+                out.note = (
+                    f"seasonal (unvalidated band, {len(counts)} months): "
+                    f"validated band needs {MIN_MONTHS} months")
+        elif chosen.note:
+            out.note = chosen.note
     if fc.BACKEND_TIMESFM in both:
         out.agreement = fc.level_agreement(both[fc.BACKEND_NAIVE],
                                            both[fc.BACKEND_TIMESFM])
