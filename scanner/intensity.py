@@ -49,9 +49,8 @@ from typing import Iterable, Optional, Sequence
 from scanner import factors
 from scanner import forecast as fc
 
-# Monthly series: season 12, and TimesFM's medium-frequency setting.
+# Monthly series, so an annual cycle is 12 points.
 SEASON_MONTHS = 12
-FREQ = fc.FREQ_MEDIUM
 
 # Three months ahead, matching the horizon used elsewhere in the project so the
 # market read and the per-stock read cover the same period.
@@ -348,7 +347,7 @@ def market_intensity(rows: Optional[Iterable[dict]] = None, model=None,
         return out
 
     both = fc.forecast_series([float(c) for c in counts], STEPS,
-                              season=SEASON_MONTHS, model=model, freq=FREQ,
+                              season=SEASON_MONTHS, model=model,
                               label="order_filings_per_month")
     chosen = fc.pick(both)
     if chosen.ok:

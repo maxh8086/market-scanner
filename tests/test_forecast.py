@@ -6,6 +6,9 @@ defensive extraction is that an unexpected output shape degrades instead of
 raising -- and that is exactly what a stub can verify.
 """
 
+import os
+import subprocess
+import sys
 import unittest
 
 from scanner import forecast as fc
@@ -195,18 +198,22 @@ class _StubTimesFM:
         self.levels = levels if levels is not None else [
             120.0, 90.0, 95.0, 100.0, 110.0, 120.0, 130.0, 140.0, 150.0, 160.0]
 
-    def forecast(self, inputs, freq):
-        horizon = fc.HORIZON_DAYS
+    # Signature and return shape follow TimesFM 2.5: `forecast(horizon, inputs)`
+    # yielding (batch, horizon) points and (batch, horizon, 10) quantiles, where
+    # index 0 of each row is the mean and the nine after it ascend. A stub that
+    # took the old `freq` argument would pass against a contract the installed
+    # library no longer has.
+    def forecast(self, horizon, inputs):
         return ([[self.point_value] * horizon], [[list(self.levels)] * horizon])
 
 
 class _NoQuantileTimesFM(_StubTimesFM):
-    def forecast(self, inputs, freq):
-        return ([[self.point_value] * fc.HORIZON_DAYS], [[[1.0]] * fc.HORIZON_DAYS])
+    def forecast(self, horizon, inputs):
+        return ([[self.point_value] * horizon], [[[1.0]] * horizon])
 
 
 class _RaisingTimesFM:
-    def forecast(self, inputs, freq):
+    def forecast(self, horizon, inputs):
         raise RuntimeError("shape mismatch")
 
 
@@ -299,6 +306,20 @@ def _seasonal(n_years, season=4, base=100.0, shape=(0.9, 0.95, 1.0, 1.15),
     return out
 
 
+def _noisy(years=5, **kw):
+    """`_seasonal` with a wobble that does not repeat on the season.
+
+    A clean seasonal series is predicted exactly by the seasonal rule, so its
+    measured error -- and therefore both its band and its deviation -- is
+    genuinely zero. That is the right answer for that series and a useless
+    fixture for testing either. The jitter period is 6 against a season of 4 so
+    it cannot be absorbed into the seasonal shape.
+    """
+    jitter = [1.03, 0.96, 1.05, 0.94, 1.02, 0.98]
+    return [round(v * jitter[i % len(jitter)], 4)
+            for i, v in enumerate(_seasonal(years, **kw))]
+
+
 class _StubLevels:
     """A level model: `quantiles[0][k]` is [mean, q10..q90] for step k+1."""
 
@@ -307,14 +328,17 @@ class _StubLevels:
         self.spread = spread
         self.with_quantiles = with_quantiles
 
-    def forecast(self, inputs, freq):
-        point = [list(self.path)]
+    def forecast(self, horizon, inputs):
+        # Exactly `horizon` steps, as TimesFM 2.5 returns -- the caller asks for
+        # `steps` and gets that many, no longer a fixed-length path.
+        path = self.path[:horizon]
+        point = [list(path)]
         if not self.with_quantiles:
             # One level per step: too few for a band, so each step falls back
             # to the point value.
-            return (point, [[[v] for v in self.path]])
+            return (point, [[[v] for v in path]])
         rows = []
-        for v in self.path:
+        for v in path:
             # Nine ascending levels spanning v +/- spread, so q10 is v-spread,
             # q50 is v and q90 is v+spread.
             rows.append([v] + [v - self.spread + i * (self.spread / 4.0)
@@ -451,6 +475,66 @@ class TestNaiveLevelForecast(unittest.TestCase):
         self.assertEqual(out.note, "")
         self.assertIsNotNone(out.total("bad"))
 
+    def test_the_deviation_covers_the_step_the_band_cannot(self):
+        """Why the deviation exists, in one assertion.
+
+        At thirteen quarters step 3 has three past errors: too few for a 10th and
+        90th percentile, enough for a median absolute one. So the step with no
+        band still reports how far the rule has typically missed, which is the
+        number the empty band column left the reader without.
+        """
+        out = fc.naive_forecast(_noisy(years=4)[:13], steps=3, season=4)
+        self.assertFalse(out.steps[2].has_band)
+        self.assertIsNotNone(out.steps[2].dev_pct)
+        self.assertEqual(out.steps[2].n_errors, 3)
+        for band in out.steps:
+            self.assertIsNotNone(band.dev_pct, f"step {band.step}")
+        self.assertIn("deviation columns cover every step", out.note)
+
+    def test_the_deviation_is_a_magnitude_not_a_direction(self):
+        """Absolute errors, so it is never negative however the rule missed."""
+        out = fc.naive_forecast(_noisy(years=5), steps=3, season=4)
+        for band in out.steps:
+            self.assertGreaterEqual(band.dev_pct, 0.0)
+        self.assertGreaterEqual(out.total_dev_pct, 0.0)
+
+    def test_a_rule_that_never_missed_reports_no_deviation_not_a_gap(self):
+        """A perfectly seasonal series is predicted exactly, so zero is the
+        truthful deviation -- and it must come through as 0.0, not as None. None
+        means "not measurable" and would be read as missing data."""
+        out = fc.naive_forecast(_seasonal(5), steps=3, season=4)
+        self.assertEqual(out.steps[0].dev_pct, 0.0)
+        self.assertEqual(out.total_dev_pct, 0.0)
+
+    def test_too_few_errors_leaves_the_deviation_empty(self):
+        """Below the floor it is not reported at all. A deviation from two
+        observations is a pair of past misses dressed up as a typical one.
+
+        Twelve points is the length that separates the steps: step 1 has four
+        past errors and step 3 has two, so one reports and the other does not.
+        """
+        out = fc.naive_forecast(_noisy(years=4)[:12], steps=3, season=4)
+        self.assertLess(out.steps[2].n_errors, fc.MIN_DEV_ERRORS)
+        self.assertIsNone(out.steps[2].dev_pct)
+        self.assertIsNotNone(out.steps[0].dev_pct)
+        # And with a step uncovered, the note must not claim otherwise.
+        self.assertNotIn("deviation columns cover every step", out.note)
+
+    def test_the_total_deviation_is_measured_on_the_sum_itself(self):
+        """Not built up from the per-step deviations. Consecutive errors are
+        correlated, so adding them independently would understate the miss; this
+        pins that the summed path was backtested directly by checking the result
+        falls outside what either naive combination would give.
+        """
+        out = fc.naive_forecast(_noisy(years=6), steps=3, season=4)
+        devs = [s.dev_pct for s in out.steps]
+        self.assertIsNotNone(out.total_dev_pct)
+        # An independent combination would be smaller than the mean of the parts
+        # and a fully-correlated one equal to it; a directly measured figure has
+        # no reason to match either, and on this series it does not.
+        self.assertNotAlmostEqual(out.total_dev_pct, sum(devs) / len(devs),
+                                  places=3)
+
     def test_the_path_repeats_the_season_scaled_by_growth(self):
         # Four flat years growing 10% a year: the next Q1 should be the last
         # year's Q1 times roughly that growth, not the last quarter's value.
@@ -549,9 +633,27 @@ class TestPick(unittest.TestCase):
 
 class TestNoHardDependencies(unittest.TestCase):
     def test_module_imports_without_torch_or_timesfm(self):
-        """The forecast is optional; importing it must not require the model."""
-        import sys
-        self.assertNotIn("timesfm", sys.modules)
+        """The forecast is optional; importing it must not require the model.
+
+        In a subprocess, because `sys.modules` is process-global and this suite
+        calls `load_timesfm` in the test right above this one -- which imports
+        timesfm on purpose. Asserting on this interpreter's `sys.modules` only
+        ever passed because timesfm was not installed; it said nothing about
+        whether `scanner.forecast` pulls it in, which is the actual promise. A
+        fresh interpreter that imports nothing else is the only place the
+        question can be asked.
+        """
+        code = ("import sys, scanner.forecast; "
+                "print(sorted(m for m in ('timesfm', 'torch') "
+                "if m in sys.modules))")
+        proc = subprocess.run([sys.executable, "-c", code],
+                              capture_output=True, text=True,
+                              cwd=os.path.dirname(os.path.dirname(
+                                  os.path.abspath(__file__))))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "[]", proc.stdout)
+
+    def test_the_arithmetic_backend_needs_no_model(self):
         self.assertTrue(fc.empirical_outlook(_ramp(600)).ok)
 
     def test_load_timesfm_reports_absence_instead_of_raising(self):

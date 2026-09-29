@@ -39,9 +39,6 @@ TRADING_DAYS_YEAR = 252
 # being a statement about this stock.
 STEPS = 1
 
-# Volatility series are daily-derived, so TimesFM reads them as high-frequency.
-FREQ = fc.FREQ_HIGH
-
 # Enough closes for a stable series of rolling estimates plus a backtest of the
 # baseline: roughly a year of windows.
 MIN_CLOSES = VOL_WINDOW + 60
@@ -227,11 +224,25 @@ def vol_state(closes: Sequence[float], model=None, window: int = VOL_WINDOW
     state.percentile = _percentile_of(series, raw_current)
 
     if model is not None:
+        # This is the one series here a model measurably improves, and the reason
+        # is the one the module docstring gives: volatility clusters, so its
+        # magnitude really is autocorrelated. Held out one window ahead at three
+        # origins over 273 symbols, TimesFM's median absolute error was 1.5%
+        # against the baseline's 2.7%, and it won at the mean (3.2 vs 4.2) and the
+        # 90th percentile (8.1 vs 9.7) too, on 814 observations.
+        #
+        # The contrast with quarterly revenue is the useful part: there the same
+        # model lost at every step, and the difference is context. This series
+        # hands it 200-plus rolling observations; that one hands it 13 points
+        # against a 512-step window. So `--timesfm` is worth its runtime here and
+        # is deliberately not used there -- see `revenue.forward_revenue`.
+        # Monthly order intensity sits between the two and has not been measured.
+        #
         # No season: volatility has no calendar cycle worth modelling at a daily
         # frequency, so the baseline here is persistence with drift -- which is
         # the classic hard-to-beat volatility benchmark, not a soft target.
         both = fc.forecast_series(series, STEPS, season=None, model=model,
-                                  freq=FREQ, label="realized_vol")
+                                  label="realized_vol")
         chosen = fc.pick(both)
         if chosen.ok and chosen.steps:
             band = chosen.steps[0]

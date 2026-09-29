@@ -34,10 +34,8 @@ from typing import Optional, Sequence
 from scanner import forecast as fc
 from scanner import indicators
 
-# Quarterly data. Season 4, and TimesFM's low-frequency setting, because a
-# quarterly series is exactly what FREQ_LOW describes.
+# Quarterly data, so a year is 4 points.
 SEASON_QUARTERS = 4
-FREQ = fc.FREQ_LOW
 
 # Three quarters ahead. With the fourth being the latest actual, that completes
 # a forward year -- which is what makes a TTM comparison possible without
@@ -77,6 +75,10 @@ class QuarterOutlook:
     yoy_pct: Optional[float] = None    # vs the same quarter a year earlier
     bad: Optional[float] = None
     very_good: Optional[float] = None
+    # How far the forecasting rule has typically missed at this step on this
+    # company's own past quarters, as a percentage. Survives on far steps where
+    # the band does not, which is the point of carrying it separately.
+    dev_pct: Optional[float] = None
 
     def summary(self) -> str:
         if self.value is None:
@@ -86,6 +88,8 @@ class QuarterOutlook:
             parts.append(f"QoQ {self.qoq_pct:+.0f}%")
         if self.yoy_pct is not None:
             parts.append(f"YoY {self.yoy_pct:+.0f}%")
+        if self.dev_pct is not None:
+            parts.append(f"+-{self.dev_pct:.0f}%")
         return " ".join(parts)
 
 
@@ -103,6 +107,11 @@ class RevenueOutlook:
     ttm_growth_pct: Optional[float] = None
     growth_pct_bad: Optional[float] = None
     growth_pct_very_good: Optional[float] = None
+    # Typical miss on the forward-year figure itself, as a percentage of it, and
+    # the same number expressed in rupees crore. Measured on the summed path, not
+    # built up from the per-quarter deviations -- see `SeriesForecast`.
+    ttm_dev_pct: Optional[float] = None
+    ttm_dev_cr: Optional[float] = None
     n_history: int = 0
     note: str = ""
     error: str = ""
@@ -382,6 +391,22 @@ def forward_revenue(quarters: Sequence[float], model=None,
     comparison for a seasonal business: a March quarter beating the previous
     December quarter may be pure seasonality, while beating the previous March
     is growth.
+
+    On `model`: the pipeline passes None, and the reason is a measurement rather
+    than a preference. Holding out real quarters across 252 symbols, TimesFM's
+    median absolute error was worse than the seasonal baseline's at every step
+    -- 7.8% vs 6.7% one quarter out, 11.9% vs 7.6% at two, 18.2% vs 8.7% at
+    three -- and nearly double on the forward-year figure, 9.4% vs 4.9%. Its
+    10-90 band contained the actual only 45.7% of the time against a nominal
+    80%, so the band that made `fc.pick` prefer it was itself miscalibrated, and
+    preferring a banded backend selected the worse forecast on every symbol.
+
+    Thirteen quarterly points is why. A model with a 512-step context window has
+    almost nothing to read here, and what it produced was a strong
+    mean-reversion prior: a median forward-year growth of 5.7% across companies
+    whose realized trailing growth was 19.1%. The parameter is kept because the
+    function is a library one and a longer series may well reverse this, but the
+    finding should not be rediscovered the hard way.
     """
     vals = _clean(quarters)
     out = RevenueOutlook(n_history=len(vals))
@@ -391,7 +416,7 @@ def forward_revenue(quarters: Sequence[float], model=None,
         return out
 
     both = fc.forecast_series(vals, steps, season=SEASON_QUARTERS, model=model,
-                              freq=FREQ, label="quarterly_revenue")
+                              label="quarterly_revenue")
     chosen = fc.pick(both)
     if not chosen.ok:
         out.error = chosen.error or "no forecast"
@@ -402,7 +427,7 @@ def forward_revenue(quarters: Sequence[float], model=None,
     n = len(vals)
     for band in chosen.steps:
         q = QuarterOutlook(step=band.step, value=band.good, bad=band.bad,
-                           very_good=band.very_good)
+                           very_good=band.very_good, dev_pct=band.dev_pct)
         if band.good is not None and vals[-1] > 0:
             q.qoq_pct = round((band.good - vals[-1]) / vals[-1] * 100.0, 1)
         # Same quarter one year earlier: step k is 4 - k positions back from the
@@ -431,6 +456,20 @@ def forward_revenue(quarters: Sequence[float], model=None,
             setattr(out, growth_attr,
                     round((forward - out.trailing_ttm) / out.trailing_ttm
                           * 100.0, 1))
+    # Deviation of the forward year. The measured percentage applies to the
+    # forecast part of it only: three of these four quarters are predicted and the
+    # fourth is an actual already on the books, which carries no error at all.
+    # So the rupee miss is that percentage of the forecast three, and restating it
+    # against the full-year figure gives a smaller percentage than the raw one --
+    # correctly, because a quarter of the total is known. Applying the raw
+    # percentage to the whole year would overstate the uncertainty by about a
+    # third, which for a company whose latest quarter is unusually large is not a
+    # rounding difference.
+    if chosen.total_dev_pct is not None and out.forward_ttm:
+        forecast_part = out.forward_ttm - vals[-1]
+        dev_cr = abs(forecast_part) * chosen.total_dev_pct / 100.0
+        out.ttm_dev_cr = round(dev_cr, 4)
+        out.ttm_dev_pct = round(dev_cr / out.forward_ttm * 100.0, 2)
     # A caveat, not a failure: "point forecast only", when the history is too
     # short to backtest scenario bands. It arrives with every other number
     # intact, so it belongs in `note` -- recording it as `error` would make

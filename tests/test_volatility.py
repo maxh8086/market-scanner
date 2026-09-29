@@ -211,9 +211,9 @@ class TestVolState(unittest.TestCase):
 class _StubModel:
     """Returns a widening quantile fan around a fixed level."""
 
-    def forecast(self, inputs, freq):
+    def forecast(self, horizon, inputs):
         levels = [30.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0]
-        return ([[30.0] * 8], [[list(levels)] * 8])
+        return ([[30.0] * horizon], [[list(levels)] * horizon])
 
 
 class TestBreakoutQuality(unittest.TestCase):

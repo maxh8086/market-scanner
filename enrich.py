@@ -527,9 +527,12 @@ def _forecast_rows(db, df: pd.DataFrame, funds: dict, model=None) -> list[dict]:
             })
 
         # --- three quarters of revenue, three ways -------------------------
+        # No model here, on purpose, even under --timesfm: it was measured to be
+        # worse on this particular series. The measurement is recorded on
+        # `revenue.forward_revenue`, which is the module that owns the decision.
         f = funds.get(symbol)
         quarters = list(f.quarterly_sales) if f else []
-        outlook = revenue.forward_revenue(quarters, model=model)
+        outlook = revenue.forward_revenue(quarters, model=None)
         if outlook.ok:
             n_revenue += 1
             row.update({
@@ -546,6 +549,14 @@ def _forecast_rows(db, df: pd.DataFrame, funds: dict, model=None) -> list[dict]:
                 "rev_forward_ttm_good_cr": _round(outlook.forward_ttm_very_good),
                 "rev_growth_pct_bad": outlook.growth_pct_bad,
                 "rev_growth_pct_very_good": outlook.growth_pct_very_good,
+                # How far this rule has typically missed on this company's own
+                # past quarters. Read beside the growth figure rather than
+                # instead of it: +18% with a 4% typical miss and +18% with a 30%
+                # one are very different claims, and nothing else in the row
+                # distinguishes them. Populated on far steps where the band is
+                # not, which is why it is worth a column of its own.
+                "rev_ttm_dev_pct": outlook.ttm_dev_pct,
+                "rev_ttm_dev_cr": _round(outlook.ttm_dev_cr),
                 "rev_note": outlook.note,
             })
             for q in outlook.quarters:
@@ -554,6 +565,7 @@ def _forecast_rows(db, df: pd.DataFrame, funds: dict, model=None) -> list[dict]:
                 row[f"rev_q{q.step}_yoy_pct"] = q.yoy_pct
                 row[f"rev_q{q.step}_bad_cr"] = _round(q.bad)
                 row[f"rev_q{q.step}_very_good_cr"] = _round(q.very_good)
+                row[f"rev_q{q.step}_dev_pct"] = q.dev_pct
 
         # --- the same forward year, from contracted work -------------------
         orders = revenue.order_backed(_orders_for_symbol(db, symbol),

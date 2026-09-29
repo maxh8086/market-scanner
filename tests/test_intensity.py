@@ -426,9 +426,9 @@ class TestMarketIntensity(unittest.TestCase):
 class _StubModel:
     """A flat forecast with a symmetric quantile fan, well above the series."""
 
-    def forecast(self, inputs, freq):
+    def forecast(self, horizon, inputs):
         levels = [50.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0]
-        return ([[50.0] * 8], [[list(levels)] * 8])
+        return ([[50.0] * horizon], [[list(levels)] * horizon])
 
 
 class TestContextNote(unittest.TestCase):

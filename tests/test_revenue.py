@@ -111,6 +111,37 @@ class TestForwardRevenue(unittest.TestCase):
         self.assertLess(out.growth_pct_bad, out.ttm_growth_pct)
         self.assertLess(out.ttm_growth_pct, out.growth_pct_very_good)
 
+    def test_the_forward_year_deviation_excludes_the_quarter_already_known(self):
+        """Three of the four quarters are forecast; the fourth is an actual and
+        carries no error. So the rupee miss is the measured percentage of the
+        forecast three, and stating it against the whole year gives a smaller
+        percentage -- correctly, because a quarter of the total is not a guess.
+
+        Pinned as an inequality rather than a recomputation: applying the raw
+        percentage to the full year is the mistake this guards, and that version
+        would make the two equal.
+        """
+        out = rev.forward_revenue(_noisy(years=5))
+        self.assertIsNotNone(out.ttm_dev_cr)
+        forecast_part = out.forward_ttm - out.latest_actual
+        self.assertLess(out.ttm_dev_pct,
+                        out.ttm_dev_cr / forecast_part * 100.0)
+        # And the rupee figure must be that share of the full-year number.
+        self.assertAlmostEqual(out.ttm_dev_pct,
+                               out.ttm_dev_cr / out.forward_ttm * 100.0,
+                               places=1)
+
+    def test_the_deviation_survives_where_the_band_does_not(self):
+        """Thirteen quarters, the real screener shape: the summed scenarios are
+        empty because step 3 cannot band, and the deviation is there anyway. That
+        asymmetry is the reason it was added."""
+        out = rev.forward_revenue(_noisy(years=4)[:13])
+        self.assertTrue(out.ok)
+        self.assertIsNone(out.forward_ttm_bad)
+        self.assertIsNotNone(out.ttm_dev_pct)
+        for q in out.quarters:
+            self.assertIsNotNone(q.dev_pct, f"step {q.step}")
+
     def test_each_forward_year_is_the_latest_actual_plus_its_own_scenario(self):
         """Each total must come from its own scenario's three quarters -- mixing
         a bad quarter into a good year would make the bands meaningless."""
