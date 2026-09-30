@@ -28,6 +28,40 @@ from scanner import runs
 from scanner.pg import db
 
 
+def _scan_is_empty(path: Path) -> bool:
+    """True when the scan CSV exists, has its header, and no rows."""
+    if not path.exists():
+        return False
+    try:
+        return pd.read_csv(path, keep_default_na=False).empty
+    except Exception:
+        return False
+
+
+def _finish(run_id: str, enriched_df: pd.DataFrame, conclusions_df, status=None) -> int:
+    """Record snapshots and changes, then close the run. Returns the exit code."""
+    try:
+        print(f"Recorded {runs.record_snapshots(run_id, enriched_df, conclusions_df)} snapshots")
+    except Exception as e:
+        print(f"Failed to record snapshots: {e}", file=sys.stderr)
+        runs.finish_run(run_id, "failed")
+        return 1
+    try:
+        print(f"Computed {runs.compute_changes(run_id)} changes")
+    except Exception as e:
+        print(f"Failed to compute changes: {e}", file=sys.stderr)
+        runs.finish_run(run_id, "failed")
+        return 1
+    status = status or ("partial" if conclusions_df is None else "complete")
+    try:
+        runs.finish_run(run_id, status)
+        print(f"Finished run with status '{status}'")
+    except Exception as e:
+        print(f"Failed to finish run: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--run-id", required=True, help="run uuid")
@@ -71,6 +105,14 @@ def main(argv=None) -> int:
         print(f"Run {args.run_id[:8]}... marked failed")
         return 0
 
+    # A scan with nothing in range is a complete, empty run: no snapshots, and every stock that
+    # was in range last time is recorded as having left it. Checked before the enriched file,
+    # which an earlier run of the same date may have left behind.
+    scan_path = Path(__file__).parent / "output" / f"ath_scan_{run_date}.csv"
+    if not args.enriched and _scan_is_empty(scan_path):
+        print(f"{scan_path.name} has no stocks in range: recording an empty run")
+        return _finish(args.run_id, pd.DataFrame(), None, status="complete")
+
     # Load enriched CSV
     if args.enriched:
         enriched_path = Path(args.enriched)
@@ -105,34 +147,7 @@ def main(argv=None) -> int:
     else:
         print(f"Warning: conclusions CSV not found, run will be marked 'partial'")
 
-    # Record snapshots
-    try:
-        snapshot_count = runs.record_snapshots(args.run_id, enriched_df, conclusions_df)
-        print(f"Recorded {snapshot_count} snapshots")
-    except Exception as e:
-        print(f"Failed to record snapshots: {e}", file=sys.stderr)
-        runs.finish_run(args.run_id, "failed")
-        return 1
-
-    # Compute changes
-    try:
-        change_count = runs.compute_changes(args.run_id)
-        print(f"Computed {change_count} changes")
-    except Exception as e:
-        print(f"Failed to compute changes: {e}", file=sys.stderr)
-        runs.finish_run(args.run_id, "failed")
-        return 1
-
-    # Finish run
-    status = "partial" if conclusions_df is None else "complete"
-    try:
-        runs.finish_run(args.run_id, status)
-        print(f"Finished run with status '{status}'")
-    except Exception as e:
-        print(f"Failed to finish run: {e}", file=sys.stderr)
-        return 1
-
-    return 0
+    return _finish(args.run_id, enriched_df, conclusions_df)
 
 
 if __name__ == "__main__":

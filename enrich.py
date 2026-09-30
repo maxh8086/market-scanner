@@ -91,7 +91,7 @@ def load_scan(path: Path) -> pd.DataFrame:
     # announcements are keyed by ISIN -- and demanding it up front made a scan CSV
     # written before the column existed unreportable, which is a worse failure
     # than the one it was guarding against.
-    if "isin" not in df.columns:
+    if "isin" not in df.columns and not df.empty:
         df = _fill_isin(df, path)
     return df
 
@@ -1120,6 +1120,12 @@ def main() -> None:
 
         scan_path = latest_scan(args.scan)
         df = load_scan(scan_path)
+        if df.empty:
+            # A quiet market (or a narrow --symbols list) can leave nothing within range.
+            # That is a result, not an error: later stages must not see a stale enriched file
+            # as this scan's, so write nothing and let the caller skip them.
+            print(f"{scan_path.name} has no stocks within range of their ATH; nothing to enrich.")
+            return
         print(f"Enriching {scan_path.name}: {len(df)} rows")
 
         if args.fundamentals or args.all:

@@ -214,7 +214,9 @@ def compute_changes(run_id: str, order_book_threshold: float = 0.5,
         # Get all symbols in previous run
         prev_symbols = {}
         for row in conn.execute(
-            "SELECT symbol FROM stock_snapshots WHERE run_id = %s",
+            # A left_range row is an event marker, not membership: a stock that already left
+            # the range must not be reported as leaving again on every later run.
+            "SELECT symbol FROM stock_snapshots WHERE run_id = %s AND bucket != 'left_range'",
             (prev_run_id,)
         ):
             symbol = row['symbol']

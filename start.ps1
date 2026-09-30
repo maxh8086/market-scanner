@@ -196,17 +196,23 @@ if ($Symbols) { $scanArgs += @('--symbols', $Symbols) }
 $code = Measure-Stage 'scan' { Invoke-Docker $scanArgs }
 if ($code -ne 0) { Stop-Pipeline "Scan failed (exit $code)." }
 
+$newest = Get-ChildItem -LiteralPath 'output' -Filter 'ath_scan_*.csv' -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+# Nothing within range is a normal result: skip the stages that need stocks, still record the run.
+$NoStocks = [bool]$newest -and (@(Import-Csv -LiteralPath $newest.FullName).Count -eq 0)
+if ($NoStocks) {
+    Write-Host "The scan found no stocks within range of their ATH: enrichment, conclusions, report, cross-check and portfolio are skipped." -ForegroundColor Yellow
+}
+
 # The run's row must exist before the first LLM call is recorded against it.
 if ($RecordRun) {
-    $newest = Get-ChildItem -LiteralPath 'output' -Filter 'ath_scan_*.csv' -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($newest -and $newest.BaseName -match '(\d{4}-\d{2}-\d{2})$') {
         $script:RunDate = $Matches[1]
         $code = Invoke-Python @('record_run.py', '--begin', '--run-id', $RunId, '--date', $script:RunDate)
         if ($code -eq 0) {
             $script:RunBegun = $true
             Write-Host "Run $RunId started for $($script:RunDate)."
-            Start-GpuSampler
+            if (-not $NoStocks) { Start-GpuSampler }
         } else {
             Write-Host "Could not open the run in Postgres (exit $code) -- this run will not be recorded." -ForegroundColor Yellow
         }
@@ -217,11 +223,15 @@ if ($RecordRun) {
     Write-Host "Subset run (-Symbols): not recorded in Postgres." -ForegroundColor Yellow
 }
 
-Write-Stage "Waiting for vLLM"
-if (-not (Wait-Healthy 'mri-vllm' 30)) { Stop-Pipeline "vLLM did not become healthy within 30 minutes. See: docker logs mri-vllm" }
-Write-Host "vLLM is healthy on http://127.0.0.1:8001" -ForegroundColor Green
+if (-not $NoStocks) {
+    Write-Stage "Waiting for vLLM"
+    if (-not (Wait-Healthy 'mri-vllm' 30)) { Stop-Pipeline "vLLM did not become healthy within 30 minutes. See: docker logs mri-vllm" }
+    Write-Host "vLLM is healthy on http://127.0.0.1:8001" -ForegroundColor Green
+}
 
-if ($SkipEnrich) {
+if ($NoStocks) {
+    Write-Host "Enrichment skipped: no stocks in range."
+} elseif ($SkipEnrich) {
     Write-Host "Enrichment skipped."
 } else {
     Write-Stage "Enrich (filings, fundamentals, AI extraction on vLLM)"
@@ -235,8 +245,10 @@ if ($SkipEnrich) {
     if ($code -ne 0) { Stop-Pipeline "TimesFM enrichment failed (exit $code)." }
 }
 
-$haveEnriched = [bool](Get-ChildItem -LiteralPath 'output' -Filter 'ath_enriched_*.csv' -ErrorAction SilentlyContinue)
-if (-not $haveEnriched) {
+$haveEnriched = (-not $NoStocks) -and [bool](Get-ChildItem -LiteralPath 'output' -Filter 'ath_enriched_*.csv' -ErrorAction SilentlyContinue)
+if ($NoStocks) {
+    # already reported above
+} elseif (-not $haveEnriched) {
     Write-Host "Graph, conclusions and report skipped: no output/ath_enriched_*.csv to read." -ForegroundColor Yellow
 } else {
     Write-Stage "Graph: load filings and extractions into Neo4j"
@@ -267,7 +279,9 @@ if ($haveEnriched) {
     if ($code -ne 0) { Stop-Pipeline "Final report failed (exit $code)." }
 }
 
-if ($SkipCrosscheck) {
+if ($NoStocks) {
+    Write-Host "Cross-check skipped: no stocks in range."
+} elseif ($SkipCrosscheck) {
     Write-Host "Cross-check skipped."
 } else {
     Write-Stage "Cross-check (independent price source)"
@@ -279,7 +293,9 @@ if ($SkipCrosscheck) {
     }
 }
 
-if ($SkipPortfolio) {
+if ($NoStocks) {
+    Write-Host "Portfolio skipped: no stocks in range."
+} elseif ($SkipPortfolio) {
     Write-Host "Portfolio skipped."
 } else {
     Write-Stage "Portfolio overlay"

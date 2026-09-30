@@ -202,6 +202,27 @@ class RunsIntegrationTests(unittest.TestCase):
             self.assertEqual(len(changes), 1)
 
 
+    def test_left_range_is_reported_once(self):
+        """A stock that left the range is not flagged as leaving again on the next run."""
+        from scanner import runs
+        from scanner.pg import db
+
+        abc = pd.DataFrame({'symbol': ['ABC'], 'company': ['ABC Corp'], 'industry': ['Tech'],
+                            'ltp': [100.0], 'ath_high': [110.0], 'ath_date': ['2026-09-20'],
+                            'distance_pct': [9.09], 'bucket': ['5-15%'], 'isin': ['INE001']})
+        empty = abc.iloc[0:0]
+        for day, frame in ((6, abc), (7, empty), (8, empty)):
+            rid = runs.start_run(date(2026, 10, day))
+            runs.record_snapshots(rid, frame)
+            runs.compute_changes(rid)
+            runs.finish_run(rid, 'complete')
+            last = rid
+        with db.connect() as conn:
+            rows = list(conn.execute(
+                "SELECT COUNT(*) AS n FROM snapshot_changes WHERE run_id = %s AND kind = 'left_range'",
+                (last,)))
+        self.assertEqual(rows[0]['n'], 0)
+
     def test_begin_run_is_idempotent_and_not_current(self):
         from scanner import runs
         from scanner.pg import db

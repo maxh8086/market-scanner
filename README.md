@@ -113,9 +113,17 @@ baked into an image. One command runs the whole pipeline, no switches:
 
 ```powershell
 ./start.ps1                                   # full run (needs an NVIDIA GPU)
-./start.ps1 -Symbols "INFY,TCS" -SkipPortfolio   # smaller run
-./stop.ps1                                    # tear down this project (the shared infra keeps running)
+./start.ps1 -Symbols "INFY,TCS" -SkipPortfolio   # smaller run (not recorded in Postgres)
+./start.ps1 -SkipServices                     # do not start the UI and collector afterwards
+./ensure-infra.ps1                            # start the shared infra only if it is not already running
+./stop.ps1                                    # stop the UI, collector and this project; asks whether to stop the shared infra too
+./stop.ps1 -KeepInfra                         # never asks, leaves the shared infra running (-StopInfra stops it without asking)
+./stop-infra.ps1                              # stop the shared infra (Postgres, MongoDB, Neo4j, vLLM)
 ```
+
+`start.ps1` first runs `ensure-infra.ps1`: if the databases are already up it leaves them alone,
+otherwise it starts them through the infra's own `up.ps1`. `stop.ps1 -Prune` also removes this
+project's images; `-PurgeModels` also deletes its named volumes (the Laya model cache).
 
 | Stage | Container | What it does |
 |---|---|---|
@@ -159,6 +167,34 @@ that never produced an extraction is kept). Set it in `config/retention.json`:
 `"purge": false` keeps everything (dates are still written, so you can switch it on
 later); `RETENTION_YEARS` / `RETENTION_PURGE` override it for one run.
 `python graph_sync.py purge --dry-run` shows what would go.
+
+## UI, collector and cost metrics
+
+After a run, `start.ps1` leaves two containers up (until `./stop.ps1`):
+
+- **UI** at http://127.0.0.1:8080 (loopback only, no login). A FastAPI service (`ui/app/`) serving a
+  plain HTML/CSS/JS front end; no Node, no build step. Home lists the recent runs with the cost
+  center and report dashboard one click away. Click a run for its dashboard, then "Results" for the
+  full table, then a stock for its page with the timeline of every earlier analysis. Every page has
+  Back and Home.
+- **Collector** (`collect.py serve`). Keeps candles, announcements, corporate actions, filings and
+  fundamentals current in Postgres and MongoDB, fetching only what is missing. Candles are end of
+  day only; the rest are fetched as they are reported. Under **Master configuration** in the UI each
+  source is either *scheduled* (a cron in Asia/Kolkata, the default) or *manual*, and every source
+  has a **Run now** button. Announcements are checked for a start as well as an end date: at least
+  three years, or since listing.
+
+The **Cost center** reports measured metrics only: LLM calls, input and output tokens, tokens per
+call and per second, stage durations, and GPU energy (sampled with `nvidia-smi` while the model is
+loaded). There are no prices and no provider lookup; multiply the figures by whatever rate you are
+comparing against. A figure that was not measured shows as "not measured", never as zero.
+
+Each full run gets a run id and is recorded in Postgres (snapshots, changes, metrics). A re-run for
+the same date replaces the earlier one only once it completes, and no writer can create a duplicate
+row. A run restricted with `-Symbols` is never recorded. The schema is in `ui/SCHEMA.md`.
+
+Code navigation for contributors and agents: `CLAUDE.md` tells them to use the codebase-memory
+graph first instead of searching files.
 
 ## Output
 
@@ -301,7 +337,7 @@ again means writing one class, not touching the caching or scan logic.
 
 ## Tests
 
-Run the whole suite with pytest from the venv (**49 tests**):
+Run the whole suite with pytest from the venv (**838 tests**):
 
 ```bash
 .venv\Scripts\python.exe -m pytest tests -q
@@ -310,10 +346,14 @@ Run the whole suite with pytest from the venv (**49 tests**):
 `pytest` is declared in `requirements-dev.txt`, not `requirements.txt` --
 it is a test-only dependency.
 
+> The suite forces the SQLite and TinyDB backends (`tests/__init__.py`), so it does not exercise
+> Postgres types such as `Decimal`. `tests/test_postgres_decimal.py` covers that boundary with a
+> fake connection; anything else that touches Postgres needs a live check.
+
 > The older documented command, `python -m unittest tests.test_ath -v`,
 > still passes but runs only the 26 tests in `test_ath.py` and silently
 > skips the 23 in `test_factors.py`. Prefer the pytest command above.
-> (`python -m unittest discover tests` also finds all 49.)
+> (`python -m unittest discover tests` also finds them all.)
 
 ## Later
 

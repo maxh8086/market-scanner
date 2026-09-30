@@ -741,3 +741,59 @@ containers) and, next, the UI.
   docstore there, then the UI and cost metrics.
 - Old Docker leftovers that can be removed once nothing needs them: volumes
   `kite-ath-scanner_huggingface_vllm`, `kite-ath-scanner_neo4j_data`, image `kite-ath-scanner-vllm`.
+
+## Postgres, UI, collector and cost metrics (added 2026-09-30, supersedes "Still TinyDB/SQLite" above)
+
+State at the end of 2026-09-30: committed and pushed (`d5f885f` and later docs). Run A (3 stocks) and
+run B (full, 291 scanned, 11 at ATH, Postgres run `61b38ae4-1e25-4be8-85bd-9b39930866de`) are
+complete and verified. The old volumes `kite-ath-scanner_huggingface_vllm`,
+`kite-ath-scanner_neo4j_data` and image `kite-ath-scanner-vllm` have been removed; keep
+`kite-ath-scanner_huggingface_cache`.
+
+**What exists.**
+- Storage split: Postgres (runs, snapshots, changes, `llm_calls`, collector tables, candles,
+  announcements, corporate actions, coverage, listing), MongoDB (filings, extractions, conclusions,
+  fundamentals), Neo4j (relationships, filings pushed after extraction). Full description in
+  `ui/SCHEMA.md`; migrations in `db/migrations/`. Backend switches: `MARKETDATA_BACKEND`,
+  `DOCSTORE_BACKEND`.
+- `start.ps1` stages: ensure-infra, scan, `record_run.py --begin` (full runs only) plus a GPU power
+  sampler, wait for vLLM, enrich, timesfm, graph load and facts, conclude, graph conclusions and
+  purge, free the GPU, report, crosscheck, portfolio, `record_run.py` and
+  `scanner.metrics finalize`, then UI and collector. Helpers: `ensure-infra.ps1`, `stop.ps1`
+  (asks about the infra), `stop-infra.ps1`.
+- UI (`ui/app/`, FastAPI, static HTML/JS, port 8080) and collector (`collect.py serve`, settings
+  from the UI's Master configuration). Wireframe: `ui/wireframes/index.html`; design notes in
+  `ui/DESIGN.md`, build plan in `ui/BUILD_PLAN.md`.
+- Cost center is metrics only (tokens, calls, seconds, GPU energy). No prices are stored.
+- `CLAUDE.md` points agents at the codebase-memory graph; the architecture decision record lives in
+  the graph database (read it with `manage_adr`), not in a repo file.
+
+**Measured baselines (run B).** scan 113 s, enrich 1620 s, timesfm 816 s, conclude 868 s; the full
+pipeline is about 30 minutes.
+
+**Gotchas.**
+- Postgres returns NUMERIC as `Decimal`. The read boundary in
+  `scanner/marketdata/postgres_backend.py` converts to float. The offline tests use
+  sqlite/tinydb and cannot catch this class of bug.
+- The infra's `up.ps1` and `down.ps1` change the caller's working directory; `start.ps1` wraps them
+  in Push/Pop-Location.
+- The pipeline picks its input as the newest `output/` file by name. Never rename an output with a
+  suffix (a `_runA` suffix sorted after the new file and made run B enrich the wrong scan). Move old
+  files into a subfolder instead.
+- Container stdout is not captured in `logs/*.log` (`Invoke-Docker` pipes to `Out-Host`); only
+  stderr is. Use `docker logs` or the run's Postgres row to debug.
+- Windows PowerShell 5.1 drops quotes inside native arguments; the timings JSON is escaped for that.
+- A scan with zero stocks in range writes a header-only CSV. Fixed: `enrich.py` exits with "nothing
+  to enrich", `record_run.py` records a `complete` run with no snapshots (every previous member is
+  logged once as `left_range`), and `start.ps1` skips the GPU, enrich, graph, conclude, crosscheck and
+  portfolio stages. `compute_changes` also ignores previous `left_range` marker rows, so a stock that
+  left is reported once, not on every later run.
+
+**Open items.**
+1. Replace the `output/` CSV hand-offs with database reads keyed by `run_id` (files only as a manual
+   export). Affected: `enrich.py`, `conclude.py`, `final_report.py`, `crosscheck.py`, `portfolio.py`,
+   `bench_models.py`, `record_run.py`, `scanner/collect/sources.py`, and `start.ps1`'s "newest file".
+2. Confirm the final Cost center and Master configuration wireframes with the user.
+3. `git init` in `Shared-Market-Research-Infra`; test `stop.ps1` end to end; decide how the home
+   table's "scanned" count is shown; stop `mongo._ensure_indexes` swallowing auth failures; surface
+   container stdout in the run logs.

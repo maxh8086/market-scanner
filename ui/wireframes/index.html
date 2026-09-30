@@ -188,6 +188,9 @@ td .nm{color:var(--faint);font-size:13px}
 .empty{border:1px dashed var(--line-strong);border-radius:14px;padding:28px;color:var(--muted)}
 
 /* wireframe annotation rail */
+.toast{position:fixed;left:50%;bottom:72px;transform:translateX(-50%) translateY(8px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;z-index:40;max-width:min(92vw,520px)}
+.toast.on{opacity:1;transform:translateX(-50%)}
+input:disabled{opacity:.5}
 .spec{position:fixed;right:16px;bottom:16px;z-index:30}
 .spec .btn{box-shadow:var(--shadow)}
 dialog{border:1px solid var(--line-strong);border-radius:16px;background:var(--surface);color:var(--ink);max-width:min(560px,92vw);padding:24px}
@@ -285,7 +288,7 @@ dialog h2{font-size:17px;margin-bottom:8px} dialog ul{margin:8px 0 16px;padding-
             <tbody id="runs"></tbody>
           </table>
         </div>
-        <div class="tfoot"><span>Showing 6 of 41 runs</span><a href="#/runs-all" onclick="return false">View all runs</a></div>
+        <div class="tfoot"><span>Showing 6 of 41 runs</span><a href="#/runs-all" data-toast="Wireframe: opens the full list of 41 runs">View all runs</a></div>
       </div>
     </div>
 
@@ -316,7 +319,7 @@ dialog h2{font-size:17px;margin-bottom:8px} dialog ul{margin:8px 0 16px;padding-
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
           <a class="btn" href="#/report">Open dashboard</a>
-          <a class="btn" href="#/report" onclick="return false">Download .xlsx <svg><use href="#i-down"/></svg></a>
+          <a class="btn" href="#/report" data-toast="Wireframe: downloads ath_report_2026-09-30.xlsx">Download .xlsx <svg><use href="#i-down"/></svg></a>
         </div>
       </div>
     </aside>
@@ -402,7 +405,7 @@ dialog h2{font-size:17px;margin-bottom:8px} dialog ul{margin:8px 0 16px;padding-
       <h1>All results</h1>
       <p class="sub">Nine columns chosen for scanning. Click a stock to open its full page. The export has every column.</p>
     </div>
-    <a class="btn" href="#/results/2026-09-30" onclick="return false">Export CSV <svg><use href="#i-down"/></svg></a>
+    <a class="btn" href="#/results/2026-09-30" data-toast="Wireframe: exports the filtered rows as CSV">Export CSV <svg><use href="#i-down"/></svg></a>
   </div>
 
   <div class="bar">
@@ -564,7 +567,7 @@ dialog h2{font-size:17px;margin-bottom:8px} dialog ul{margin:8px 0 16px;padding-
       <h1>How the market is trending across runs</h1>
       <p class="sub">The workbook's Summary sheet, live and comparable over time. Filters here also drive the tables.</p>
     </div>
-    <a class="btn" href="#/report" onclick="return false">Download latest .xlsx <svg><use href="#i-down"/></svg></a>
+    <a class="btn" href="#/report" data-toast="Wireframe: downloads the latest .xlsx report">Download latest .xlsx <svg><use href="#i-down"/></svg></a>
   </div>
   <div class="grid wide-right">
     <div class="stack">
@@ -793,6 +796,7 @@ dialog h2{font-size:17px;margin-bottom:8px} dialog ul{margin:8px 0 16px;padding-
 
 </div></main>
 
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="spec"><button class="btn primary" id="specBtn">Design notes</button></div>
 <dialog id="spec">
   <h2>Design notes</h2>
@@ -894,13 +898,45 @@ function go(h){
   document.title=(key==="home"?"":$(ROUTES[key]).dataset.title+" · ")+"ATH Scanner UI Wireframes";
   scrollTo(0,0); $("#nav").classList.remove("open"); $("#menu").setAttribute("aria-expanded","false");
 }
-addEventListener("hashchange",()=>go()); go(); renderRes();
-document.addEventListener("click",e=>{const r=e.target.closest("[data-go]"); if(r&&!e.target.closest("a")) location.hash=r.dataset.go;});
-document.addEventListener("keydown",e=>{if(e.key==="Enter"){const r=e.target.closest&&e.target.closest("tr[data-go]"); if(r) location.hash=r.dataset.go;}});
-$("#back").onclick=()=>{ if(history.length>1) history.back(); else location.hash="#/home"; };
+/* Navigation does not depend on location.hash: embedded previews block it. The hash is updated when allowed. */
+const trail=[]; let here="#/home";
+function nav(h,push=true){
+  if(push&&here!==h) trail.push(here);
+  here=h; go(h);
+  try{ if(location.hash!==h) history.replaceState(null,"",h); }catch(e){}
+}
+let toastT; function toast(m){const t=$("#toast"); t.textContent=m; t.classList.add("on"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"),2600);}
+addEventListener("hashchange",()=>{ if(location.hash&&location.hash!==here){here=location.hash; go(here);} });
+try{ if(location.hash) here=location.hash; }catch(e){}
+go(here); renderRes();
+document.addEventListener("click",e=>{
+  const a=e.target.closest('a[href^="#/"]');
+  if(a){ e.preventDefault(); if(a.dataset.toast) toast(a.dataset.toast); else nav(a.getAttribute("href")); return; }
+  const r=e.target.closest("[data-go]"); if(r) nav(r.dataset.go);
+});
+document.addEventListener("keydown",e=>{if(e.key==="Enter"){const r=e.target.closest&&e.target.closest("tr[data-go]"); if(r) nav(r.dataset.go);}});
+$("#back").onclick=()=>{ nav(trail.length?trail.pop():"#/home",false); };
 $("#menu").onclick=()=>{const o=$("#nav").classList.toggle("open");$("#menu").setAttribute("aria-expanded",o)};
 $("#specBtn").onclick=()=>$("#spec").showModal();
-$$("#f-period button").forEach(b=>b.onclick=()=>$$("#f-period button").forEach(x=>x.setAttribute("aria-pressed",x===b)));
+const PERIOD={"Latest run":"Figures for the 30 Sep 2026 run.","30 days":"Totals over the last 30 days: 14 runs, 31,204 LLM calls, 33.9M input tokens, 4.3M output tokens, 941 Wh (sample).","All runs":"Totals over all 41 runs on file (sample)."};
+$$("#f-period button").forEach(b=>b.onclick=()=>{$$("#f-period button").forEach(x=>x.setAttribute("aria-pressed",x===b)); toast(PERIOD[b.textContent]||"");});
+/* Master configuration: mode switch, cron field, Run now */
+$$("#s-config .sect").forEach(sec=>{
+  const seg=sec.querySelector(".seg"), cron=sec.querySelector("input"), run=[...sec.querySelectorAll("button.btn")].find(b=>b.textContent.trim()==="Run now");
+  const name=sec.querySelector("h2").textContent;
+  seg.onclick=e=>{const b=e.target.closest("button"); if(!b) return;
+    seg.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",x===b));
+    const manual=b.textContent.trim()==="Manual"; cron.disabled=manual;
+    toast(manual?name+": manual only. It never runs on its own; use Run now.":name+": runs on the schedule. Run now still works.");};
+  if(run) run.onclick=()=>{ if(run.disabled) return; const t=run.textContent; run.disabled=true; run.textContent="Queued...";
+    toast(name+": run requested. The collector picks it up within a minute.");
+    setTimeout(()=>{run.disabled=false; run.textContent=t;},2500); };
+});
+/* Results pagination */
+$$("#s-results .tfoot .seg").forEach(seg=>seg.onclick=e=>{const b=e.target.closest("button"); if(!b) return;
+  const nums=[...seg.querySelectorAll("button")].filter(x=>/^\d+$/.test(x.textContent)); let i=nums.findIndex(x=>x.getAttribute("aria-pressed")==="true");
+  const t=b.textContent.trim(); if(t==="Prev") i=Math.max(0,i-1); else if(t==="Next") i=Math.min(nums.length-1,i+1); else i=nums.indexOf(b);
+  nums.forEach((x,k)=>x.setAttribute("aria-pressed",k===i)); toast("Wireframe: page "+(i+1)+" of the results (sample rows stay the same).");});
 
 (function(){
   const root=document.documentElement, box=document.getElementById("theme");

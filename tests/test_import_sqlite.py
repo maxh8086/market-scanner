@@ -39,7 +39,7 @@ class TestImportSQLiteToPostgres(unittest.TestCase):
         self.assertEqual(result2["inserted"], 0, "Second import should insert 0 rows")
 
     def test_import_candles_count_matches_sqlite(self):
-        """Total Postgres candles match SQLite exactly."""
+        """Postgres holds every SQLite candle (it may hold more: the collector writes to it directly)."""
         import sqlite3
 
         from scanner.pg.import_sqlite import import_candles
@@ -53,8 +53,8 @@ class TestImportSQLiteToPostgres(unittest.TestCase):
             sqlite_count = sqlite_conn.execute("SELECT COUNT(*) FROM candles").fetchone()[0]
             sqlite_conn.close()
 
-            self.assertEqual(result["postgres_after"], sqlite_count,
-                           f"Expected {sqlite_count} candles in Postgres, got {result['postgres_after']}")
+            self.assertGreaterEqual(result["postgres_after"], sqlite_count,
+                           f"Expected at least {sqlite_count} candles in Postgres, got {result['postgres_after']}")
 
     def test_import_announcements_idempotent(self):
         """Importing announcements twice is idempotent."""
