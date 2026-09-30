@@ -1006,3 +1006,83 @@ def build_factor_table(
         }
 
     return result
+
+
+def collect_announcements(
+    symbol: str, listing_date: date | None = None, session: requests.Session | None = None
+) -> dict:
+    """Collect announcements for a stock, fetching only gaps.
+
+    Returns:
+        {"fetched": int, "new": int, "from": date|None, "to": date|None}
+    """
+    import os
+    backend = os.environ.get("MARKETDATA_BACKEND", "").lower()
+
+    # Auto-detect backend
+    if backend not in ("postgres", "sqlite"):
+        try:
+            from scanner.pg.db import available
+            backend = "postgres" if available() else "sqlite"
+        except Exception:
+            backend = "sqlite"
+
+    if backend == "postgres":
+        from scanner.marketdata.factors_postgres import collect_announcements as pg_collect
+        return pg_collect(symbol, listing_date, session)
+    else:
+        # SQLite: no gap tracking, minimal stub
+        return {"fetched": 0, "new": 0, "from": None, "to": None}
+
+
+def collect_corporate_actions(
+    symbol: str, listing_date: date | None = None, session: requests.Session | None = None
+) -> dict:
+    """Collect corporate actions for a stock, fetching only gaps.
+
+    Returns:
+        {"fetched": int, "new": int, "from": date|None, "to": date|None}
+    """
+    import os
+    backend = os.environ.get("MARKETDATA_BACKEND", "").lower()
+
+    # Auto-detect backend
+    if backend not in ("postgres", "sqlite"):
+        try:
+            from scanner.pg.db import available
+            backend = "postgres" if available() else "sqlite"
+        except Exception:
+            backend = "sqlite"
+
+    if backend == "postgres":
+        from scanner.marketdata.factors_postgres import collect_corporate_actions as pg_collect
+        return pg_collect(symbol, listing_date, session)
+    else:
+        # SQLite: no gap tracking, minimal stub
+        return {"fetched": 0, "new": 0, "from": None, "to": None}
+
+
+def announcement_coverage() -> list[dict]:
+    """Coverage report per symbol for announcements.
+
+    Returns list of dicts with coverage status per symbol.
+    """
+    import os
+    backend = os.environ.get("MARKETDATA_BACKEND", "").lower()
+
+    # Auto-detect backend
+    if backend not in ("postgres", "sqlite"):
+        try:
+            from scanner.pg.db import available
+            backend = "postgres" if available() else "sqlite"
+        except Exception:
+            backend = "sqlite"
+
+    if backend == "postgres":
+        from scanner.coverage import announcement_coverage as pg_coverage
+        from scanner.pg.db import connect
+        with connect() as conn:
+            return pg_coverage(conn)
+    else:
+        # SQLite: no coverage tracking
+        return []

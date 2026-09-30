@@ -11,3 +11,6 @@ venv/
 .pytest_cache/
 .env.*
 !.env.example
+
+output_backup_*/
+.codebase-memory/

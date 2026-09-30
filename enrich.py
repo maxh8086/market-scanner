@@ -40,7 +40,7 @@ import pandas as pd
 import requests
 
 from scanner.constituents import load_constituents
-from scanner import (docstore, factors, forecast, fundamentals, history,
+from scanner import (docstore, factors, forecast, fundamentals, graph, history,
                      intensity, llm, orderval, revenue, significance,
                      volatility)
 
@@ -434,8 +434,20 @@ def stage_llm(db, cfg: llm.LLMConfig, limit: int | None = None,
     workers = max(1, workers)
     started = time.time()
 
+    # Try to reach Neo4j for push_filing, but don't fail the stage if unreachable
+    g = None
+    try:
+        g = graph.Graph(graph.connect())
+        if not g.wait_ready(seconds=5):
+            g = None
+    except SystemExit:  # graph.connect() raises SystemExit when NEO4J_AUTH is unset
+        g = None
+    except Exception:  # noqa: BLE001
+        g = None
+
     def _extract(d):
-        return d, llm.extract(cfg, d["raw_text"], _kind_for(d))
+        return d, llm.extract(cfg, d["raw_text"], _kind_for(d),
+                              source_key=d["seq_id"], symbol=d.get("symbol"))
 
     # Requests run concurrently (vLLM batches them); results are stored from this
     # thread only, because TinyDB is not safe for concurrent writers.
@@ -443,7 +455,7 @@ def stage_llm(db, cfg: llm.LLMConfig, limit: int | None = None,
         futures = [pool.submit(_extract, d) for d in docs]
         for i, fut in enumerate(as_completed(futures), 1):
             d, result = fut.result()
-            docstore.put_extraction(db, d["seq_id"], _kind_for(d), {
+            extraction_doc = {
                 "symbol": d.get("symbol", ""),
                 "data": result.data,
                 "raw": result.raw,
@@ -451,7 +463,13 @@ def stage_llm(db, cfg: llm.LLMConfig, limit: int | None = None,
                 "seconds": result.seconds,
                 "model": result.model,
                 "prompt_version": result.prompt_version,
-            })
+            }
+            docstore.put_extraction(db, d["seq_id"], _kind_for(d), extraction_doc)
+
+            # Push to Neo4j immediately after storing (if reachable)
+            if g:
+                g.push_filing(d, extraction_doc)
+
             if result.ok:
                 ok += 1
             else:
@@ -461,6 +479,9 @@ def stage_llm(db, cfg: llm.LLMConfig, limit: int | None = None,
                 left = (len(docs) - i) * rate / 60
                 print(f"  {i}/{len(docs)}  {ok} ok, {bad} failed  "
                       f"({rate:.1f}s/doc, ~{left:.0f} min left)", flush=True)
+
+    if g:
+        g.close()
 
     _report_cross_check(db)
 

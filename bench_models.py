@@ -14,6 +14,7 @@ are fixed in modelcheck.py: a candidate that misses one is a fail.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -29,8 +30,10 @@ import conclude as cli
 from scanner import conclude, docstore, llm
 from scanner import modelcheck as mc
 
-IMAGE = "kite-ath-scanner-vllm"
-VOLUME = "kite-ath-scanner_huggingface_vllm"
+IMAGE = "market-infra-vllm"     # built by Shared-Market-Research-Infra (up.ps1 -Llm)
+# Trial models are cached in the shared weights folder, next to the ones the pipeline serves.
+INFRA = Path(os.environ.get("MARKET_INFRA_DIR") or Path(__file__).resolve().parent.parent / "Shared-Market-Research-Infra")
+VOLUME = str(INFRA / "models" / "huggingface")
 NAME = "ath-bench"
 PORT = 8003
 OUT = Path("output/model_bench.csv")

@@ -31,7 +31,7 @@ def _all(db, table: str) -> list[dict]:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["load", "conclusions", "facts", "purge", "status"])
+    p.add_argument("command", choices=["load", "conclusions", "facts", "purge", "status", "announcements"])
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--wait", type=int, default=120, help="seconds to wait for Neo4j")
     args = p.parse_args(argv)
@@ -72,6 +72,21 @@ def main(argv=None) -> int:
             print(f"loaded {n[0]} filings, {n[1]} extractions, {n[2]} fundamentals")
         elif args.command == "conclusions":
             print(f"loaded {g.load_conclusions(_all(db, docstore.CONCLUSIONS))} conclusions")
+        elif args.command == "announcements":
+            try:
+                from scanner import pg
+                with pg.connect() as conn:
+                    rows = conn.execute(
+                        "SELECT symbol, isin, category, n, first_date, last_date "
+                        "FROM v_announcement_summary"
+                    ).fetchall()
+                # Convert to dicts
+                rows = [dict(r) for r in rows] if rows else []
+                n = g.sync_announcement_summary(rows)
+                print(f"synced {n} announcement summaries")
+            except Exception as e:  # noqa: BLE001
+                print(f"announcement sync failed ({type(e).__name__}: {e}); "
+                      "the Postgres view v_announcement_summary may not exist yet")
         elif args.command == "facts":
             facts = g.facts()
             FACTS_PATH.parent.mkdir(parents=True, exist_ok=True)

@@ -718,3 +718,26 @@ Architecture rule from the owner: every component is a container under the singl
   but deliberately replaced by the manual `start.ps1`/`stop.ps1` for now.
 - `scanner/ath.py` remains import-clean (no I/O, no broker dependency) and
   can be reused as-is as a pure ATH/bucketing library.
+
+## Shared infrastructure (added 2026-09-30, supersedes the neo4j/vllm details above)
+
+Postgres, MongoDB, Neo4j, the vLLM server and the model weights moved out of this project into
+`C:\Users\vaibh\Downloads\Projects\Shared-Market-Research-Infra` (see its README) so other projects
+can share them. This project keeps only the analytical engine (scanner/enrich/graph/conclude/report
+containers) and, next, the UI.
+
+- `docker-compose.yml` no longer has `vllm`, `neo4j` or the `huggingface_vllm`/`neo4j_data` volumes;
+  `docker/vllm/` was removed (now `Shared-Market-Research-Infra/vllm/`). Containers join the external
+  network `market-infra` and reach `http://vllm:8000` and `bolt://neo4j:7687` by name.
+- `start.ps1` runs `Shared-Market-Research-Infra\up.ps1 -Project ath_scanner -Llm -NoWait` (creates the
+  project's databases, writes `secrets\ath_scanner.env`), waits on `mri-vllm`, and after conclusions runs
+  `down.ps1 -Llm` to free the GPU (the databases keep running). `.env.neo4j` and `stop.ps1 -PurgeGraph`
+  are gone; the graph login comes from `secrets\ath_scanner.env`. `MARKET_INFRA_DIR` overrides the location.
+- Weights are the Hugging Face cache layout in `Shared-Market-Research-Infra\models\huggingface`; the
+  imported copies have no blobs, so vllm and `enrich-timesfm` run with `HF_HUB_OFFLINE=1`.
+  `bench_models.py` mounts the same folder.
+- Still TinyDB (`data/documents.json`) + SQLite (`data/candles`, `factors.db`) as the stores; Postgres
+  and Mongo are provisioned and empty for this project. Next: move the run/stock/timeline schema and the
+  docstore there, then the UI and cost metrics.
+- Old Docker leftovers that can be removed once nothing needs them: volumes
+  `kite-ath-scanner_huggingface_vllm`, `kite-ath-scanner_neo4j_data`, image `kite-ath-scanner-vllm`.

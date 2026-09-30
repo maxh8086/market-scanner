@@ -66,7 +66,20 @@ def _expiry(base) -> str:
 
 
 def open_db(path: Path | str = DB_PATH) -> TinyDB:
-    """Open (creating if needed) the document store and record its schema."""
+    """Open (creating if needed) the document store and record its schema.
+
+    Selection per BUILD_PLAN: DOCSTORE_BACKEND env var controls which backend.
+    - mongo: uses MongoDB via scanner.mongo
+    - tinydb (default): uses TinyDB at path
+    """
+    import os
+    backend = os.environ.get("DOCSTORE_BACKEND", "tinydb").lower()
+
+    if backend == "mongo":
+        from scanner import mongo
+        return mongo.open_db()
+
+    # TinyDB backend (default)
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     db = TinyDB(p, storage=_CompactStorage, encoding="utf-8")
@@ -201,6 +214,15 @@ def conclusions_for(db: TinyDB, as_of: str) -> list[Document]:
 
 def stats(db: TinyDB, path: Path | str = DB_PATH) -> dict[str, Any]:
     """Counts and on-disk size -- the memory ceiling made visible."""
+    # Handle both TinyDB and MongoDB backends
+    try:
+        from scanner import mongo
+        if isinstance(db, mongo.MongoDB):
+            return mongo.stats(db)
+    except ImportError:
+        pass
+
+    # TinyDB path
     p = Path(path)
     filings = db.table(FILINGS).all()
     return {

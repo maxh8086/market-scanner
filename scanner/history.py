@@ -146,28 +146,36 @@ def cached_closes(symbols: Iterable[str], min_rows: int = 1
 
     Returns nothing rather than raising when the database does not exist yet.
     """
-    wanted = [s for s in symbols if s]
-    if not wanted or not DB_PATH.exists():
-        return {}
-    out: dict[str, list[float]] = {}
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        # Chunked: sqlite's default host-parameter limit is 999, and this is
-        # called with the whole scan (~750 symbols) or more.
-        for start in range(0, len(wanted), 500):
-            chunk = wanted[start:start + 500]
-            placeholders = ",".join("?" * len(chunk))
-            cur = conn.execute(
-                f"SELECT symbol, close FROM candles WHERE symbol IN "
-                f"({placeholders}) AND close IS NOT NULL ORDER BY symbol, date",
-                chunk)
-            for symbol, close in cur.fetchall():
-                out.setdefault(symbol, []).append(float(close))
-    except sqlite3.Error:
-        return {}
-    finally:
-        conn.close()
-    return {s: v for s, v in out.items() if len(v) >= min_rows}
+    from scanner.marketdata import get_backend
+    backend = "postgres" if get_backend() == "postgres" else "sqlite"
+
+    if backend == "postgres":
+        from scanner.marketdata.postgres_backend import cached_closes as pg_cached_closes
+        return pg_cached_closes(symbols, min_rows)
+    else:
+        # SQLite: original implementation
+        wanted = [s for s in symbols if s]
+        if not wanted or not DB_PATH.exists():
+            return {}
+        out: dict[str, list[float]] = {}
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            # Chunked: sqlite's default host-parameter limit is 999, and this is
+            # called with the whole scan (~750 symbols) or more.
+            for start in range(0, len(wanted), 500):
+                chunk = wanted[start:start + 500]
+                placeholders = ",".join("?" * len(chunk))
+                cur = conn.execute(
+                    f"SELECT symbol, close FROM candles WHERE symbol IN "
+                    f"({placeholders}) AND close IS NOT NULL ORDER BY symbol, date",
+                    chunk)
+                for symbol, close in cur.fetchall():
+                    out.setdefault(symbol, []).append(float(close))
+        except sqlite3.Error:
+            return {}
+        finally:
+            conn.close()
+        return {s: v for s, v in out.items() if len(v) >= min_rows}
 
 
 def _save_candles(conn: sqlite3.Connection, symbol: str, df: pd.DataFrame) -> None:
@@ -245,57 +253,95 @@ def get_history(
     combines this history with today's live quote/OHLC instead, so a
     forming intraday "day" candle never gets double-counted.
     """
-    today = today or date.today()
-    cutoff = today - timedelta(days=1)
+    from scanner.marketdata import get_backend
+    backend = "postgres" if get_backend() == "postgres" else "sqlite"
 
-    conn = _connect()
-    try:
-        if force_refresh:
-            conn.execute("DELETE FROM candles WHERE symbol = ?", (symbol,))
-            conn.execute("DELETE FROM symbol_stats WHERE symbol = ?", (symbol,))
-            conn.commit()
-            new_df = _fetch_full_history(client, key, symbol, cutoff)
-            _save_candles(conn, symbol, new_df)
-        else:
-            cached = _load_cached_candles(conn, symbol)
-            if cached.empty:
+    if backend == "postgres":
+        from scanner.marketdata.postgres_backend import get_history as pg_get_history
+        return pg_get_history(client, key, symbol, force_refresh, today)
+    else:
+        # SQLite: original implementation
+        today = today or date.today()
+        cutoff = today - timedelta(days=1)
+
+        conn = _connect()
+        try:
+            if force_refresh:
+                conn.execute("DELETE FROM candles WHERE symbol = ?", (symbol,))
+                conn.execute("DELETE FROM symbol_stats WHERE symbol = ?", (symbol,))
+                conn.commit()
                 new_df = _fetch_full_history(client, key, symbol, cutoff)
                 _save_candles(conn, symbol, new_df)
             else:
-                last_date = cached["date"].max()
-                if last_date < cutoff:
-                    incremental = _fetch_incremental(client, key, symbol, last_date, cutoff)
-                    _save_candles(conn, symbol, incremental)
+                cached = _load_cached_candles(conn, symbol)
+                if cached.empty:
+                    new_df = _fetch_full_history(client, key, symbol, cutoff)
+                    _save_candles(conn, symbol, new_df)
+                else:
+                    last_date = cached["date"].max()
+                    if last_date < cutoff:
+                        incremental = _fetch_incremental(client, key, symbol, last_date, cutoff)
+                        _save_candles(conn, symbol, incremental)
 
-        _update_symbol_stats(conn, symbol)
+            _update_symbol_stats(conn, symbol)
 
-        candles = _load_cached_candles(conn, symbol)
-        if candles.empty:
-            # Brand-new listing with no completed sessions before `today` yet.
+            candles = _load_cached_candles(conn, symbol)
+            if candles.empty:
+                # Brand-new listing with no completed sessions before `today` yet.
+                return SymbolHistory(
+                    symbol=symbol,
+                    candles=candles,
+                    ath_high=None,
+                    ath_date=None,
+                    ath_close=None,
+                    first_date=None,
+                    last_date=None,
+                )
+
+            row = conn.execute(
+                "SELECT ath_high, ath_date, ath_close, first_date, last_date FROM symbol_stats WHERE symbol = ?",
+                (symbol,),
+            ).fetchone()
+            ath_high, ath_date_str, ath_close, first_date_str, last_date_str = row
+
             return SymbolHistory(
                 symbol=symbol,
                 candles=candles,
-                ath_high=None,
-                ath_date=None,
-                ath_close=None,
-                first_date=None,
-                last_date=None,
+                ath_high=ath_high,
+                ath_date=datetime.strptime(ath_date_str, "%Y-%m-%d").date(),
+                ath_close=ath_close,
+                first_date=datetime.strptime(first_date_str, "%Y-%m-%d").date(),
+                last_date=datetime.strptime(last_date_str, "%Y-%m-%d").date(),
             )
+        finally:
+            conn.close()
 
-        row = conn.execute(
-            "SELECT ath_high, ath_date, ath_close, first_date, last_date FROM symbol_stats WHERE symbol = ?",
-            (symbol,),
-        ).fetchone()
-        ath_high, ath_date_str, ath_close, first_date_str, last_date_str = row
 
-        return SymbolHistory(
-            symbol=symbol,
-            candles=candles,
-            ath_high=ath_high,
-            ath_date=datetime.strptime(ath_date_str, "%Y-%m-%d").date(),
-            ath_close=ath_close,
-            first_date=datetime.strptime(first_date_str, "%Y-%m-%d").date(),
-            last_date=datetime.strptime(last_date_str, "%Y-%m-%d").date(),
-        )
-    finally:
-        conn.close()
+def collect_eod(client, key: str, symbol: str, today: date | None = None) -> dict:
+    """Collect end-of-day candles for gaps only.
+
+    Uses feed_coverage to track which windows have been fetched, so only
+    gaps are fetched from the data provider. Much faster for frequent updates.
+
+    For Postgres backend: fetches only gaps from feed_coverage.
+    For SQLite backend: uses get_history which fetches all missing days.
+
+    Returns:
+        {"fetched": int (rows from provider), "new": int (inserted), "from": date|None, "to": date|None}
+    """
+    from scanner.marketdata import get_backend
+    backend = "postgres" if get_backend() == "postgres" else "sqlite"
+
+    if backend == "postgres":
+        from scanner.marketdata.postgres_backend import collect_eod as pg_collect_eod
+        return pg_collect_eod(client, key, symbol, today)
+    else:
+        # SQLite backend: no gap tracking, fall back to get_history
+        today = today or date.today()
+        history = get_history(client, key, symbol, force_refresh=False, today=today)
+        return {
+            "fetched": 0,  # Counts not tracked in SQLite backend
+            "new": 0,
+            "from": history.first_date,
+            "to": history.last_date,
+        }

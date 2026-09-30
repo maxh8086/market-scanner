@@ -5,18 +5,17 @@ supplies market cap and the revenue series. It also carries the ratios worth
 seeing next to a breakout -- P/E, ROCE, promoter pledge, debt/equity -- since
 they come free in the same page fetch.
 
-`screener_mcp` is imported as a library rather than driven over MCP, because MCP
-tools only exist inside an agent loop and this has to run for 300 symbols in a
-script. Two consequences of borrowing its internals: its fetch is async, so a
-batch runs in one event loop (see `_run`), and screener.in pages are public but
-richer when logged in -- SCREENER_USERNAME / SCREENER_PASSWORD in the
-environment are picked up by its client, and without them the run still works on
-the public page.
+The fetch and the HTML parsers live in `scanner.screener` (the method the
+screener-mcp package uses, kept in-repo so the enrich image needs no MCP package).
+The fetch is async, so a batch runs in one event loop with one paced client (see
+`_run`). screener.in pages are public but richer when logged in --
+SCREENER_USERNAME / SCREENER_PASSWORD in the environment are picked up by the
+client, and without them the run still works on the public page.
 
 The parsing is split out into `parse_page` so it can be tested against a saved
-page. That is where the risk is: the figures come out of a third-party parser's
-return shapes over screener's HTML, and a shape that changed does not raise --
-it quietly yields None for every ratio and an empty revenue series.
+page. That is where the risk is: the figures come out of screener's HTML, and a
+layout change does not raise -- it quietly yields None for every ratio and an
+empty revenue series.
 
 Industry P/E is computed as the **median P/E of the scan's own cohort in the
 same industry**, not fetched. screener's peer table loads over AJAX, so pulling
@@ -32,7 +31,7 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
-from scanner import docstore, significance
+from scanner import docstore, screener, significance
 
 # screener quotes market cap and sales in Rs crore.
 FIELDS_FROM_OVERVIEW = {
@@ -51,7 +50,7 @@ FIELDS_FROM_OVERVIEW = {
 # stock moved -- which for a stock near its all-time high is the whole point.
 MAX_AGE_DAYS = 1.0
 
-# No sleep constant here on purpose: `screener_mcp`'s client paces itself
+# No sleep constant here on purpose: `screener.Client` paces itself
 # (SCREENER_MIN_INTERVAL between request starts, SCREENER_MAX_CONCURRENCY in
 # flight, and a shared cooldown on a 429). Adding a sleep on top would slow the
 # run without making it any politer than the limiter already does.
@@ -96,7 +95,7 @@ def _promoter_holding(shareholding: dict | None) -> Optional[float]:
 
     Only the holding. Pledge is *not* here: screener's shareholding table
     carries no pledge row even for a company with most of its promoter stake
-    pledged, which is why `parsers.company.pledged_pct` reads it out of the
+    pledged, which is why `screener.pledged_pct` reads it out of the
     cons list instead.
     """
     if not isinstance(shareholding, dict):
@@ -110,9 +109,8 @@ def _promoter_holding(shareholding: dict | None) -> Optional[float]:
 
 
 # Row labels to try, in order, for a revenue series. `Sales+` is how screener
-# labels the row when it has an expandable breakdown, and `_clean_label` in the
-# library strips the marker inconsistently across layouts, so both spellings
-# are tried. Total Income is the last resort: it includes other income, so it
+# labels the row when it has an expandable breakdown, and the marker is not
+# always stripped across layouts, so both spellings are tried. Total Income is the last resort: it includes other income, so it
 # is not the same quantity, and taking it silently would make one company's
 # series incomparable with the next.
 SALES_ROWS = ("Sales", "Sales+", "Revenue", "Revenue+", "Total Income")
@@ -135,8 +133,7 @@ def _series_from_table(table: dict | None,
     if not isinstance(table, dict) or not table.get("rows"):
         return []
     try:
-        from screener_mcp.parsers.company import split_ttm
-        _, rows, _ = split_ttm(table)
+        _, rows, _ = screener.split_ttm(table)
     except Exception:  # noqa: BLE001 - shape varies; fall back to the raw rows
         rows = table.get("rows") or []
     by_label = {}
@@ -155,11 +152,10 @@ def parse_page(symbol: str, html: str) -> Fundamentals:
     """Everything this module extracts from one company page. No network.
 
     Separated from the fetch so the parsing -- which is where the bugs live,
-    since it depends on screener's HTML and on a third-party parser's return
-    shapes -- can be tested against a saved page instead of only in production.
+    since it depends on screener's HTML -- can be tested against a saved page instead of only in production.
     """
     f = Fundamentals(symbol=symbol)
-    from screener_mcp.parsers import company as cp
+    cp = screener
 
     try:
         overview = cp.parse_overview(html) or {}
@@ -180,7 +176,7 @@ def parse_page(symbol: str, html: str) -> Fundamentals:
         if value is not None:
             setattr(f, attr, value)
 
-    # Derived by the library from the balance sheet: screener's top ratios do
+    # Derived from the balance sheet: screener's top ratios do
     # not carry debt-to-equity at all.
     for fn, attr in ((cp.debt_to_equity, "debt_to_equity"),
                      (cp.pledged_pct, "pledged_pct")):
@@ -206,15 +202,12 @@ def parse_page(symbol: str, html: str) -> Fundamentals:
     return f
 
 
-async def _fetch_page(symbol: str) -> Fundamentals:
+async def _fetch_page(client: screener.Client, symbol: str) -> Fundamentals:
     """One company page, fetched and parsed. Never raises."""
     try:
-        from screener_mcp.core.company_page import fetch_company_page
-    except ImportError as e:
-        return Fundamentals(symbol=symbol,
-                            error=f"screener_mcp unavailable: {e}")
-    try:
-        page = await fetch_company_page(symbol)
+        page = await screener.fetch_page(client, symbol)
+    except screener.ScreenerError as e:
+        return Fundamentals(symbol=symbol, error=f"fetch failed: {e}")
     except Exception as e:  # noqa: BLE001 - network shapes vary too much
         return Fundamentals(symbol=symbol,
                             error=f"fetch failed: {type(e).__name__}: {e}")
@@ -225,34 +218,23 @@ async def _fetch_page(symbol: str) -> Fundamentals:
                             error=f"parse failed: {type(e).__name__}: {e}")
 
 
-def _run(coro):
-    """Run one coroutine and leave no client bound to the closed loop.
+def _run(coro_fn):
+    """Run `coro_fn(client)` on a fresh event loop with one paced client.
 
-    `screener_mcp.client` keeps its `httpx.AsyncClient` in a module singleton.
-    That is right for a long-lived server and wrong for `asyncio.run`, which
-    closes the loop it created: the next call would reuse a client bound to a
-    dead loop and fail with "Event loop is closed". So the singleton is torn
-    down at the end of every run, which costs one login per batch -- the reason
-    a batch is one coroutine rather than one per symbol.
+    The client is created inside the loop and closed before it ends, so nothing
+    is left bound to a dead loop. One client per batch means one login and one
+    shared rate limiter for every request in it.
     """
     async def wrapper():
-        try:
-            return await coro
-        finally:
-            try:
-                from screener_mcp import client as sc
-                if sc._client is not None:
-                    await sc._client.close()
-                    sc._client = None
-            except Exception:  # noqa: BLE001 - teardown must not mask a result
-                pass
+        async with screener.Client() as client:
+            return await coro_fn(client)
     return asyncio.run(wrapper())
 
 
 def fetch_one(symbol: str) -> Fundamentals:
     """Fetch and parse one company page. Never raises: a failure is recorded on
     the returned object so a 300-symbol run does not stop on one bad page."""
-    return _run(_fetch_page(symbol))
+    return _run(lambda client: _fetch_page(client, symbol))
 
 
 def cached(db, symbol: str, max_age_days: float = MAX_AGE_DAYS
@@ -305,7 +287,7 @@ def fetch_many(db, symbols: Iterable[str], max_age_days: float = MAX_AGE_DAYS,
 
     Cache hits are resolved first and never reach the network, so a re-run over
     warm cache returns immediately. The rest go out in one event loop, which
-    matters twice over: `screener_mcp`'s client logs in once per loop, and its
+    matters twice over: the client logs in once per loop, and its
     pacing -- a minimum interval between request starts, bounded concurrency,
     and a shared cooldown when screener answers 429 -- is only a rate limit if
     every request shares one client. A sleep in this loop would be a second,
@@ -325,14 +307,14 @@ def fetch_many(db, symbols: Iterable[str], max_age_days: float = MAX_AGE_DAYS,
         return out
 
     print(f"  {len(out)} cached, fetching {len(todo)}")
-    for symbol, f in _run(_fetch_batch(todo, progress_every)):
+    for symbol, f in _run(lambda client: _fetch_batch(client, todo, progress_every)):
         out[symbol] = f
         _store(db, symbol, f)
     return out
 
 
-async def _fetch_batch(symbols: list[str], progress_every: int = 25
-                       ) -> list[tuple[str, Fundamentals]]:
+async def _fetch_batch(client: screener.Client, symbols: list[str],
+                       progress_every: int = 25) -> list[tuple[str, Fundamentals]]:
     """Every symbol, concurrently, reporting as results land.
 
     Results are returned rather than written, because the docstore is not
@@ -340,7 +322,7 @@ async def _fetch_batch(symbols: list[str], progress_every: int = 25
     """
     done = 0
     out: list[tuple[str, Fundamentals]] = []
-    tasks = [asyncio.ensure_future(_fetch_page(s)) for s in symbols]
+    tasks = [asyncio.ensure_future(_fetch_page(client, s)) for s in symbols]
     for task in asyncio.as_completed(tasks):
         f = await task
         out.append((f.symbol, f))

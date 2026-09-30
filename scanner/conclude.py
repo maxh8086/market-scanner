@@ -425,6 +425,8 @@ class Conclusion:
     raw: str = ""
     packet_hash: str = ""
     prompt_version: int = PROMPT_VERSION
+    input_tokens: int = 0                     # prompt token count
+    output_tokens: int = 0                    # completion token count
 
     @property
     def ok(self) -> bool:
@@ -538,22 +540,40 @@ def _attempt(cfg: llm.LLMConfig, symbol: str, meta: Mapping[str, Any],
         user += "\n\n" + note
 
     started = time.time()
+    response_body = {}
     try:
         resp = requests.post(cfg.endpoint, json=_request_body(cfg, user, max_tokens, packet),
                              timeout=cfg.timeout)
         resp.raise_for_status()
-        raw = llm._content(cfg, resp.json())
+        response_body = resp.json()
+        raw = llm._content(cfg, response_body)
     except Exception as e:  # noqa: BLE001
+        elapsed = round(time.time() - started, 1)
+        # Record the failed call
+        from . import metrics
+        metrics.record_call("conclude", digest, symbol, cfg.model, 0, 0, elapsed, False)
         return Conclusion(symbol, error=f"{type(e).__name__}: {e}",
-                          seconds=round(time.time() - started, 1),
+                          seconds=elapsed,
                           model=cfg.model, packet_hash=digest)
 
     elapsed = round(time.time() - started, 1)
+    # Extract token counts from response (for both Ollama and OpenAI styles)
+    input_tokens, output_tokens = llm._extract_tokens(cfg, response_body)
+
     data = llm.parse_json_response(raw)
     if data is None:
-        result = Conclusion(symbol, error="response was not JSON")
+        result = Conclusion(symbol, error="response was not JSON",
+                           input_tokens=input_tokens, output_tokens=output_tokens)
     else:
         result = validate(symbol, data, packet)
+        result.input_tokens = input_tokens
+        result.output_tokens = output_tokens
     result.raw, result.seconds, result.model = raw, elapsed, cfg.model
     result.packet_hash = digest
+
+    # Record the call
+    from . import metrics
+    metrics.record_call("conclude", digest, symbol, cfg.model, input_tokens,
+                       output_tokens, elapsed, result.ok)
+
     return result

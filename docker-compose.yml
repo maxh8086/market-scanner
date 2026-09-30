@@ -1,16 +1,20 @@
-# One image per component, all in this one compose file. Everything except `laya`,
-# `vllm` and `neo4j` is a one-shot job:
+# One image per component. Everything here is a one-shot job except `laya`:
 #   docker compose run --rm scanner --symbols INFY,TCS
-# start.ps1 drives the whole sequence; stop.ps1 tears it down.
+# start.ps1 drives the whole sequence; stop.ps1 tears it down (this project only).
+# `ui` and `collector` are the two long-running services; everything else is a one-shot job.
+#
+# The databases (Postgres, MongoDB, Neo4j) and the LLM server (vLLM) plus every model weight
+# live in the separate Shared-Market-Research-Infra project, so other projects reuse them.
+# This file joins its `market-infra` network: enrich and conclude reach `vllm` (OpenAI-style
+# HTTP), graph reaches `neo4j` (bolt). start.ps1 starts that infra first.
 #
 # Components hand off through the bind-mounted data/, output/ and logs/ folders
-# (SQLite caches, TinyDB store, CSV/XLSX outputs). Container-to-container traffic:
-# enrich and conclude -> vllm (OpenAI-style HTTP), graph -> neo4j (bolt).
+# (SQLite caches, TinyDB store, CSV/XLSX outputs).
 #
 # Secrets reach containers ONLY at runtime, through `env_file` (compose reads the
 # file; no image, build arg or log ever contains it). A service gets a file only if
-# it needs it: .env (Upstox/Kite) for scanner, enrich and portfolio; .env.neo4j
-# (the database password start.ps1 generates) for neo4j and graph.
+# it needs it: .env (Upstox/Kite) for scanner, enrich and portfolio; the infra's
+# secrets/ath_scanner.env (this project's database logins) for graph.
 x-persist: &persist
   - ./data:/app/data
   - ./output:/app/output
@@ -19,14 +23,22 @@ x-persist: &persist
 services:
   scanner:
     build: {context: ., dockerfile: docker/scanner/Dockerfile}
-    env_file: .env
+    env_file:
+      - .env
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
+    environment:
+      RUN_ID: ${RUN_ID:-}
     volumes: *persist
     restart: "no"
 
   enrich:
     image: ath-enrich
     build: {context: ., dockerfile: docker/enrich/Dockerfile}
-    env_file: .env
+    env_file:
+      - .env
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
+    environment:
+      RUN_ID: ${RUN_ID:-}
     volumes: &persist-config
       - ./data:/app/data
       - ./output:/app/output
@@ -36,12 +48,16 @@ services:
 
   enrich-timesfm:        # enrich + TimesFM forecaster (torch, CPU)
     build: {context: ., dockerfile: docker/timesfm/Dockerfile}
-    # No env_file: the report/forecast stage reads only data/ and output/.
+    env_file:                            # database logins, for reading candles and filings
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
+    environment:
+      - HF_HUB_OFFLINE=1                 # weights are pre-fetched by the infra's models.ps1
+      - RUN_ID=${RUN_ID:-}
     volumes:
       - ./data:/app/data
       - ./output:/app/output
       - ./logs:/app/logs
-      - huggingface_cache:/home/appuser/.cache/huggingface   # TimesFM weights download once
+      - ${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/models/huggingface:/home/appuser/.cache/huggingface:ro   # shared weights
       - ./config:/app/config:ro
     restart: "no"
 
@@ -56,59 +72,15 @@ services:
     volumes: *persist
     restart: "no"
 
-  vllm:                  # Qwen3-4B-Instruct-2507 (MXFP4, FP8 KV) on the GPU: filing extraction and conclusions
-    build:
-      context: .
-      dockerfile: docker/vllm/Dockerfile
-      args:
-        VLLM_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai:v0.30.0}   # set to reuse a vllm image you already have
-    container_name: ath-vllm
-    # No env_file: public model, no credentials. Retune with the ENV knobs in the Dockerfile.
-    volumes:
-      - huggingface_vllm:/root/.cache/huggingface            # ~7.7 GB of weights, downloaded once
-    ports:
-      - "127.0.0.1:8001:8000"            # loopback only; conclude reaches it as http://vllm:8000
-    ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - {driver: nvidia, count: 1, capabilities: [gpu]}
-    restart: "no"
 
-  neo4j:                 # graph of filings/extractions/conclusions; data purged by graph_sync.py purge
-    image: neo4j:5-community
-    container_name: ath-neo4j
-    env_file:                            # NEO4J_AUTH=neo4j/<generated password>; written by start.ps1
-      - {path: .env.neo4j, required: false}   # optional only so `down` works without it
-    environment:
-      - NEO4J_server_memory_heap_initial__size=512m
-      - NEO4J_server_memory_heap_max__size=1g
-      - NEO4J_server_memory_pagecache_size=512m
-    volumes:
-      - neo4j_data:/data
-    ports:
-      - "127.0.0.1:7474:7474"            # browser UI, loopback only
-      - "127.0.0.1:7687:7687"            # bolt, loopback only
-    healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$${NEO4J_AUTH#*/}\" 'RETURN 1' || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-      start_period: 20s
-    restart: "no"
 
   graph:                 # loads the document store into neo4j, reads graph facts, purges expired data
     image: ath-enrich
     build: {context: ., dockerfile: docker/enrich/Dockerfile}
     entrypoint: ["python", "graph_sync.py"]
-    env_file:
-      - {path: .env.neo4j, required: false}
-    environment:
-      - NEO4J_URI=bolt://neo4j:7687
+    env_file:                            # NEO4J_URI / NEO4J_AUTH from the shared infra (its up.ps1 writes it)
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
     volumes: *persist-config
-    depends_on:
-      neo4j: {condition: service_healthy}
     restart: "no"
 
   report:                # final workbook: every stock in sheet 1, summary in sheet 2
@@ -122,11 +94,34 @@ services:
     image: ath-enrich
     build: {context: ., dockerfile: docker/enrich/Dockerfile}
     entrypoint: ["python", "conclude.py"]
+    env_file:                            # MONGO_URI for conclusions, PG_* to record LLM calls
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
     environment:
       - CONCLUDE_URL=http://vllm:8000     # so `run --rm conclude --limit 5` still finds the server
-    # No env_file: reads data/ and output/, talks only to the vllm service.
+      - RUN_ID=${RUN_ID:-}
     volumes: *persist
     restart: "no"
+
+  collector:             # keeps candles, announcements, corporate actions, filings and fundamentals current
+    image: ath-enrich                    # schedule and mode come from the UI (Master configuration)
+    build: {context: ., dockerfile: docker/enrich/Dockerfile}
+    entrypoint: ["python", "collect.py", "serve"]
+    env_file:
+      - .env
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
+    environment:
+      MARKETDATA_BACKEND: postgres
+      DOCSTORE_BACKEND: mongo
+    volumes: *persist-config
+    restart: always
+
+  ui:                    # runs, cost metrics and stock dashboards on http://127.0.0.1:8080
+    build: {context: ., dockerfile: docker/ui/Dockerfile}
+    env_file:
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
+    ports:
+      - "127.0.0.1:8080:8080"            # loopback only: the UI has no login
+    restart: always
 
   laya:                  # decision-model service; profile `laya` (start.ps1 -WithLaya). Not wired into ranking.
     build: {context: ., dockerfile: docker/laya/Dockerfile}
@@ -144,5 +139,8 @@ services:
 
 volumes:
   huggingface_cache:
-  huggingface_vllm:
-  neo4j_data:
+
+networks:
+  default:
+    name: market-infra                   # created by the shared infra up.ps1
+    external: true

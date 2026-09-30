@@ -50,6 +50,23 @@ SET f.symbol = r.symbol, f.isin = r.isin, f.kind = r.kind, f.desc = r.desc,
 MERGE (c)-[:FILED]->(f)
 """
 
+PUSH_FILING = """
+MERGE (c:Company {symbol: $symbol})
+MERGE (f:Filing {seq_id: $seq_id})
+SET f.symbol = $symbol, f.isin = $isin, f.kind = $kind, f.desc = $desc,
+    f.an_date = $an_date, f.url = $url, f.text = $text, f.expires_at = $expires_at,
+    f.processed = coalesce(f.processed, false)
+MERGE (c)-[:FILED]->(f)
+"""
+
+SYNC_ANNOUNCEMENTS = """
+UNWIND $rows AS r
+MERGE (c:Company {symbol: r.symbol})
+MERGE (cat:AnnouncementCategory {name: r.category})
+MERGE (c)-[rel:ANNOUNCED]->(cat)
+SET rel.n = r.n, rel.first_date = r.first_date, rel.last_date = r.last_date
+"""
+
 LOAD_EXTRACTIONS = """
 UNWIND $rows AS r
 MATCH (f:Filing {seq_id: r.seq_id})
@@ -241,6 +258,87 @@ class Graph:
         for chunk in _batches(rows):
             self._run(LOAD_FUNDAMENTALS, rows=chunk)
         return len(rows)
+
+    def push_filing(self, filing: dict, extraction: dict) -> bool:
+        """Push one filing and its extraction to Neo4j immediately after extraction.
+
+        MERGE only, so pushing twice creates no duplicates. Returns True on success,
+        False if Neo4j is unreachable. A failure never fails the stage: this is an
+        accelerator, never a dependency.
+        """
+        try:
+            seq_id = str(filing.get("seq_id") or "")
+            symbol = filing.get("symbol", "")
+            if not (seq_id and symbol):
+                return True  # Skip silently
+
+            filing_params = {
+                "seq_id": seq_id,
+                "symbol": symbol,
+                "isin": filing.get("isin"),
+                "kind": filing.get("kind"),
+                "desc": filing.get("desc"),
+                "an_date": filing.get("an_date"),
+                "url": filing.get("url"),
+                "text": filing.get("raw_text") or "",
+                "expires_at": self._expiry(filing, "an_date", "stored_at"),
+            }
+            self._run(PUSH_FILING, **filing_params)
+
+            # Push extraction if it exists
+            data = extraction.get("data") or {}
+            if not extraction.get("error") and data:
+                key = f"{seq_id}|{extraction.get('kind')}"
+                extraction_params = {
+                    "seq_id": seq_id,
+                    "key": key,
+                    "kind": extraction.get("kind"),
+                    "symbol": symbol,
+                    "model": extraction.get("model"),
+                    "order_value_inr": data.get("order_value_inr"),
+                    "execution_months": _clean(data.get("execution_months")),
+                    "data": _clean(data),
+                    "counterparty": _norm_name(data.get("counterparty")),
+                    "counterparty_type": data.get("counterparty_type"),
+                    "expires_at": self._expiry(extraction, "stored_at"),
+                }
+
+                # Push extraction and set filing as processed
+                extraction_query = """
+                MATCH (f:Filing {seq_id: $seq_id})
+                MERGE (e:Extraction {key: $key})
+                SET e.seq_id = $seq_id, e.kind = $kind, e.symbol = $symbol, e.model = $model,
+                    e.order_value_inr = $order_value_inr, e.execution_months = $execution_months,
+                    e.data = $data, e.expires_at = $expires_at
+                MERGE (f)-[:YIELDED]->(e)
+                SET f.processed = true
+                WITH e, $counterparty AS cp
+                WHERE cp IS NOT NULL
+                MERGE (p:Counterparty {name: cp})
+                SET p.type = coalesce($counterparty_type, p.type)
+                MERGE (e)-[:WITH]->(p)
+                """
+                self._run(extraction_query, **extraction_params)
+
+            return True
+        except Exception:  # noqa: BLE001
+            # Log once per run? Not here -- let the caller decide on verbosity.
+            # Just fail silently so extraction continues.
+            return False
+
+    def sync_announcement_summary(self, rows: Iterable[dict]) -> int:
+        """Merge announcement summaries from Postgres into Neo4j.
+
+        Creates (Company)-[:ANNOUNCED {n, first_date, last_date}]->(AnnouncementCategory)
+        relationships from rows with symbol, category, n, first_date, last_date.
+        """
+        rows_list = list(rows)
+        if not rows_list:
+            return 0
+
+        for chunk in _batches(rows_list):
+            self._run(SYNC_ANNOUNCEMENTS, rows=chunk)
+        return len(rows_list)
 
     # ---- reading -------------------------------------------------------
 

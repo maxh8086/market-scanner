@@ -105,7 +105,19 @@ def _filing_expiry(doc, cfg: Retention) -> str:
 
 def purge_docstore(db: TinyDB, cfg: Retention, today: Optional[date] = None,
                    dry_run: bool = False) -> dict[str, int]:
-    """Delete expired, processed records; returns what was (or would be) removed."""
+    """Delete expired, processed records; returns what was (or would be) removed.
+
+    Handles both TinyDB and MongoDB backends based on the db type.
+    """
+    # Check if this is a MongoDB instance
+    try:
+        from scanner import mongo
+        if isinstance(db, mongo.MongoDB):
+            return mongo.purge(db, cfg, today, dry_run)
+    except ImportError:
+        pass
+
+    # TinyDB path
     counts = {"filings": 0, "extractions": 0, "conclusions": 0, "fundamentals": 0}
     if not cfg.purge:
         return counts

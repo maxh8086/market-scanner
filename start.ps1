@@ -5,18 +5,32 @@ Run the whole ATH Scanner pipeline in Docker, start to finish, with no extra swi
 .DESCRIPTION
 scan -> enrich (filings, fundamentals, AI extraction on vLLM) -> TimesFM forecasts ->
 Neo4j graph load -> per-stock conclusions -> graph purge of expired data -> final
-workbook -> cross-check -> portfolio.
+workbook -> cross-check -> portfolio -> record the run in Postgres -> start the UI and the
+collector.
+
+The shared infrastructure is checked by ensure-infra.ps1 first: if Postgres, MongoDB and Neo4j
+are already running it is left alone, otherwise it is started through the infra's own up.ps1.
+stop.ps1 stops only this project; stop-infra.ps1 stops the infrastructure.
+
+Each run gets a run id. Its row is created right after the scan (so every LLM call can be
+tagged with it), GPU power is sampled while the model is loaded, and at the end the snapshots,
+changes, token counts, timings and GPU energy are written to Postgres for the UI's Cost
+center. Recording is best effort: if Postgres is unreachable the pipeline still finishes.
+A run restricted with -Symbols is never recorded, so it cannot replace the day's full run.
 
 Every component is its own container under one docker-compose.yml; this script is the
 only thing that runs on the host. No scheduler; you trigger it. data/, output/ and
 logs/ are bind-mounted from this folder, so caches survive between runs.
 
 Credentials: .env (Upstox/Kite) is read by docker compose at runtime; this script only
-checks that it exists and never opens it. The Neo4j password is generated here into
-.env.neo4j (git-ignored) the first time and reused after that.
+checks that it exists and never opens it. The databases, Neo4j and the vLLM server are not
+part of this project: they live in ..\Shared-Market-Research-Infra (override with the
+MARKET_INFRA_DIR environment variable), which this script starts first and which creates this
+project's database logins in its secrets\ath_scanner.env.
 
 Needs an NVIDIA GPU with the container runtime (vLLM runs Qwen3-4B-Instruct-2507).
-The first run downloads ~8 GB of model weights and the TimesFM checkpoint.
+The model weights (Qwen3-4B, TimesFM) live in the shared infra's models\huggingface folder;
+run its models.ps1 once if they are missing.
 
 Data retention (how long stored documents are kept before the purge step deletes them)
 is set in config/retention.json -- 3 years by default, "purge": false turns it off.
@@ -26,6 +40,7 @@ is set in config/retention.json -- 3 years by default, "purge": false turns it o
 .PARAMETER SkipEnrich     Skip enrichment (and the stages that build on it can still use the last enriched file).
 .PARAMETER SkipCrosscheck Skip the independent price cross-check.
 .PARAMETER SkipPortfolio  Skip the Kite holdings overlay.
+.PARAMETER SkipServices   Do not start the UI (http://127.0.0.1:8080) and the collector afterwards.
 .PARAMETER Rebuild        Rebuild images without the cache.
 
 .EXAMPLE
@@ -38,14 +53,23 @@ param(
     [switch]$SkipEnrich,
     [switch]$SkipCrosscheck,
     [switch]$SkipPortfolio,
+    [switch]$SkipServices,
     [switch]$Rebuild
 )
 
 $ErrorActionPreference = 'Stop'
 Set-Location -Path $PSScriptRoot
 
-$ModelName = 'qwen3-4b'                 # SERVED_NAME in docker/vllm/Dockerfile
+$ModelName = 'qwen3-4b'                 # SERVED_NAME in the shared infra's vllm/Dockerfile
+$InfraDir  = if ($env:MARKET_INFRA_DIR) { $env:MARKET_INFRA_DIR } else { Join-Path (Split-Path $PSScriptRoot -Parent) 'Shared-Market-Research-Infra' }
+$env:MARKET_INFRA_DIR = $InfraDir       # docker-compose.yml reads it for the env_file and weights paths
 $VllmUrl   = 'http://vllm:8000'         # as seen from the other containers
+$RunId     = [guid]::NewGuid().ToString()
+$env:RUN_ID = $RunId                    # docker-compose.yml passes it to scanner, enrich and conclude
+$RecordRun = -not $Symbols              # a subset run must not replace the day's full run
+$script:RunDate = $null                 # set after the scan
+$script:RunBegun = $false
+$script:Sampler = $null
 
 # Run docker and return its exit code. Under Windows PowerShell 5.1 a native
 # command's stderr becomes an error record, and docker writes ordinary build
@@ -63,9 +87,37 @@ function Invoke-Docker {
     }
 }
 
+# Run a python script inside the enrich image (it has the database clients and the code).
+function Invoke-Python([string[]]$PyArgs) {
+    return Invoke-Docker (@('compose', 'run', '--rm', '--entrypoint', 'python', 'enrich') + $PyArgs)
+}
+
+# Sample GPU power beside the run so the Cost center can report energy. Silent without nvidia-smi.
+function Start-GpuSampler {
+    try {
+        $script:Sampler = Start-Process -FilePath 'powershell.exe' -PassThru -WindowStyle Hidden `
+            -WorkingDirectory $PSScriptRoot `
+            -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts\gpu_sample.ps1', '-RunId', $RunId)
+    } catch {
+        Write-Host "GPU sampling not started: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+function Stop-GpuSampler {
+    if (-not $script:Sampler) { return }
+    $dir = Join-Path $PSScriptRoot 'logs\metrics'
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+    New-Item -ItemType File -Force -Path (Join-Path $dir "$RunId.stop") | Out-Null
+    if (-not $script:Sampler.WaitForExit(15000)) { Stop-Process -Id $script:Sampler.Id -Force -ErrorAction SilentlyContinue }
+    $script:Sampler = $null
+}
+
 function Write-Stage([string]$Message) { Write-Host ""; Write-Host "=== $Message ===" -ForegroundColor Cyan }
 function Stop-Pipeline([string]$Message) {
     Write-Host "Error: $Message" -ForegroundColor Red
+    Stop-GpuSampler
+    if ($script:RunBegun) {
+        Invoke-Python @('record_run.py', '--run-id', $RunId, '--date', $script:RunDate, '--fail') | Out-Null
+    }
     Write-Host "Containers may still be up; run ./stop.ps1 to clean up." -ForegroundColor Yellow
     exit 1
 }
@@ -110,18 +162,9 @@ if (-not (Test-Path -LiteralPath '.env')) {
     Stop-Pipeline ".env not found. Copy .env.example to .env and fill in your credentials."
 }
 Write-Host ".env present."
-# The database password is ours to generate: random, written once, never printed.
-if (-not (Test-Path -LiteralPath '.env.neo4j')) {
-    $bytes = New-Object byte[] 30
-    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
-    $rng.GetBytes($bytes)
-    $password = ([Convert]::ToBase64String($bytes) -replace '[^A-Za-z0-9]', '').Substring(0, 24)
-    [IO.File]::WriteAllText((Join-Path $PSScriptRoot '.env.neo4j'), "NEO4J_AUTH=neo4j/$password`n",
-                            (New-Object Text.UTF8Encoding($false)))
-    Remove-Variable password, bytes
-    Write-Host ".env.neo4j created (generated database password; git-ignored)."
-} else {
-    Write-Host ".env.neo4j present."
+# Shared infrastructure: Postgres, MongoDB, Neo4j and the vLLM server (separate project).
+if (-not (Test-Path -LiteralPath (Join-Path $InfraDir 'up.ps1'))) {
+    Stop-Pipeline "Shared infrastructure not found at $InfraDir. Set MARKET_INFRA_DIR or restore that folder."
 }
 $profiles = @()
 if ($WithLaya) { $profiles += @('--profile', 'laya') }
@@ -140,10 +183,12 @@ if ($WithLaya) {
     Write-Host "Laya is healthy on http://127.0.0.1:8000" -ForegroundColor Green
 }
 
-# Both services warm up while the scan runs (vLLM loads its weights, ~2-3 minutes once cached).
-Write-Stage "Starting Neo4j and vLLM (Qwen3-4B-Instruct-2507; first start downloads ~8 GB)"
-$code = Invoke-Docker @('compose', 'up', '-d', 'neo4j', 'vllm')
-if ($code -ne 0) { Stop-Pipeline "Could not start neo4j/vllm (is the NVIDIA runtime available to Docker?)." }
+# Skipped when the databases are already running; vLLM is started without waiting so it
+# loads its weights (~2-3 minutes) while the scan runs.
+Write-Stage "Shared infrastructure (Postgres, MongoDB, Neo4j, vLLM)"
+& (Join-Path $PSScriptRoot 'ensure-infra.ps1') -Llm
+Set-Location -Path $PSScriptRoot   # the infra's up.ps1 changes directory; compose must run in this project
+if ($LASTEXITCODE -ne 0) { Stop-Pipeline "Could not start the shared infrastructure (see the messages above)." }
 
 Write-Stage "Scan"
 $scanArgs = @('compose', 'run', '--rm', 'scanner')
@@ -151,8 +196,29 @@ if ($Symbols) { $scanArgs += @('--symbols', $Symbols) }
 $code = Measure-Stage 'scan' { Invoke-Docker $scanArgs }
 if ($code -ne 0) { Stop-Pipeline "Scan failed (exit $code)." }
 
+# The run's row must exist before the first LLM call is recorded against it.
+if ($RecordRun) {
+    $newest = Get-ChildItem -LiteralPath 'output' -Filter 'ath_scan_*.csv' -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($newest -and $newest.BaseName -match '(\d{4}-\d{2}-\d{2})$') {
+        $script:RunDate = $Matches[1]
+        $code = Invoke-Python @('record_run.py', '--begin', '--run-id', $RunId, '--date', $script:RunDate)
+        if ($code -eq 0) {
+            $script:RunBegun = $true
+            Write-Host "Run $RunId started for $($script:RunDate)."
+            Start-GpuSampler
+        } else {
+            Write-Host "Could not open the run in Postgres (exit $code) -- this run will not be recorded." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "No output/ath_scan_<date>.csv found -- this run will not be recorded." -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "Subset run (-Symbols): not recorded in Postgres." -ForegroundColor Yellow
+}
+
 Write-Stage "Waiting for vLLM"
-if (-not (Wait-Healthy 'ath-vllm' 30)) { Stop-Pipeline "vLLM did not become healthy within 30 minutes. See: docker logs ath-vllm" }
+if (-not (Wait-Healthy 'mri-vllm' 30)) { Stop-Pipeline "vLLM did not become healthy within 30 minutes. See: docker logs mri-vllm" }
 Write-Host "vLLM is healthy on http://127.0.0.1:8001" -ForegroundColor Green
 
 if ($SkipEnrich) {
@@ -190,8 +256,10 @@ if (-not $haveEnriched) {
     Invoke-Graph 'graph-purge' @('purge')
 }
 
-Write-Stage "Freeing the GPU and memory (Neo4j data stays in its volume)"
-Invoke-Docker @('compose', 'stop', 'vllm', 'neo4j') | Out-Null
+Stop-GpuSampler
+Write-Stage "Freeing the GPU (the shared databases keep running for other projects)"
+& (Join-Path $InfraDir 'down.ps1') -Llm | Out-Null
+Set-Location -Path $PSScriptRoot
 
 if ($haveEnriched) {
     Write-Stage "Final workbook (sheet 1: every stock, sheet 2: summary)"
@@ -223,6 +291,26 @@ if ($SkipPortfolio) {
     }
 }
 
+if ($script:RunBegun) {
+    Write-Stage "Recording the run (snapshots, changes, tokens, timings, GPU energy)"
+    $code = Invoke-Python @('record_run.py', '--run-id', $RunId, '--date', $script:RunDate)
+    if ($code -ne 0) { Write-Host "Recording the run failed (exit $code) -- a warning; the files in output/ are complete." -ForegroundColor Yellow }
+    # Windows PowerShell 5.1 drops the quotes inside a native argument, so escape them.
+    $timingsJson = ($timings | ConvertTo-Json -Compress).Replace('"', '\"')
+    $gpuCsv = "logs/metrics/${RunId}_gpu.csv"
+    $code = Invoke-Python @('-m', 'scanner.metrics', 'finalize', '--run-id', $RunId, '--gpu-csv', $gpuCsv, '--timings', $timingsJson)
+    if ($code -ne 0) { Write-Host "Cost metrics not finalized (exit $code) -- a warning." -ForegroundColor Yellow }
+}
+
+if ($SkipServices) {
+    Write-Host "UI and collector not started."
+} else {
+    Write-Stage "Starting the UI and the collector (they keep running until ./stop.ps1)"
+    $code = Invoke-Docker @('compose', 'up', '-d', 'ui', 'collector')
+    if ($code -ne 0) { Write-Host "Could not start the UI/collector (exit $code) -- a warning." -ForegroundColor Yellow }
+    else { Write-Host "UI: http://127.0.0.1:8080" -ForegroundColor Green }
+}
+
 Write-Stage "Done"
 foreach ($k in $timings.Keys) { Write-Host ("  {0,-17} {1,5} s" -f $k, $timings[$k]) }
 Write-Host ""
@@ -231,4 +319,4 @@ Get-ChildItem -LiteralPath 'output' -File -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending | Select-Object -First 8 |
     ForEach-Object { Write-Host ("  output/{0}" -f $_.Name) }
 Write-Host ""
-Write-Host "Finished. Run ./stop.ps1 to shut the setup down." -ForegroundColor Green
+Write-Host "Finished. ./stop.ps1 stops this project only; ./stop-infra.ps1 stops the shared databases." -ForegroundColor Green

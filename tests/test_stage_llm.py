@@ -19,7 +19,7 @@ class StageLlmTests(unittest.TestCase):
             threads = set()
             main = threading.get_ident()
 
-            def fake_extract(cfg, text, kind):
+            def fake_extract(cfg, text, kind, **_kw):
                 threads.add(threading.get_ident())
                 return llm.LLMResult(data={"counterparty": "X"}, raw="{}", error="", seconds=0.01,
                                      model="m", prompt_version="v")

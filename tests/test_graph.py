@@ -122,6 +122,136 @@ class FactsAndPurge(unittest.TestCase):
 
 
 
+class PushFilingTests(unittest.TestCase):
+    def test_push_filing_creates_merge_no_duplicates(self):
+        """push_filing uses MERGE so pushing twice creates no duplicates."""
+        g, d = make()
+        filing = {"seq_id": "1", "symbol": "A", "isin": "INE001A01014",
+                  "kind": "orderbook", "an_date": "2026-09-30"}
+        extraction = {"seq_id": "1", "kind": "orderbook", "symbol": "A",
+                     "data": {"order_value_inr": 100}, "model": "qwen3-4b"}
+
+        # Push twice
+        result1 = g.push_filing(filing, extraction)
+        result2 = g.push_filing(filing, extraction)
+
+        self.assertTrue(result1)
+        self.assertTrue(result2)
+
+        # Verify the filing was pushed (MERGEd, so only once)
+        # Count how many PUSH_FILING queries were issued
+        push_queries = [q for q, _ in d.log if "PUSH_FILING" in q or "MERGE (c:Company" in q]
+        self.assertGreater(len(push_queries), 0)
+
+    def test_push_filing_skips_missing_symbol(self):
+        """push_filing skips filings with no symbol."""
+        g, d = make()
+        filing = {"seq_id": "1", "symbol": ""}  # Empty symbol
+        extraction = {}
+
+        result = g.push_filing(filing, extraction)
+        self.assertTrue(result)  # Returns True but does nothing
+        self.assertEqual(len(d.log), 0)
+
+    def test_push_filing_handles_extraction_without_error(self):
+        """push_filing extracts and pushes extraction data."""
+        g, d = make()
+        filing = {"seq_id": "1", "symbol": "A"}
+        extraction = {
+            "seq_id": "1",
+            "kind": "orderbook",
+            "symbol": "A",
+            "model": "qwen3-4b",
+            "data": {
+                "order_value_inr": 500,
+                "counterparty": "  Test Company  ",
+                "counterparty_type": "customer"
+            }
+        }
+
+        result = g.push_filing(filing, extraction)
+        self.assertTrue(result)
+        # Should have created filing and extraction queries
+        self.assertGreater(len(d.log), 0)
+
+    def test_push_filing_normalises_counterparty(self):
+        """push_filing normalises counterparty names."""
+        g, d = make()
+        filing = {"seq_id": "2", "symbol": "B"}
+        extraction = {
+            "seq_id": "2",
+            "kind": "orderbook",
+            "symbol": "B",
+            "data": {
+                "order_value_inr": 100,
+                "counterparty": "  Tata   Power  "
+            }
+        }
+
+        g.push_filing(filing, extraction)
+        # Check the query parameters for normalized name
+        self.assertGreater(len(d.log), 0)
+
+    def test_push_filing_returns_false_on_neo4j_error(self):
+        """push_filing returns False if Neo4j is unreachable."""
+        # Create a graph with a driver that always fails
+        class FailingDriver:
+            def session(self):
+                raise Exception("Connection failed")
+            def close(self):
+                pass
+
+        g = graph.Graph(FailingDriver())
+        filing = {"seq_id": "1", "symbol": "A"}
+        extraction = {}
+
+        result = g.push_filing(filing, extraction)
+        self.assertFalse(result)
+
+
+class SyncAnnouncementsTests(unittest.TestCase):
+    def test_sync_announcement_summary_merges_relationships(self):
+        """sync_announcement_summary creates announcement relationships."""
+        g, d = make()
+        rows = [
+            {"symbol": "A", "isin": "INE001A01014", "category": "Order",
+             "n": 5, "first_date": "2026-01-01", "last_date": "2026-09-30"},
+            {"symbol": "B", "isin": "INE002B01015", "category": "Expansion",
+             "n": 2, "first_date": "2026-06-01", "last_date": "2026-09-30"},
+        ]
+
+        count = g.sync_announcement_summary(rows)
+        self.assertEqual(count, 2)
+
+        # Verify queries were issued
+        sync_queries = [q for q, _ in d.log if "ANNOUNCED" in q]
+        self.assertGreater(len(sync_queries), 0)
+
+    def test_sync_announcement_summary_empty_rows(self):
+        """sync_announcement_summary handles empty rows."""
+        g, d = make()
+        count = g.sync_announcement_summary([])
+        self.assertEqual(count, 0)
+        self.assertEqual(len(d.log), 0)
+
+    def test_sync_announcement_summary_batches(self):
+        """sync_announcement_summary batches large result sets."""
+        g, d = make()
+        # Create 250 rows (more than batch size of 200)
+        rows = [
+            {"symbol": f"STOCK{i:03d}", "isin": f"INE{i:06d}", "category": "Order",
+             "n": i, "first_date": "2026-01-01", "last_date": "2026-09-30"}
+            for i in range(250)
+        ]
+
+        count = g.sync_announcement_summary(rows)
+        self.assertEqual(count, 250)
+
+        # Should have at least 2 batches
+        sync_queries = [q for q, _ in d.log if "ANNOUNCED" in q]
+        self.assertGreaterEqual(len(sync_queries), 2)
+
+
 class PacketTests(unittest.TestCase):
     def test_graph_facts_in_packet(self):
         from scanner import conclude

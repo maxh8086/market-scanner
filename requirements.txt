@@ -18,3 +18,14 @@ pypdf>=4.0.0           # text layer out of NSE filing PDFs
 # transformers + tokenizers; weights (~808 MB English) download on first use,
 # never at install time.
 # laya>=0.3.21
+
+# Shared databases (Shared-Market-Research-Infra) and the UI service
+psycopg[binary]>=3.2   # Postgres: runs, snapshots, market data, settings
+pymongo>=4.8           # MongoDB: filings, extractions, conclusions, fundamentals
+fastapi>=0.115         # ui/ service
+uvicorn>=0.30
+croniter>=2.0          # collector schedules
+tzdata
+httpx>=0.27            # screener.in client (scanner/screener.py)
+beautifulsoup4>=4.12   # screener.in page parsers
+lxml>=5.0

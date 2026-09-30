@@ -296,6 +296,8 @@ class LLMResult:
     seconds: float = 0.0
     model: str = ""
     prompt_version: int = PROMPT_VERSION
+    input_tokens: int = 0          # prompt token count
+    output_tokens: int = 0         # completion token count
 
     @property
     def ok(self) -> bool:
@@ -365,6 +367,25 @@ def _content(cfg: LLMConfig, body: dict) -> str:
     return (choices[0].get("message") or {}).get("content", "")
 
 
+def _extract_tokens(cfg: LLMConfig, body: dict) -> tuple[int, int]:
+    """Extract (input_tokens, output_tokens) from a response body.
+
+    Ollama: prompt_eval_count and eval_count
+    OpenAI: usage.prompt_tokens and usage.completion_tokens
+
+    Returns (0, 0) if tokens are not present in the response.
+    """
+    if cfg.api == "ollama":
+        prompt = body.get("prompt_eval_count", 0)
+        completion = body.get("eval_count", 0)
+        return (prompt, completion)
+    # OpenAI style
+    usage = body.get("usage", {})
+    prompt = usage.get("prompt_tokens", 0)
+    completion = usage.get("completion_tokens", 0)
+    return (prompt, completion)
+
+
 def health(cfg: LLMConfig, timeout: int = 5) -> tuple[bool, str]:
     """Is the backend reachable? Checked once before a long batch, so a wrong
     port fails in a second instead of after the first 15-minute timeout."""
@@ -390,8 +411,17 @@ def health(cfg: LLMConfig, timeout: int = 5) -> tuple[bool, str]:
     return True, names or "reachable"
 
 
-def extract(cfg: LLMConfig, text: str, kind: str = KIND_ORDER) -> LLMResult:
-    """Run one extraction. Never raises -- the error lands on the result."""
+def extract(cfg: LLMConfig, text: str, kind: str = KIND_ORDER,
+            source_key: Optional[str] = None, symbol: Optional[str] = None) -> LLMResult:
+    """Run one extraction. Never raises -- the error lands on the result.
+
+    Args:
+        cfg: LLMConfig
+        text: filing text to extract from
+        kind: KIND_ORDER, KIND_CAPACITY, or KIND_GUIDANCE
+        source_key: filing seq_id for metrics; if not provided, derived from text hash
+        symbol: stock symbol for metrics; optional
+    """
     import requests
 
     if kind not in PROMPTS:
@@ -405,8 +435,14 @@ def extract(cfg: LLMConfig, text: str, kind: str = KIND_ORDER) -> LLMResult:
     if cfg.api != "ollama":
         limit = min(limit, OPENAI_MAX_INPUT_CHARS)
 
+    # Derive source_key from text hash if not provided, for metrics logging
+    if not source_key:
+        import hashlib
+        source_key = hashlib.sha256(text.encode()).hexdigest()[:16]
+
     started = time.time()
     raw = ""
+    response_body = {}
     try:
         for attempt in (0, 1):
             prompt = PROMPTS[kind].replace(TEXT_SLOT, text[:limit])
@@ -418,19 +454,38 @@ def extract(cfg: LLMConfig, text: str, kind: str = KIND_ORDER) -> LLMResult:
                 limit //= 2
                 continue
             resp.raise_for_status()
-            raw = _content(cfg, resp.json())
+            response_body = resp.json()
+            raw = _content(cfg, response_body)
             break
     except Exception as e:  # noqa: BLE001
+        elapsed = round(time.time() - started, 1)
+        # Record the failed call
+        from . import metrics
+        metrics.record_call("extract", source_key, symbol, cfg.model, 0, 0, elapsed, False)
         return LLMResult(error=f"{type(e).__name__}: {e}",
-                         seconds=round(time.time() - started, 1),
+                         seconds=elapsed,
                          model=cfg.model)
 
     elapsed = round(time.time() - started, 1)
+    input_tokens, output_tokens = _extract_tokens(cfg, response_body)
+
     data = parse_json_response(raw)
+    ok = data is not None
     if data is None:
-        return LLMResult(raw=raw, error="response was not JSON",
-                         seconds=elapsed, model=cfg.model)
-    return LLMResult(data=add_rupees(kind, data), raw=raw, seconds=elapsed, model=cfg.model)
+        result = LLMResult(raw=raw, error="response was not JSON",
+                          seconds=elapsed, model=cfg.model,
+                          input_tokens=input_tokens, output_tokens=output_tokens)
+    else:
+        result = LLMResult(data=add_rupees(kind, data), raw=raw, seconds=elapsed,
+                          model=cfg.model, input_tokens=input_tokens,
+                          output_tokens=output_tokens)
+
+    # Record the call
+    from . import metrics
+    metrics.record_call("extract", source_key, symbol, cfg.model, input_tokens,
+                       output_tokens, elapsed, ok)
+
+    return result
 
 
 # --------------------------------------------------------------------------

@@ -1,0 +1,1 @@
+"""ATH Scanner UI application."""
