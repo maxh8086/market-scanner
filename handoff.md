@@ -797,3 +797,160 @@ pipeline is about 30 minutes.
 3. `git init` in `Shared-Market-Research-Infra`; test `stop.ps1` end to end; decide how the home
    table's "scanned" count is shown; stop `mongo._ensure_indexes` swallowing auth failures; surface
    container stdout in the run logs.
+
+## Report and UI review round (2026-09-30, after commit 3d4bfca)
+
+Nothing in this section is implemented. It records the user's review of `output/ath_report_2026-09-30.xlsx`
+(291 stocks), the decisions taken, the evidence behind them and the order of work. Commit `3d4bfca` is
+pushed and the tree was clean; 838 tests, all passing.
+
+### Standing instructions from the user (apply to every item below)
+
+- Fix both the Excel workbook and the UI. The UI needs a **tooltip on every title that is complicated or
+  confusing**. Build one glossary (column, plain-language meaning, how it is derived) and feed it to the
+  Excel cell comments, the UI tooltips and the model prompt, so the three cannot drift apart.
+- **Do not show the data source of the Screener fundamentals in the UI** (keep it secret). Code, README and
+  schema docs may still name it. If the UI is ever shared or published, check the provider's terms first.
+- Where a column is technical or means nothing to a reader, **keep it in the backend and hide it from Excel and UI**.
+- Where a value is simply not reported, **leave the cell blank, not "UNKNOWN"**.
+- Wireframe first, get sign-off, then code (the standing rule for UI work).
+
+### Column decisions
+
+| Column | Decision |
+|---|---|
+| `ath_high` | Add `low_since_ath` (lowest low since the ATH date) with its date, and `max_drawdown_pct` (ATH to that low). The user confirmed: "LL since ATH, max_drawdown_pct - perfect." Optional flag when the drawdown went beyond 26% and the stock has since recovered into range. Source: `candles` in Postgres, no download. |
+| `above_ema50`, `above_sma200` | Drop from Excel and UI; `trend` already encodes them. Also drop from the model's input (`scanner/conclude.py` packet, ~line 50) because the model cites them in many conclusions. Keep in the backend only if something still needs them. |
+| `bonus_issue`, `demerger`, `orderbook_signal`, `expansion_signal` | Add `acquisition_signal` beside them. **Match NSE's real announcement categories (controlled vocabulary, 132 categories); never guess the wording** (see the NSE `desc` memory note). Keep the "text-match only" qualifier the other signals carry. |
+| `stance` | Needs a plain-language reading so a user concludes quickly (see "Stance clarity"). The stance is deterministic, set by the scorecard in `scanner/conclude.py`, not by the model. |
+| `stance_score` | Sum of six pillars (trend, growth, quality, valuation, forecast, orders), each clamped to -2..+2. CONSTRUCTIVE at >= 3, CAUTIOUS at <= -2, else MIXED; MIXED when fewer than 3 pillars have data (`CONSTRUCTIVE_AT`, `CAUTIOUS_AT`, `MIN_PILLARS`). Put this in the tooltip and cell comment. **The scoring is about to be redesigned (see "Scoring: parked")**, so do not polish it yet. |
+| `mcap_cr` | Put latest sales (`ttm_sales_cr`, else last annual) directly beside it, then `order_pct_of_mcap`, then `order_pct_of_sales`. Only 24 of 291 stocks have an order value, so those columns are often blank. |
+| `order_value_source` | Reword for end users and add a comment. Proposal (user to confirm wording): `anchor+scaled` = "Filed figure"; `anchor+bare` = "Filed figure (unit inferred)"; `llm` = "AI-read"; `loose` = "Approximate"; `cumulative` = "Period total, not one order"; `withheld` = "Not disclosed"; `foreign-currency` = "Quoted in foreign currency". Consider renaming the column to `order_value_basis`. |
+| `order_significance` | Blank when unknown (267 of 291 today). Comment: the larger of the order's share of market cap and of sales, banded NEGLIGIBLE, MODEST, MATERIAL, LARGE, TRANSFORMATIONAL. Not every company reports orders; blank is fine. |
+| `rev_forward_ttm_bad_cr`, `rev_forward_ttm_good_cr`, `rev_growth_pct_bad`, `rev_growth_pct_very_good`, `rev_ttm_dev_*` | Hide from Excel. Keep `rev_forward_ttm_cr` and `rev_ttm_growth_pct` visible. They are the 12-month revenue forecast range (10th, 50th and 90th percentile of backtested forecast errors) and are NOT reflected in `order_significance`. In the UI show a **flag or chip in the style of the pros and cons on screener.in**, e.g. "Forecast uncertain" when `rev_ttm_dev_pct` is high (the scorecard already penalises it), with the range in a tooltip or on the stock page. |
+| `rev_note` | Backend only. 244 of 264 rows carry the same 180-character note about band width; it tells a reader nothing. |
+| `stance_rules` | Backend only. Audit trail of the rules that fired. In the UI it feeds an expandable "why this stance" breakdown. |
+| `vol_vs_baseline` | Backend only. |
+
+### Volatility columns (these are NOT volume)
+
+`vol_*` come from `scanner/volatility.py` and measure **price volatility from daily closes**. The model read
+"vol" as volume: **98 of 291 conclusions (34%) say "volume"**, e.g. "stable volume regime" as a positive. That is
+wrong. Rename the user-facing labels as the user specified:
+
+| Old | New label | Meaning |
+|---|---|---|
+| `vol_pct` | `HV` (Historical Volatility) | annualised standard deviation of daily log returns over the last 21 trading days |
+| `vol_baseline_pct` | `HV_PCT` | median of the same stock's own HV history |
+| `vol_vs_baseline` | (backend only) | HV divided by baseline |
+| `vol_percentile` | `HV Percentile` | where today's HV sits in the stock's own history, 0 to 100 |
+| `vol_regime` | `HV Regime` | EXPANDING at 1.30x baseline or more, CONTRACTING at 0.77x or less, STABLE between |
+| `vol_forecast_pct` | `HV Forecast` | TimesFM forecast of HV for the next 21 days. The user finds it useful for hedging, so keep it visible. |
+
+Rename in the workbook, UI, the model packet keys (`price.vol_*`) and the prompt glossary. Internal Python names can
+stay if renaming them is too invasive, but the packet keys the model sees must not contain "vol".
+
+### `breakout_quality` (how it is determined)
+
+`scanner/volatility.py: breakout_quality`:
+- blank unless `trend` is UPTREND;
+- **HOT** if the HV regime is EXPANDING or HV percentile >= 80;
+- **ORDERLY** if the regime is CONTRACTING or HV percentile <= 20;
+- otherwise **NORMAL**.
+
+It describes volatility, not a true breakout: no volume confirmation and no base or consolidation check. Once volume
+data is in (below), redefine it to combine price near the ATH, a volume spike and delivery %, and document the rule
+in the tooltip.
+
+### Volume (traded and delivery), minimum effort
+
+The user asked to consider trading and delivery volume from NSE and BSE ("bhavcopy or something else, or daily
+tracking ... minimum efforts"). Findings:
+- `candles` (Postgres, 2,630,987 rows, 2000-01-03 to 2026-09-29) **already stores `volume` on every row**. Traded
+  volume, spikes and averages need **no new data**. Verify whether the candle source volume is NSE-only or
+  consolidated before relying on absolute numbers.
+- **Delivery quantity and delivery %** are in NSE's security-wise bhavcopy. `data/_bhav_probe.csv` shows the columns
+  `TTL_TRD_QNTY, TURNOVER_LACS, NO_OF_TRADES, DELIV_QTY, DELIV_PER`. `scanner/crosscheck.py` already downloads the
+  daily file and keeps only the price columns (`data/bhavcopy/bhavcopy_<date>.csv`, 33 files).
+- BSE has its own bhavcopy and delivery file, but it is more work and adds little for NSE-listed names.
+
+Plan:
+1. New Postgres table `daily_volume (symbol, date, traded_qty, delivery_qty, delivery_pct, trades, turnover)`, primary
+   key `(symbol, date)`, `ON CONFLICT DO NOTHING`, plus `feed_coverage` so only missing dates are fetched. Reuse the
+   NSE bhavcopy fetch from crosscheck and stop discarding the delivery columns.
+2. Backfill from NSE's archive of the same file (about 250 files per year); never re-download dates already held.
+3. Derived columns: `volume_spike_x` (today's volume over the 20-day average, from `candles`), `delivery_pct`, and a
+   delivery-% average or percentile. A spike at or near the ATH is a scoring positive (see below).
+4. BSE: later, only if wanted.
+5. Daily tracking: add it as a collector source, same pattern as the existing five in `collector_settings`.
+
+### Stance clarity (so a user concludes quickly)
+
+The user asked for better understanding at a glance (#4). Proposal: show stance as a badge plus a one-line,
+**deterministic** reason built from the scorecard, not the model, e.g. "Uptrend, 35% growth | Stretched PE". In the UI
+add a six-pillar mini-bar (trend, growth, quality, valuation, forecast, orders) and an expandable list of the rules
+that fired (from `stance_rules`). In Excel add `stance_why` (the one-liner). The final form depends on the scoring
+redesign.
+
+### Scoring: parked (core of the strategy; the user will return with a major update)
+
+Do **not** implement before the user returns. The user's wishlist, recorded so nothing is lost:
+- Add **PEG** and use it in ranking.
+- A factor concluded as positive and impactful should act as a **tailwind**; work out how to derive that.
+- A **sudden volume spike at or near the ATH** is a positive factor.
+- **QoQ and YoY growth forecast** should add points.
+- **Two ranking constraints** (the user will specify).
+- **Red flags** give negative marks.
+- Also weigh, with positive or negative marks: `order_significance`, `capacity_change` and its significance,
+  `breakout_quality`, `rev_ttm_growth_pct`, `rev_ttm_dev_pct`.
+
+Weaknesses in the current scorecard the redesign should address: distance from the ATH is both the screen and a score
+input, so it double counts (38 of 47 CAUTIOUS stocks sit in the 15-26% bucket); 10 stocks have an industry PE exactly
+equal to their own PE, which gives a fake "0.0% in line" reading (Titan, AIIL, Adani Power, JSW Infra, WABAG,
+Lotus Dev, PFOCUS, INDHOTEL and others). That looks like a fallback, so blank it and flag it.
+
+### Findings from the 60-row read (evidence for the prompt changes)
+
+Sample of 60 (22 CONSTRUCTIVE, 22 MIXED, 16 CAUTIOUS, `random_state` 7). Counts are across all 291 rows.
+- Raw field names leak into the text: conclusion 194 rows (67%), concerns 81 (28%), positives 33 (11%).
+- "No order data" listed as a concern in 143 rows (49%); most stocks simply have no order flow.
+- "Distance from ATH" listed as a concern in 177 rows (61%), though the whole list is chosen by ATH proximity.
+- Positives empty in 67 rows (23%), all MIXED or CAUTIOUS.
+- Backwards or invented statements: MRF "-48% of industry PE ... valuation pressure" (a discount is cheap); KRN PE
+  60% above industry "not a concern"; "No recent IPO" as a concern; "Unplanned order significance"; "Lack of
+  breakout quality".
+- Conclusions average 581 characters and restate numbers instead of giving a thesis.
+- `data_gaps` says "no recent filings stored" for 83 rows (29%); that is an internal storage note, not a data gap.
+
+Prompt changes to make (`scanner/conclude.py`):
+- Give the model a plain-language glossary (the shared glossary file).
+- Forbid field names such as `price.distance_pct` in any output field.
+- Do not list missing order data as a concern unless the stock has a real order signal.
+- Do not list distance from the ATH as a concern (the screen already implies it).
+- Require at least one positive or an explicit "none identified".
+- Write the conclusion as a thesis: what is working, what is at risk, what to watch.
+- Make `data_gaps` list real gaps only.
+
+### UI direction (decided, not started)
+
+- The UI moves to **Node.js** with an **AI chat** over the stored data, and intuitive graphs and views. This
+  supersedes the FastAPI plan; update the ADR (`manage_adr`) when it starts.
+- **TradingView Lightweight Charts** for per-stock price charts and technical indicators, with an ATH line.
+- The per-stock page also shows the Screener fundamentals, with no source label (see standing instructions).
+- Open questions for the user before building:
+  1. Node's role. Recommendation: keep Python for the data and analytics API and build Node on top of it.
+  2. Which model answers the chat: the local Qwen3-4B on vLLM (free, private, weaker, needs the GPU) or the Claude
+     API (stronger, costs money, sends data out).
+  3. Grounding. Recommendation: read-only tools over timelines, candles, filings, conclusions and fundamentals;
+     every answer cites its record; no free-form SQL.
+- Indicators are best computed in Python and returned as series.
+
+### Suggested order of work
+
+1. Shared glossary file (column, label, meaning, derivation) used by Excel, UI and prompt.
+2. Workbook changes: column order, hidden and renamed columns, blanks instead of UNKNOWN, cell comments,
+   `low_since_ath`, `max_drawdown_pct`, acquisition signal, HV renames.
+3. Prompt fixes and model packet cleanup; re-run a sample and re-read 50 rows to confirm the defects are gone.
+4. Volume pipeline: `daily_volume`, NSE delivery, derived spike and delivery columns, redefine `breakout_quality`.
+5. Wait for the user's scoring update; only then redesign the scorecard and the stance explanation.
+6. UI wireframe (charts, chat, tooltips, stock page, flags), user sign-off, then the Node build.
