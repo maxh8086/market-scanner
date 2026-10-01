@@ -17,7 +17,7 @@ Safe to re-run; existing clones, data and passwords are reused. Start over: .\re
 #>
 param([switch]$NoLlm, [switch]$Update)
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'  # native tools write progress to stderr; exit codes are checked explicitly
 Set-Location -Path $PSScriptRoot
 
 $InfraRepo = 'https://github.com/maxh8086/shared-market-research-Infra.git'
