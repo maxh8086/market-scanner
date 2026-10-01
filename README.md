@@ -1,7 +1,7 @@
 # Market Scanner (deployment)
 
 Portable start for Market Scanner. This repo holds only the compose file and PowerShell scripts.
-The application lives in [maxh8086/market-scanner]([https://github.com/maxh8086/market-scanner]) and the
+The application lives in [maxh8086/market-scanner](https://github.com/maxh8086/market-scanner) and the
 databases and LLM server in the shared infra
 [maxh8086/shared-market-research-Infra](https://github.com/maxh8086/shared-market-research-Infra).
 Both are cloned for you on first start.
