@@ -71,6 +71,7 @@ if (-not $NoLlm) { $up['Llm'] = $true }
 if ($LASTEXITCODE -ne 0) { Fail 'The shared infra did not start.' }
 
 Step 'Market Scanner'
+Set-Location -Path $PSScriptRoot  # up.ps1 changes directory
 & docker compose up -d --build ui collector
 if ($LASTEXITCODE -ne 0) { Fail 'docker compose up failed.' }
 
