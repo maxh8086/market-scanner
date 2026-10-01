@@ -1,3 +1,5 @@
+name: market-scanner
+
 # Market Scanner: the application stack. The databases and the LLM server are NOT here; they
 # live in the shared infra repo (cloned to ./infra by start.ps1, run as its own compose project
 # `market-infra`) so other projects can reuse them. The app source is cloned to ./app.
