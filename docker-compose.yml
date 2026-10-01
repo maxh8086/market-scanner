@@ -1,0 +1,8 @@
+# Market Scanner: the application stack. The databases and the LLM server are NOT here; they
+# live in the shared infra repo (cloned to ./infra by start.ps1, run as its own compose project
+# `market-infra`) so other projects can reuse them. The app source is cloned to ./app.
+#
+#   ./start.ps1                      clone what is missing, start infra, start the app
+#   docker compose up -d --build     the app only (infra must already be up)
+include:
+  - ./app/docker-compose.yml
