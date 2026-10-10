@@ -14,6 +14,7 @@ const ROUTES = {
   "/run": "run",
   "/results": "results",
   "/stock": "stock",
+  "/stocks": "stocks",
   "/cost": "cost",
   "/report": "report",
   "/config": "config",
@@ -58,6 +59,7 @@ function updateBreadcrumb(view, args) {
     else if (view === "run") html += `<span>/</span><b>Latest run</b>`;
     else if (view === "results" && args[0]) html += `<span>/</span><a href="#/run/${args[0]}">Run</a><span>/</span><b>Results</b>`;
     else if (view === "stock" && args[0]) html += `<span>/</span><b>${args[0]}</b>`;
+    else if (view === "stocks") html += `<span>/</span><a href="#/stocks">Stocks</a>`;
     else if (view === "cost") html += `<span>/</span><b>Cost center</b>`;
     else if (view === "report") html += `<span>/</span><b>Report dashboard</b>`;
     else if (view === "config") html += `<span>/</span><b>Master configuration</b>`;
@@ -85,6 +87,9 @@ async function renderView(view, args) {
         break;
       case "stock":
         html = await renderStock(args[0]);
+        break;
+      case "stocks":
+        html = await renderStocks();
         break;
       case "cost":
         html = await renderCost();
@@ -290,6 +295,41 @@ async function renderResults(runId) {
           <th>Stock</th><th class="hide-sm">Industry</th><th class="r">Price</th><th class="r">Below ATH</th><th class="r hide-sm">ATH date</th><th>Stance</th>
         </tr></thead>
         <tbody>${rows || '<tr><td colspan="6"><div class="empty">No results</div></td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function renderStocks() {
+  const res = await fetch("/api/stocks");
+  const data = await res.json();
+
+  if (data.error) return `<div class="empty">${data.error}</div>`;
+
+  const rows = (data.rows || []).map(r => `
+    <tr class="link" tabindex="0" onclick="location.hash='#/stock/${r.symbol ?? ""}'">
+      <td><div class="sym">${r.symbol ?? ""}</div></td>
+      <td>${r.bucket ?? ""}</td>
+      <td class="r num">${r.stance_score ?? ""}</td>
+      <td class="r num hide-sm">${r.run_date ?? ""}</td>
+    </tr>
+  `).join("");
+
+  return `
+    <div class="head">
+      <div>
+        <div class="eyebrow">Latest snapshot</div>
+        <h1>Stocks</h1>
+        <p class="sub">${data.total ?? 0} stocks in the latest run.</p>
+      </div>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Symbol</th><th>Bucket</th><th class="r">Stance score</th><th class="r hide-sm">Run date</th>
+        </tr></thead>
+        <tbody>${rows || '<tr><td colspan="4"><div class="empty">No stocks</div></td></tr>'}</tbody>
       </table>
     </div>
   `;
