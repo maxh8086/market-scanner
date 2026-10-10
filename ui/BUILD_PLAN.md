@@ -1,5 +1,62 @@
 # Build plan and ownership (read this first)
 
+## UI rollout (first priority, updated 2026-10-10)
+
+Repo for every task below: `C:\Users\vaibh\Downloads\Projects\Market-Scanner` (the older path in the sections further down says `Kite-ATH-Scanner`; ignore it for UI work).
+
+### Wiring state (checked against code)
+
+| Surface | Served from | Wired to real data? |
+|---------|-------------|---------------------|
+| `ui/wireframes/index.html` (home, cost, config) | static file | No. No `fetch`, no external scripts. Mock data only. |
+| `ui/wireframes/strategy.html` (stocks, stock, holdings, sizing, review) | static file | No. Mock data in the inline `data.js`. Chart is a drawn placeholder; chat is spec text only. |
+| `ui/app/static/app.js` + `index.html` (run, results, stock, cost, report, config) | FastAPI on 8080 | Yes for the routes in `api.py`: `/api/runs`, `/api/runs/{id}`, `/api/runs/{id}/results`, `/api/stocks/{symbol}`, `/api/cost`, `/api/cost/{id}`, `/api/report`, `/api/config`, `/api/config/{source}`, `PUT` and `POST .../run`. |
+
+Missing backend, so the copy's screens cannot be live yet: stocks list, candles, indicators, holdings, sizing, review, flags, chat.
+
+### Decisions the user must make (blocked tasks wait for these)
+
+1. Chat model: local Qwen3-4B on vLLM, or Claude API.
+2. Node scope: Python data API with Node on top (recommended in `handoff.md`), or Python only for now.
+3. Holdings import format and sizing rules: see `docs/strategy/holdings_import.md` (only in worktrees; confirm before use).
+
+Until these are answered, tasks U-06 to U-09 and the chat task stay blocked. Tasks U-01 to U-05 do not depend on them.
+
+### Task specs for tokenfrugal
+
+Rules for every UI task (these are what made the earlier builder run fail):
+- One file per task, one function or one route per task. Pass the function signature and the path, not the whole file.
+- The task must say: **call `write_file` or `edit_file`; a text answer alone is not done.** Verify with `git diff --stat`. A "DONE" with no diff is a failure.
+- Each task has a test command that must pass. Run it after the change, never trust the report.
+- Use the role `builder`. Do not name a model in the task.
+- On failure: `resume_task` once, then split the task smaller. After that, Haiku fallback, and say so in the report.
+
+| ID | Role | File(s) | Task | Acceptance |
+|----|------|---------|------|------------|
+| U-01 | builder | `ui/app/indicators.py` (new), `tests/test_ui_indicators.py` (new) | Pure functions `sma(closes, n)`, `ema(closes, n)`, `rsi(closes, n=14)`. Input is a list of floats, output is a list of the same length with `None` until enough history. No pandas, no I/O. | New test file passes; full suite green. **Status: done, uncommitted.** `indicators.py` was rewritten by a Haiku fallback (tokenfrugal builder reported success but the file was wrong; the gateway failure is recorded for the tokenfrugal issue). Test file `tests/test_ui_indicators.py` came from tokenfrugal task `397167c6ae`, 8 tests pass; full suite 831 tests OK, skipped=42. |
+| U-02 | builder | `ui/app/api.py` | Add `GET /stocks` (query `q`, `limit`, `offset`). Reads distinct symbols from the latest snapshot per symbol in `stock_snapshots`, returns `{total, rows: [{symbol, bucket, score, run_date}]}`. Follow `get_results` for the connection pattern and `safe_connection()`. | New test `test_stocks_list_*` in `tests/test_ui_api.py` passes; existing tests stay green. |
+| U-03 | builder | `ui/app/static/app.js` | Add hash route `#/stocks` that calls `/api/stocks` and renders a table linking to `#/stock/{symbol}`. Add a "Stocks" entry to the nav. Blanks, not "UNKNOWN", for missing values. | `grep -n "#/stocks" ui/app/static/app.js` finds the route; `git diff --stat` shows the file changed. Manual check later. |
+| U-04 | builder | `ui/app/api.py` | Add `GET /stocks/{symbol}/indicators` that returns SMA20, SMA50, SMA200 and RSI14 series, using `indicators.py` from U-01. Source closes from the `candles` table; if it does not exist yet, return `{"available": false}` with no error. | New test passes; `test_ui_api.py` green. Depends on U-01. |
+| U-05 | builder | `ui/app/api.py` | Add `GET /stocks/{symbol}/candles` returning OHLCV for a window (`days`, default 365) from Postgres `candles`. If the table is missing, return `{"available": false}`. | Test passes with the table absent (returns `available: false`). |
+| U-06 (blocked) | builder | `ui/app/static/index.html`, `app.js` | Wire the copy's stock page chart to `/candles` and `/indicators` with Lightweight Charts. | Blocked on decision 2. |
+| U-07 (blocked) | builder | `ui/app/api.py` | Holdings endpoints. | Blocked on decision 3. |
+| U-08 (blocked) | builder | `ui/app/api.py` | Sizing and review endpoints. | Blocked on decision 3. |
+| U-09 (blocked) | builder | new chat module | Chat over stored data (read-only tools, every answer cites its record). | Blocked on decisions 1 and 2. |
+
+### Order
+
+U-01 first (no dependencies). U-02 and U-03 after U-01 are in. U-04 needs U-01. U-05 is independent. U-06 to U-09 wait for the user.
+
+### Sign-off gates (standing rules)
+
+- No UI code for a screen until the user signs off its wireframe. The user has accepted `index.html` and `strategy.html` as they are; the copy's stocks, stock, holdings, sizing and review screens are the wireframe for U-02 to U-08.
+- Confirm Cost center and Master configuration before any change to them.
+- The Screener data source is not shown in the UI.
+
+### Done for each UI task
+
+Code plus test, test suite green, `git diff --stat` shows the expected files, and a short report with the tokenfrugal task ID. Nothing is committed or pushed by the builder.
+
 Approved decisions (from the user, 2026-09-30):
 
 1. **Candles and NSE data move to Postgres.** Export from `data/history.db` and `data/factors.db`, import into Postgres, then read and write Postgres.
