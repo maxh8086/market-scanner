@@ -442,3 +442,50 @@ def _describe_cron(cron_str: str) -> str:
 
     desc_parts = [p for p in [min_desc, hour_desc, dow_desc] if p]
     return ", ".join(desc_parts) if desc_parts else "Invalid cron"
+
+
+@router.get("/stocks")
+def get_stocks(q: str | None = None, limit: int = 50, offset: int = 0):
+    """Latest snapshot per symbol across all runs, with optional symbol search and paging."""
+    from decimal import Decimal
+
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+
+    conn = safe_connection()
+    if not conn:
+        return {"error": "Database unavailable", "rows": [], "total": 0}
+
+    base = """
+        SELECT DISTINCT ON (ss.symbol) ss.symbol, ss.bucket, ss.stance_score, r.run_date
+        FROM stock_snapshots ss
+        JOIN runs r ON r.run_id = ss.run_id
+        ORDER BY ss.symbol, r.run_date DESC
+    """
+    where = ""
+    params = []
+    if q:
+        where = " WHERE symbol ILIKE %s"
+        params.append("%" + q + "%")
+
+    try:
+        count_row = conn.execute(
+            f"SELECT COUNT(*) AS n FROM ({base}) latest{where}", params
+        ).fetchone()
+        total = count_row["n"] if count_row else 0
+
+        rows = conn.execute(
+            f"SELECT * FROM ({base}) latest{where} ORDER BY symbol LIMIT %s OFFSET %s",
+            params + [limit, offset],
+        ).fetchall()
+
+        out = []
+        for r in rows:
+            d = serialize_row(r)
+            if isinstance(d.get("stance_score"), Decimal):
+                d["stance_score"] = float(d["stance_score"])
+            out.append(d)
+
+        return {"total": total, "rows": out}
+    finally:
+        conn.close()

@@ -89,6 +89,32 @@ class UIApiContractTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/stocks/NOSUCHSYMBOL").json()["error"],
                          "Stock not found")
 
+    def test_stocks_list_has_total_and_rows(self):
+        data = self.client.get("/api/stocks?limit=5").json()
+        self.assertIn("total", data)
+        self.assertLessEqual(len(data["rows"]), 5)
+        for row in data["rows"]:
+            for key in ("symbol", "bucket", "stance_score", "run_date"):
+                self.assertIn(key, row)
+
+    def test_stocks_list_one_row_per_symbol(self):
+        data = self.client.get("/api/stocks?limit=200").json()
+        symbols = [r["symbol"] for r in data["rows"]]
+        self.assertEqual(len(symbols), len(set(symbols)))
+
+    def test_stocks_list_search_matches_symbol(self):
+        first = self.client.get("/api/stocks?limit=1").json()["rows"]
+        if not first:
+            self.skipTest("no stocks in Postgres")
+        needle = first[0]["symbol"][:2]
+        data = self.client.get(f"/api/stocks?q={needle}&limit=200").json()
+        self.assertTrue(all(needle in r["symbol"] for r in data["rows"]))
+
+    def test_stocks_list_pages_are_disjoint(self):
+        a = self.client.get("/api/stocks?limit=10&offset=0").json()["rows"]
+        b = self.client.get("/api/stocks?limit=10&offset=10").json()["rows"]
+        self.assertTrue({r["symbol"] for r in a}.isdisjoint({r["symbol"] for r in b}))
+
     def test_cost_counts_only_real_llm_calls(self):
         """A run with no llm_calls rows must report 0 calls, not 1."""
         rid = self.latest["run_id"]
