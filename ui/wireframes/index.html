@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ATH Scanner UI Wireframes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg:#F6F8F9; --surface:#FFFFFF; --ink:#10202B; --muted:#435563; --faint:#5B6D7A;
@@ -216,6 +216,387 @@ dialog h2{font-size:17px;margin-bottom:8px} dialog ul{margin:8px 0 16px;padding-
 }
 .tfoot a,a.num,.mono a,a.mono{display:inline-flex;align-items:center;min-height:44px}
 </style>
+<script>try{var k=localStorage.getItem("ath-skin");if(k)document.documentElement.dataset.skin=k;}catch(e){}</script>
+<style>
+/* ==== src/design.css ==== */
+/* Design system: slate canvas, elevated cards, Tailwind-like tokens (slate, indigo, emerald, rose, amber).
+   Hand-written mirror of the Tailwind palette so the wireframe stays one offline file.
+   The Node.js build swaps these tokens for Tailwind utility classes one to one.
+   Owned by the shell. Pages add their own rules in <page>.css, scoped under #s-<page>. */
+:root{
+  --bg:#F8FAFC; --surface:#FFFFFF; --ink:#0F172A; --muted:#475569; --faint:#5B6B82;
+  --line:#E2E8F0; --line-strong:#CBD5E1; --tint:#F1F5F9;
+  --accent:#4F46E5; --accent-ink:#FFFFFF; --accent-soft:#EEF2FF;
+  --gain:#047857; --loss:#BE123C; --caution:#B45309;
+  --gain-soft:#ECFDF5; --loss-soft:#FFF1F2; --caution-soft:#FFFBEB; --on-solid:#FFFFFF;
+  --seg-on:#FFFFFF; --ring:rgba(79,70,229,.28);
+  --shadow:0 1px 2px rgba(15,23,42,.05),0 1px 3px rgba(15,23,42,.04);
+  --shadow-pop:0 12px 32px -8px rgba(15,23,42,.22);
+  --sans:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:var(--sans);   /* base.css still says var(--mono) for pills, readouts and axis text: numbers use Inter with tabular figures */
+  --code:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --r:14px; --hit:40px;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#020617; --surface:#0F172A; --ink:#F1F5F9; --muted:#A3B1C4; --faint:#8B9AB0;
+    --line:#1E293B; --line-strong:#334155; --tint:#162033;
+    --accent:#818CF8; --accent-ink:#0B1020; --accent-soft:#1E2050;
+    --gain:#34D399; --loss:#FB7185; --caution:#FBBF24;
+    --gain-soft:#052E22; --loss-soft:#33101A; --caution-soft:#2E2208; --on-solid:#020617;
+    --seg-on:#334155; --ring:rgba(129,140,248,.35); --shadow:none; --shadow-pop:0 12px 32px -8px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#020617; --surface:#0F172A; --ink:#F1F5F9; --muted:#A3B1C4; --faint:#8B9AB0;
+  --line:#1E293B; --line-strong:#334155; --tint:#162033;
+  --accent:#818CF8; --accent-ink:#0B1020; --accent-soft:#1E2050;
+  --gain:#34D399; --loss:#FB7185; --caution:#FBBF24;
+  --gain-soft:#052E22; --loss-soft:#33101A; --caution-soft:#2E2208; --on-solid:#020617;
+  --seg-on:#334155; --ring:rgba(129,140,248,.35); --shadow:none; --shadow-pop:0 12px 32px -8px rgba(0,0,0,.6);
+}
+@media (pointer:coarse){:root{--hit:44px}}
+/* the chart card is always a light surface */
+.tv{--seg-on:#FFFFFF;--ring:rgba(11,110,138,.28)}
+
+/* base type: numbers stay in the sans face with tabular figures */
+body{font:400 14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+.mono,.num{font-family:var(--sans);font-variant-numeric:tabular-nums;letter-spacing:0}
+.r,td.num,th.r{font-variant-numeric:tabular-nums}
+code,textarea{font-family:var(--code)}
+h1{font-size:clamp(22px,2.6vw,28px);font-weight:600;letter-spacing:-.02em;line-height:1.2}
+h2{font-size:15px;font-weight:600;letter-spacing:-.005em}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--faint)}
+.sub{font-size:14px;color:var(--muted)}
+.head{margin-bottom:20px;align-items:center}
+.asof{font-size:12px}
+main{padding:24px 0 32px}
+
+/* shell */
+.top{background:color-mix(in srgb,var(--surface) 88%,transparent);border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+.top .wrap{min-height:60px}
+.brand{font-size:15px;font-weight:700;gap:10px}
+.brand i{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--brand-a,#6366F1),var(--brand-b,#4338CA));box-shadow:0 1px 2px rgba(67,56,202,.45),inset 0 1px 0 rgba(255,255,255,.25)}
+.brand i svg{width:16px;height:16px}
+nav.main a{font-size:14px;border-radius:8px;min-height:var(--hit)}
+nav.main a[aria-current=page]{color:var(--accent);background:var(--accent-soft);font-weight:600}
+.btn{min-height:var(--hit);border-radius:10px;font-size:14px;font-weight:500;padding:0 14px;box-shadow:var(--shadow)}
+.btn.primary{box-shadow:0 1px 2px rgba(79,70,229,.35)}
+.btn.primary:hover{filter:brightness(.94);background:var(--accent)}
+.btn.ghost{box-shadow:none}
+.btn.icon{width:var(--hit);padding:0;justify-content:center}
+.btn.round{border-radius:999px}
+.btn .ic-sun{display:none}
+[data-theme=dark] .btn .ic-sun{display:block}
+[data-theme=dark] .btn .ic-moon{display:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+
+/* cards */
+.card,.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:18px 20px}
+.card>header,.panel>header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.sect{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:18px 20px}
+.sect>header .hint{font-size:12px}
+.stack>*+*{margin-top:16px}
+.grid{gap:20px}
+
+/* KPI cards: .strip children and .kpis>.kpi */
+.strip,.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;border:0;margin-bottom:16px}
+.strip>div,.strip>div+div,.kpis>.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 16px;margin:0;min-width:0;flex:none;position:relative}
+.strip .k,.kpi .k{font-size:12px;font-weight:500;color:var(--faint);text-transform:none;letter-spacing:0;display:flex;align-items:center}
+.strip .v,.kpi .v{font:600 26px/1.15 var(--sans);font-variant-numeric:tabular-nums;letter-spacing:-.02em;margin-top:6px}
+.strip .d,.kpi .d{font-size:12px;color:var(--faint);margin-top:4px;max-width:none}
+.kpi[data-tone=gain]::before,.kpi[data-tone=loss]::before,.kpi[data-tone=warn]::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:0 3px 3px 0}
+.kpi[data-tone=gain]::before{background:var(--gain)}
+.kpi[data-tone=loss]::before{background:var(--loss)}
+.kpi[data-tone=warn]::before{background:var(--caution)}
+.kpi.pick{cursor:pointer;text-align:left;font:inherit;color:inherit}
+.kpi.pick:hover{border-color:var(--line-strong)}
+.kpi.pick[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+@media (max-width:767px){
+  .strip,.kpis{grid-template-columns:1fr 1fr}
+  .strip>div,.strip>div+div,.strip>div:nth-child(even),.strip>div:last-child,.kpis>.kpi{padding:12px 14px;border:1px solid var(--line)}
+  .strip .v,.kpi .v{font-size:22px}
+}
+
+/* tables inside a card */
+.tbl-wrap{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);box-shadow:var(--shadow)}
+th{font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--faint);background:var(--tint);padding:10px 12px;border-bottom:1px solid var(--line)}
+td{padding:0 12px;height:52px;border-bottom:1px solid var(--line)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr.link:hover{background:color-mix(in srgb,var(--tint) 75%,transparent)}
+tbody tr.cut td{background:var(--tint);border-top:1px solid var(--line-strong)}
+td .sym{font-weight:600}
+td .held{border:0;background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600}
+.tfoot{padding:10px 4px}
+@media (max-width:767px){th,td{padding-left:8px;padding-right:8px}}
+
+/* pills: verdict, governance, generic */
+.vd{min-width:0;height:24px;padding:0 10px 0 9px;border-radius:999px;font:600 12px var(--sans);letter-spacing:0;border:1px solid transparent;gap:6px}
+.vd::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.vd.BUY{background:var(--gain-soft);color:var(--gain);border-color:color-mix(in srgb,var(--gain) 30%,transparent)}
+.vd.HOLD{background:var(--tint);color:var(--muted);border-color:var(--line-strong)}
+.vd.EXIT{background:var(--loss-soft);color:var(--loss);border-color:color-mix(in srgb,var(--loss) 30%,transparent)}
+.vd.REJECT{background:var(--loss);color:var(--on-solid);border-color:var(--loss)}
+.vd.big{height:32px;font-size:14px;min-width:0;padding:0 14px 0 12px;border-radius:999px}
+.gp,.pill{height:24px;font-weight:500;border-radius:999px}
+.gp .dot,.pill .dot{flex:none}
+.gp.na{border-color:var(--line-strong);color:var(--muted)}
+
+/* segmented control */
+.seg{display:inline-flex;gap:2px;padding:3px;background:var(--tint);border:1px solid var(--line);border-radius:10px;overflow:visible;max-width:100%}
+.seg button{min-height:var(--hit);padding:0 12px;border:0;border-right:0;border-radius:8px;background:transparent;color:var(--muted);font-size:13px;font-weight:500;white-space:nowrap}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed=true],.seg button[aria-selected=true]{background:var(--seg-on);color:var(--ink);box-shadow:0 1px 2px rgba(15,23,42,.14),0 0 0 1px var(--line)}
+.seg button .n{margin-left:6px;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--line);color:var(--muted);font-variant-numeric:tabular-nums}
+.seg button[aria-pressed=true] .n,.seg button[aria-selected=true] .n{background:var(--accent-soft);color:var(--accent)}
+.seg.tabs button{padding:0 16px}
+
+/* inputs, search, selects */
+select,.field input,.search input,textarea{border-radius:10px;border:1px solid var(--line-strong);min-height:var(--hit)}
+.field input{background:var(--surface)}
+.search input{padding:0 52px 0 38px}
+.search svg{top:50%;margin-top:-8px;left:12px}
+.kbd{font:500 11px var(--sans);color:var(--faint);background:var(--tint);border:1px solid var(--line-strong);border-radius:6px;padding:1px 6px;line-height:1.5}
+.search .kbd{position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none}
+.selwrap label{font-size:12px;font-weight:500;color:var(--faint)}
+.bar{gap:10px 12px}
+fieldset{border-top:1px solid var(--line)}
+
+/* alert banner */
+.alert{border-radius:12px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--caution) 35%,transparent);align-items:center}
+.alert>svg{margin-top:0}
+.alert.loss{border-color:color-mix(in srgb,var(--loss) 35%,transparent)}
+.alert.info{border-color:var(--line-strong)}
+.empty{border-radius:var(--r);background:var(--surface)}
+.proposal{border-radius:12px}
+
+/* glossary: hover or focus the label text. decorateTips() swaps the old (i) buttons for this */
+.tipl{cursor:help;text-decoration:underline dotted;text-decoration-color:var(--faint);text-decoration-thickness:1px;text-underline-offset:3px}
+.tipl:hover,.tipl:focus-visible,.tipl[aria-expanded=true]{text-decoration-color:var(--accent);text-decoration-style:solid}
+.tipl:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.info{width:18px;height:18px;font:600 10px/1 var(--sans)}
+#pop{border-radius:10px;padding:12px 14px;box-shadow:var(--shadow-pop);border-color:var(--line-strong)}
+
+/* misc */
+.readout,.legend{font-variant-numeric:tabular-nums}
+.wf{font-size:12px}
+
+/* ==== src/skins.css ==== */
+/* Skins. The default (no data-skin) is the indigo look in design.css.
+   A skin only re-points tokens, so every page and both themes follow. Gain stays green and loss stays red in every skin. */
+:root{--brand-a:#6366F1;--brand-b:#4338CA}
+
+/* Classic blue: a steady corporate blue, with a thin accent line on top of each KPI card. */
+:root[data-skin="blue"]{
+  --accent:#1D4ED8;--accent-soft:#EFF6FF;--ring:rgba(29,78,216,.28);--brand-a:#3B82F6;--brand-b:#1D4ED8;
+}
+:root[data-skin="blue"][data-theme="dark"]{--accent:#60A5FA;--accent-soft:#12264A;--accent-ink:#06122B;--ring:rgba(96,165,250,.38);--brand-a:#60A5FA;--brand-b:#2563EB}
+:root[data-skin="blue"] .kpi{position:relative;overflow:hidden}
+:root[data-skin="blue"] .kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--accent);opacity:.85}
+:root[data-skin="blue"] .kpi[data-tone=gain]::before{background:var(--gain)}
+:root[data-skin="blue"] .kpi[data-tone=loss]::before{background:var(--loss)}
+:root[data-skin="blue"] .kpi[data-tone=warn]::before{background:var(--caution)}
+
+/* Mango: a warm amber brand with soft purple shadows. Caution moves to orange so it never looks like the brand colour. */
+:root[data-skin="mango"]{
+  --bg:#FFFBF5;--tint:#FEF6E7;--line:#F3E6CF;--line-strong:#E6D3B0;
+  --accent:#B45309;--accent-soft:#FEF3C7;--ring:rgba(217,119,6,.3);--brand-a:#FBBF24;--brand-b:#D97706;
+  --caution:#C2410C;--caution-soft:#FFF1E6;
+  --shadow:0 1px 2px rgba(91,33,182,.06),0 4px 14px -6px rgba(91,33,182,.14);
+}
+:root[data-skin="mango"][data-theme="dark"]{
+  --bg:#14101C;--surface:#1D1729;--tint:#261E36;--line:#33294A;--line-strong:#463A63;
+  --accent:#FBBF24;--accent-soft:#3A2A0B;--accent-ink:#1A1205;--ring:rgba(251,191,36,.38);--brand-a:#FCD34D;--brand-b:#F59E0B;
+  --caution:#FB923C;--caution-soft:#3A210F;--seg-on:#3A2F57;
+}
+:root[data-skin="mango"] .held{background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE}
+:root[data-skin="mango"][data-theme="dark"] .held{background:#2E2250;color:#C4B5FD;border-color:#4C3A85}
+:root[data-skin="mango"] .brand i svg{color:#431407}
+
+/* Skin picker in the header */
+.skin{display:inline-flex;gap:4px;align-items:center;padding:3px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+.skin button{width:22px;height:22px;border-radius:999px;border:2px solid transparent;padding:0;cursor:pointer;background:var(--sw,#6366F1);
+  box-shadow:inset 0 0 0 1px rgba(15,23,42,.15);transition:transform .15s ease,border-color .15s ease}
+.skin button:hover{transform:scale(1.12)}
+.skin button[aria-pressed=true]{border-color:var(--ink)}
+.skin button[data-skin-set=""]{--sw:#4F46E5}
+.skin button[data-skin-set=blue]{--sw:#1D4ED8}
+.skin button[data-skin-set=mango]{--sw:#F59E0B}
+@media (max-width:640px){.skin{display:none}}
+
+/* ==== src/polish.css ==== */
+/* Polish: type, colour finish, motion and focus. Shared; owned by the integrator. */
+html{scroll-padding-top:76px;text-rendering:optimizeLegibility}
+body{font-feature-settings:"cv11","ss03","calt";font-optical-sizing:auto;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+h1,h2,h3{text-wrap:balance}
+p,li,.sub,.rs{text-wrap:pretty}
+h1{letter-spacing:-.025em}
+.eyebrow{text-transform:uppercase;font-size:11px;letter-spacing:.09em}
+.num,.r,td,.kpi .v,.pk-k b{font-variant-numeric:tabular-nums slashed-zero;font-feature-settings:"tnum","zero","cv11"}
+.kpi .v{font-weight:600;letter-spacing:-.02em}
+::selection{background:var(--accent-soft);color:var(--ink)}
+/* scrollbars stay quiet */
+*{scrollbar-width:thin;scrollbar-color:var(--line-strong) transparent}
+/* smooth states */
+.btn,.kpi,.card,.sect,nav.main a,.seg button,tbody tr,.field,input,select,textarea{transition:background-color .16s ease,border-color .16s ease,color .16s ease,box-shadow .2s ease,transform .16s ease,filter .16s ease}
+.btn:active{transform:translateY(1px) scale(.985)}
+.kpi.pick:hover,a.kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-pop);border-color:var(--line-strong)}
+.kpi.pick:active{transform:none}
+tbody tr:hover td{background:var(--tint)}
+/* focus is visible and consistent; the page heading takes focus on route change without a ring */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.screen h1:focus{outline:none}
+/* route change: a short fade and rise, cards stagger in */
+.screen.on{animation:in .28s cubic-bezier(.22,1,.36,1)}
+.screen.on .kpis>*{animation:rise .4s cubic-bezier(.22,1,.36,1) both}
+.screen.on .kpis>*:nth-child(2){animation-delay:.04s}.screen.on .kpis>*:nth-child(3){animation-delay:.08s}
+.screen.on .kpis>*:nth-child(4){animation-delay:.12s}.screen.on .kpis>*:nth-child(5){animation-delay:.16s}.screen.on .kpis>*:nth-child(6){animation-delay:.2s}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+#toast{transition:opacity .2s ease,transform .25s cubic-bezier(.22,1,.36,1)}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+@media (prefers-reduced-motion:reduce){.screen.on,.screen.on .kpis>*{animation:none!important}.kpi.pick:hover{transform:none}.btn:active{transform:none}}
+
+/* the glossary popover sits above the drawer and any dialog */
+#pop{z-index:95}
+
+/* numbers line up and never jump: chart readout, axis text, pills, event dates */
+.readout,.chartwrap text,.vd,.evline .d,.chip i,.strip .v,.kv,.gv .no{font-variant-numeric:tabular-nums;font-feature-settings:"tnum","cv11"}
+.readout{font-size:12.5px;gap:4px 14px;letter-spacing:0}
+.readout b{font-weight:600}
+
+/* ==== src/ops_override.css ==== */
+/* Operations pages (index.html) on the shared design system. Keeps the page's own layout, swaps the look. */
+body{font:400 14px/1.5 var(--sans)}
+.brand i{background:linear-gradient(135deg,var(--brand-a,#6366F1),var(--brand-b,#4338CA))}
+nav.main a[aria-current=page]{color:var(--accent);background:var(--accent-soft)}
+.top .wrap{gap:16px}
+@media (max-width:1400px){.top .stamp{display:none}}
+/* tables: tighter cells so the run table fits its panel without a sideways scroll at 1280 */
+th{padding:10px 9px}
+td{padding:0 9px}
+th:first-child,td:first-child{padding-left:12px}
+th:last-child,td:last-child{padding-right:12px}
+
+/* ---- Home: trends block ---- */
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;padding:0}
+.sub-h{font-size:12px;font-weight:600;color:var(--faint);letter-spacing:.02em;margin:0 0 6px}
+.sub-h .hint{font-weight:400;margin-left:6px}
+.sect>header{align-items:center}
+.sect>header h2{margin-right:auto}
+.trend-toggle{display:none}
+.trend-cols{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px 28px;align-items:start}
+.trend-lists{display:grid;gap:16px;min-width:0}
+.trend-body .rows>div{min-height:38px;font-size:13.5px}
+.trend-body .rows a{display:inline-flex;align-items:center;min-height:var(--hit);font-weight:600}
+.trend-body .rows .mini{display:inline-flex;align-items:center;gap:10px}
+.trend-body .rows .mini i{display:block;width:56px;height:6px;border-radius:3px;background:var(--tint);overflow:hidden}
+.trend-body .rows .mini i b{display:block;height:100%;background:var(--accent)}
+#trend-svg{border-radius:8px;min-width:0}
+#trend-svg:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.trend-read{font-size:12.5px;color:var(--muted);min-height:20px;margin-top:6px;font-variant-numeric:tabular-nums}
+.chart line.guide{stroke:var(--line-strong);stroke-width:1}
+
+/* ---- Home: industry heat map ---- */
+:root{--hm-lo:8%;--hm-hi:68%}
+:root[data-theme=dark]{--hm-lo:10%;--hm-hi:42%}
+.heat{margin-top:20px;border-top:1px solid var(--line);padding-top:16px}
+.heat-head{display:flex;justify-content:space-between;gap:12px 16px;flex-wrap:wrap;align-items:flex-start}
+.heat h3{font-size:14px;margin:0;font-weight:600}
+.heat-read{margin:12px 0;font-size:14px;color:var(--ink);max-width:80ch}
+.hm-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:4px 2px 6px}
+.hm-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+table.hm{border-collapse:separate;border-spacing:2px;width:max-content;min-width:100%;font-size:13px}
+.hm thead th{position:static;background:transparent;font-size:11px;font-weight:600;text-align:center;white-space:nowrap;padding:6px 0;border:0;letter-spacing:0;text-transform:none;color:var(--faint)}
+.hm thead th.cur{color:var(--ink)}
+.hm thead th.hm-corner{text-align:left;padding-left:8px;position:sticky;left:0;z-index:2;background:var(--surface)}
+.hm tbody th{position:sticky;left:0;z-index:1;background:var(--surface);text-align:left;font-size:13px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--ink);padding:0 10px 0 8px;min-width:120px;max-width:140px;white-space:normal;line-height:1.25;border:0}
+.hm td{min-width:44px;height:var(--hit);padding:0;border:0;border-radius:6px;text-align:center;font-weight:500;font-variant-numeric:tabular-nums;color:var(--ink);cursor:default;background:var(--tint)}
+.hm td.s{background:color-mix(in srgb,var(--accent) calc(var(--hm-lo) + var(--t)*(var(--hm-hi) - var(--hm-lo))),var(--surface))}
+.hm td.g{background:color-mix(in srgb,var(--gain) calc(10% + var(--t)*(var(--hm-hi) - 10%)),var(--surface))}
+.hm td.l{background:color-mix(in srgb,var(--loss) calc(10% + var(--t)*(var(--hm-hi) - 10%)),var(--surface))}
+.hm td.z{background:var(--tint)}
+.hm td.cur{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ink) 35%,transparent)}
+.hm td:hover{box-shadow:inset 0 0 0 2px var(--ink)}
+.hm td:focus-visible{outline:2px solid var(--accent);outline-offset:1px;box-shadow:inset 0 0 0 2px var(--ink);position:relative;z-index:2}
+.heat-info{margin-top:10px;font-size:13px;color:var(--ink);padding:8px 12px;border-radius:10px;background:var(--tint);min-height:var(--hit);display:flex;align-items:center}
+.heat-legend{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:12.5px;color:var(--muted);margin-top:10px}
+.heat-legend .grad{width:160px;height:12px;border-radius:6px;border:1px solid var(--line-strong);display:inline-block}
+.grad-s{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) var(--hm-lo),var(--surface)),color-mix(in srgb,var(--accent) var(--hm-hi),var(--surface)))}
+.grad-d{background:linear-gradient(90deg,color-mix(in srgb,var(--loss) var(--hm-hi),var(--surface)),var(--tint),color-mix(in srgb,var(--gain) var(--hm-hi),var(--surface)))}
+.heat-legend .num{color:var(--ink);font-weight:500}
+
+/* ---- Runs table ---- */
+td a.runlink{display:flex;align-items:center;min-height:var(--hit);color:var(--ink);font-weight:600}
+td a.runlink:hover{text-decoration:none;color:var(--accent)}
+tbody tr.link:focus-within{background:var(--tint)}
+
+/* ---- Master configuration: schedule builder ---- */
+.jobs{display:grid;gap:16px}
+.job>header{flex-wrap:wrap;gap:10px 16px}
+.job-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:20px 28px;margin-top:14px}
+.job-col{display:grid;gap:14px;align-content:start;min-width:0}
+fieldset.sb{border:0;margin:0;padding:0;min-width:0;display:grid;gap:14px}
+fieldset.sb:disabled{opacity:.55}
+.sb-row{display:flex;flex-wrap:wrap;gap:12px}
+.sb-row .field{min-width:0;flex:1 1 112px;max-width:200px}
+.sb [data-g]{display:none}
+.sb[data-freq=every] [data-g~=every],.sb[data-freq=hourly] [data-g~=hourly],.sb[data-freq=daily] [data-g~=daily],.sb[data-freq=weekly] [data-g~=weekly],.sb[data-freq=monthly] [data-g~=monthly],.sb[data-freq=custom] [data-g~=custom]{display:flex}
+.sb-row .field.wide{flex:1 1 100%;max-width:none}
+.sb .lbl{font-size:13px;color:var(--muted);font-weight:500}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip{min-width:var(--hit);min-height:var(--hit);padding:0 10px;border-radius:10px;border:1px solid var(--line-strong);background:var(--surface);color:var(--muted);font-size:13px;font-weight:500}
+.chip:hover{color:var(--ink)}
+.chip[aria-pressed=true]{background:var(--accent-soft);color:var(--accent);border-color:var(--accent);font-weight:600}
+.chips .preset{min-height:var(--hit);padding:0 8px;border:0;background:transparent;color:var(--accent);font-size:13px;font-weight:500;text-decoration:underline;text-underline-offset:3px}
+.sb .cnote{margin:0;color:var(--muted);font-size:13px}
+.field input.cron{font-family:var(--code);font-size:13px}
+.sb-err{margin:0;padding:10px 12px;border-radius:10px;background:var(--loss-soft);color:var(--loss);border:1px solid color-mix(in srgb,var(--loss) 35%,transparent);font-size:13px}
+.sb-err:empty{display:none}
+.limit{margin:0;font-size:13px;color:var(--muted)}
+.limit b{color:var(--ink);font-weight:600}
+.job-act{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.job-act .saved{font-size:13px;color:var(--faint)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.pv{display:grid;gap:12px;align-content:start;min-width:0}
+.pv.dim .wk,.pv.dim .next{opacity:.45}
+.pv-sent{font-size:16px;font-weight:600;line-height:1.35}
+.pv-sent .pill{margin-left:8px;vertical-align:2px}
+.pv .why{margin:0;font-size:13px;color:var(--muted)}
+.pv .stale{margin:0;font-size:12.5px;color:var(--caution)}
+.pv .stale:empty{display:none}
+.wk{display:grid;grid-template-columns:34px repeat(24,minmax(0,1fr));gap:2px;align-items:center}
+.wk .dl{font-size:11px;color:var(--faint)}
+.wk .hl{grid-column:span 6;font-size:10.5px;color:var(--faint)}
+.wk i{display:block;height:16px;border-radius:3px;background:var(--tint);border:1px solid var(--line)}
+.wk i.on{background:var(--accent);border-color:var(--accent)}
+.wk-cap{font-size:12px;color:var(--faint);margin:6px 0 0}
+.next{margin:0;padding:0;list-style:none}
+.next li{display:flex;justify-content:space-between;gap:12px;min-height:34px;align-items:center;border-bottom:1px solid var(--line);font-size:13.5px}
+.next li:first-child{border-top:1px solid var(--line)}
+.next .none{color:var(--muted)}
+.job-foot{margin-top:16px;border-top:1px solid var(--line);padding-top:14px;display:flex;flex-wrap:wrap;gap:14px 28px;align-items:flex-end}
+.job-foot .stat span{display:block;color:var(--faint);font-size:12px}
+.job-foot .stat div{margin-top:4px}
+.job details.runs{margin-top:12px}
+.job details.runs summary{cursor:pointer;color:var(--accent);font-weight:500;min-height:var(--hit);display:flex;align-items:center}
+.job details.runs table{font-size:13px}
+@media (max-width:1023px){.job-grid{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:767px){
+  .trend-toggle{display:inline-flex;white-space:nowrap;flex:none}
+  .trends[data-open=false] .trend-body{display:none}
+  .trend-cols{grid-template-columns:minmax(0,1fr)}
+  .heat-legend .grad{width:120px}
+  .hm tbody th{min-width:112px;max-width:120px}
+  .sb-row .field{flex:1 1 130px}
+}
+@media (prefers-reduced-motion:reduce){.hm td,.chip{transition:none}}
+
+/* Home: five KPI cards sit in one row beside the cost card */
+@media (min-width:768px){#s-home .strip{grid-template-columns:repeat(5,minmax(0,1fr))}#s-home .strip .v{font-size:24px}}
+.pv [hidden]{display:none!important}
+.sb-row .field:first-child{flex:1 1 168px;max-width:220px}
+</style>
 </head>
 <body>
 
@@ -236,13 +617,13 @@ dialog h2{font-size:17px;margin-bottom:8px} dialog ul{margin:8px 0 16px;padding-
     <a class="brand" href="#/home"><i><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18l6-7 4 4 6-9"/></svg></i>ATH Scanner</a>
     <nav class="main" id="nav" aria-label="Primary">
       <a href="#/home" data-nav="home">Home</a>
-      <a href="#/run/2026-09-30" data-nav="run">Latest run</a>
-      <a href="#/report" data-nav="report">Report dashboard</a>
+      <a href="strategy.html#/stocks" data-nav="stocks">Stocks</a>
       <a href="#/cost" data-nav="cost">Cost center</a>
       <a href="#/config" data-nav="config">Master configuration</a>
     </nav>
     <span class="spacer"></span>
     <span class="stamp mono" id="stamp">data as of 30 Sep 2026 15:30 IST</span>
+    <div class="skin" id="skin" role="group" aria-label="Colour skin"><button type="button" data-skin-set="" aria-pressed="true" aria-label="Indigo skin" title="Indigo"></button><button type="button" data-skin-set="blue" aria-pressed="false" aria-label="Blue skin" title="Blue"></button><button type="button" data-skin-set="mango" aria-pressed="false" aria-label="Mango skin" title="Mango"></button></div>
     <div class="seg" role="group" aria-label="Theme" id="theme"><button data-t="light" aria-pressed="false">Light</button><button data-t="dark" aria-pressed="false">Dark</button></div>
     <button class="btn ghost menu-btn" id="menu" aria-label="Menu" aria-expanded="false"><svg><use href="#i-menu"/></svg></button>
   </div>
@@ -262,9 +643,9 @@ dialog h2{font-size:17px;margin-bottom:8px} dialog ul{margin:8px 0 16px;padding-
     <div>
       <div class="eyebrow">Latest run</div>
       <h1>30 Sep 2026: 286 stocks within 26% of their all-time high</h1>
-      <p class="sub">747 stocks scanned. 23 are at a new high today. Pick any run below to open its dashboard.</p>
+      <p class="sub">747 stocks scanned. 23 are at a new high today. Pick any run below to open its stock list.</p>
     </div>
-    <a class="btn primary" href="#/run/2026-09-30">Open run dashboard <svg><use href="#i-arrow"/></svg></a>
+    <a class="btn primary" href="strategy.html#/stocks?run=2026-09-30">Open run dashboard <svg><use href="#i-arrow"/></svg></a>
   </div>
 
   <div class="grid">
@@ -277,8 +658,52 @@ dialog h2{font-size:17px;margin-bottom:8px} dialog ul{margin:8px 0 16px;padding-
         <div><div class="k">Run time</div><div class="v">52m</div><div class="d">GPU 4.4 GB</div></div>
       </div>
 
+      <section class="sect trends" id="trends" data-open="false" aria-labelledby="trends-h">
+        <header>
+          <h2 id="trends-h">How the market is trending across runs</h2>
+          <span class="hint hide-sm">Last 41 runs. Sample figures.</span>
+          <button type="button" class="btn trend-toggle" id="trend-toggle" aria-expanded="false" aria-controls="trend-body"><span id="trend-toggle-t">Show trends</span></button>
+        </header>
+        <div class="trend-body" id="trend-body">
+          <div class="trend-cols">
+            <div class="trend-chart">
+              <div class="sub-h">Stocks in range per run</div>
+              <div id="trend-svg"></div>
+              <div class="legend"><span><i style="background:var(--accent)"></i>In range</span><span><i style="background:var(--muted)"></i>At ATH</span></div>
+              <div style="margin-top:16px">
+                <div class="sub-h">Stance drift <span class="hint">share Constructive</span></div>
+                <div class="rows" id="drift"></div>
+              </div>
+            </div>
+            <div class="trend-lists">
+              <div>
+                <div class="sub-h">Newly at ATH, 7 days</div>
+                <div class="rows" id="newath"></div>
+              </div>
+              <button type="button" class="btn" id="dl-xlsx" data-toast="Wireframe: downloads ath_report_2026-09-30.xlsx">Download latest .xlsx <svg><use href="#i-down"/></svg></button>
+            </div>
+          </div>
+
+          <div class="heat" id="heat-box">
+            <div class="heat-head">
+              <div>
+                <h3 id="heat-h">Industry heat</h3>
+                <p class="note" style="margin:2px 0 0">Share of each industry's stocks that are in range, top 10 industries, last 12 runs.</p>
+              </div>
+              <div class="seg" role="group" aria-label="Heat map view" id="heat-view">
+                <button type="button" aria-pressed="true" data-v="share">Share in range</button><button type="button" aria-pressed="false" data-v="change">Change vs previous run</button>
+              </div>
+            </div>
+            <p class="heat-read" id="heat-read-sum"></p>
+            <div class="hm-wrap" id="hm-wrap" tabindex="-1"><table class="hm" id="hm" role="grid" aria-labelledby="heat-h"></table></div>
+            <div class="heat-info" id="hm-readout" role="status" aria-live="polite">Hover or focus a cell to see its figures. Use the arrow keys to move between cells.</div>
+            <div class="heat-legend" id="hm-legend"></div>
+          </div>
+        </div>
+      </section>
+
       <div class="sect">
-        <header><h2>Runs</h2><span class="hint">Click a row to open that run</span></header>
+        <header><h2>Runs</h2><span class="hint">Click a row to open that run's stock list</span></header>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
@@ -303,208 +728,6 @@ dialog h2{font-size:17px;margin-bottom:8px} dialog ul{margin:8px 0 16px;padding-
           <div><span class="l">GPU energy</span><span class="num">67.3 Wh</span></div>
         </div>
         <a class="btn" style="margin-top:14px" href="#/cost">Open cost metrics <svg><use href="#i-arrow"/></svg></a>
-      </div>
-
-      <div class="panel">
-        <div class="eyebrow">Report dashboard</div>
-        <h2 style="margin-top:6px;font-size:18px;letter-spacing:-.01em">Trends across 41 runs</h2>
-        <svg class="chart" viewBox="0 0 320 90" role="img" aria-label="In-range count over the last runs" style="margin:10px 0 4px">
-          <polyline fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="4,62 30,58 56,60 82,50 108,46 134,52 160,38 186,42 212,30 238,34 264,24 290,20 316,14"/>
-          <line x1="4" y1="80" x2="316" y2="80" stroke="var(--line)"/>
-          <text x="4" y="90">Aug</text><text x="150" y="90">Sep</text>
-        </svg>
-        <div class="rows">
-          <div><span class="l">Top sector, latest run</span><span>Capital goods</span></div>
-          <div><span class="l">New at ATH, 7 days</span><span class="num">41</span></div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
-          <a class="btn" href="#/report">Open dashboard</a>
-          <a class="btn" href="#/report" data-toast="Wireframe: downloads ath_report_2026-09-30.xlsx">Download .xlsx <svg><use href="#i-down"/></svg></a>
-        </div>
-      </div>
-    </aside>
-  </div>
-</section>
-
-<!-- ============ 2. RUN DASHBOARD ============ -->
-<section class="screen" id="s-run" data-title="Run 30 Sep 2026">
-  <div class="head">
-    <div>
-      <div class="eyebrow">Run dashboard</div>
-      <h1>Run of 30 Sep 2026</h1>
-      <p class="sub">Started 13:41, finished 14:33 IST. Prices from Upstox, filings from NSE, conclusions from the local Qwen3-4B model.</p>
-    </div>
-    <a class="btn primary" href="#/results/2026-09-30">Explore all 286 results <svg><use href="#i-arrow"/></svg></a>
-  </div>
-
-  <div class="strip" style="margin-bottom:32px">
-    <div><div class="k">Scanned</div><div class="v">747</div><div class="d">3 skipped</div></div>
-    <div><div class="k">In range</div><div class="v">286</div><div class="d">38% of scanned</div></div>
-    <div><div class="k">At ATH</div><div class="v">23</div><div class="d up">+6</div></div>
-    <div><div class="k">New in range</div><div class="v">17</div><div class="d">entered since 28 Sep</div></div>
-    <div><div class="k">Dropped out</div><div class="v">11</div><div class="d down">fell past 26%</div></div>
-    <div><div class="k">Filings read</div><div class="v">1,942</div><div class="d">38 new today</div></div>
-  </div>
-
-  <div class="grid">
-    <div class="stack">
-      <div class="sect">
-        <header><h2>Distance from all-time high</h2><span class="hint">stocks per bucket</span></header>
-        <div id="buckets"></div>
-      </div>
-
-      <div class="sect">
-        <header><h2>Conclusion stance</h2><span class="hint">from the fixed scorecard, not the model</span></header>
-        <div class="mix" style="width:100%;height:14px;border-radius:7px"><i class="c" style="width:37%"></i><i class="m" style="width:48%"></i><i class="x" style="width:15%"></i></div>
-        <div class="legend"><span><i style="background:var(--gain)"></i>Constructive <b class="num">106</b></span><span><i style="background:var(--line-strong)"></i>Mixed <b class="num">137</b></span><span><i style="background:var(--caution)"></i>Cautious <b class="num">43</b></span></div>
-      </div>
-
-      <div class="sect">
-        <header><h2>Industries with most stocks in range</h2><span class="hint">top 6</span></header>
-        <div id="inds"></div>
-      </div>
-
-      <div class="sect">
-        <header><h2>Changes since the previous run</h2><span class="hint">28 Sep 2026</span></header>
-        <div class="rows" id="changes"></div>
-      </div>
-    </div>
-
-    <aside class="stack">
-      <div class="panel">
-        <h2>Pipeline</h2>
-        <div id="stages" style="margin-top:8px"></div>
-      </div>
-      <div class="panel">
-        <div class="eyebrow">Resources used by this run</div>
-        <div class="rows" style="margin-top:8px">
-          <div><span class="l">Input tokens</span><span class="num">2,410,336</span></div>
-          <div><span class="l">Output tokens</span><span class="num">312,904</span></div>
-          <div><span class="l">GPU energy</span><span class="num">67.3 Wh</span></div>
-          <div><span class="l">Run time</span><span class="num">52m 10s</span></div>
-        </div>
-        <a class="btn" style="margin-top:14px" href="#/cost">Open cost center <svg><use href="#i-arrow"/></svg></a>
-      </div>
-      <div class="panel">
-        <h2>Data quality</h2>
-        <div class="rows" style="margin-top:8px">
-          <div><span class="l">Fundamentals fresher than 7 days</span><span class="num warn">0 of 286</span></div>
-          <div><span class="l">Filings with a parsed order value</span><span class="num">412</span></div>
-          <div><span class="l">Price cross-check mismatches</span><span class="num">2</span></div>
-        </div>
-      </div>
-    </aside>
-  </div>
-</section>
-
-<!-- ============ 3. RESULTS TABLE ============ -->
-<section class="screen" id="s-results" data-title="Results">
-  <div class="head">
-    <div>
-      <div class="eyebrow">Run of 30 Sep 2026</div>
-      <h1>All results</h1>
-      <p class="sub">Nine columns chosen for scanning. Click a stock to open its full page. The export has every column.</p>
-    </div>
-    <a class="btn" href="#/results/2026-09-30" data-toast="Wireframe: exports the filtered rows as CSV">Export CSV <svg><use href="#i-down"/></svg></a>
-  </div>
-
-  <div class="bar">
-    <div class="search"><svg><use href="#i-search"/></svg><input id="q" type="search" placeholder="Search symbol or company" aria-label="Search symbol or company"></div>
-    <div class="seg" role="group" aria-label="Distance bucket" id="f-bucket">
-      <button aria-pressed="true" data-v="all">All</button><button aria-pressed="false" data-v="ath">At ATH</button><button aria-pressed="false" data-v="5">Within 5%</button><button aria-pressed="false" data-v="10">Within 10%</button><button aria-pressed="false" data-v="26">Within 26%</button>
-    </div>
-    <div class="seg" role="group" aria-label="Stance" id="f-stance">
-      <button aria-pressed="true" data-v="all">Any stance</button><button aria-pressed="false" data-v="constructive">Constructive</button><button aria-pressed="false" data-v="mixed">Mixed</button><button aria-pressed="false" data-v="cautious">Cautious</button>
-    </div>
-    <div class="seg" role="group" aria-label="Changed since previous run"><button aria-pressed="false" id="f-changed">Changed since 28 Sep</button></div>
-  </div>
-
-  <div class="tbl-wrap">
-    <table>
-      <thead><tr>
-        <th>Stock</th><th class="hide-sm">Industry</th><th class="r">Price</th><th class="r">Below ATH</th><th class="r hide-sm">ATH date</th>
-        <th class="r hide-sm">1Y return</th><th class="r hide-sm">Order book / sales</th><th>Stance</th><th class="hide-sm">Since last run</th>
-      </tr></thead>
-      <tbody id="res"></tbody>
-    </table>
-  </div>
-  <div class="tfoot"><span id="count">Showing 10 of 286</span><span class="seg"><button aria-pressed="false" aria-label="Previous page">Prev</button><button aria-pressed="true">1</button><button aria-pressed="false">2</button><button aria-pressed="false">3</button><button aria-pressed="false" aria-label="Next page">Next</button></span></div>
-</section>
-
-<!-- ============ 4. STOCK DASHBOARD ============ -->
-<section class="screen" id="s-stock" data-title="Stock">
-  <div class="head">
-    <div>
-      <div class="eyebrow" id="st-ind">Consumer durables</div>
-      <h1 id="st-name">Dixon Technologies</h1>
-      <p class="sub"><span class="mono" id="st-sym">DIXON</span> on NSE. In range since 19 Aug 2026, 21 runs on file.</p>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="pill measured" id="st-bucket">Within 5%</span><span class="pill constructive" id="st-stance">Constructive</span></div>
-  </div>
-
-  <div class="strip" style="margin-bottom:32px">
-    <div><div class="k">Price</div><div class="v" id="st-price">14,872</div><div class="d">as of 30 Sep close</div></div>
-    <div><div class="k">Below ATH</div><div class="v" id="st-off">3.4%</div><div class="d mono">ATH 15,394 on 9 Sep</div></div>
-    <div><div class="k">1Y return</div><div class="v up">+38.2%</div><div class="d">Nifty TM +11.6%</div></div>
-    <div><div class="k">Order book / sales</div><div class="v">1.9x</div><div class="d">from 3 filings</div></div>
-    <div><div class="k">Distinct customers</div><div class="v">4</div><div class="d">2 repeat, from graph</div></div>
-  </div>
-
-  <div class="grid">
-    <div class="stack">
-      <div class="sect">
-        <header><h2>Price against all-time high</h2><span class="hint">2 years, weekly close</span></header>
-        <svg class="chart" viewBox="0 0 640 220" role="img" aria-label="Price line with all-time-high marker and 26 percent band">
-          <rect x="40" y="18" width="590" height="58" fill="var(--accent-soft)" opacity=".7"/>
-          <line x1="40" y1="18" x2="630" y2="18" stroke="var(--accent)" stroke-dasharray="4 4"/>
-          <text x="44" y="12">ATH 15,394</text>
-          <text x="590" y="88">-26%</text>
-          <polyline fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-linejoin="round" points="40,190 80,182 120,176 160,178 200,160 240,150 280,156 320,132 360,120 400,126 440,96 480,84 520,72 560,58 600,34 630,26"/>
-          <circle cx="630" cy="26" r="4" fill="var(--accent)"/>
-          <line x1="40" y1="200" x2="630" y2="200" stroke="var(--line)"/>
-          <text x="40" y="214">Oct 24</text><text x="340" y="214">Mar 25</text><text x="590" y="214">Sep 26</text>
-        </svg>
-      </div>
-
-      <div class="sect">
-        <header><h2>Analysis timeline</h2><span class="hint">every run's conclusion, newest first. One record per run, never duplicated.</span></header>
-        <ol class="tl" id="tl"></ol>
-      </div>
-
-      <div class="sect">
-        <header><h2>Filings read</h2><span class="hint">each filing is stored once, keyed by its NSE sequence id</span></header>
-        <div class="tbl-wrap"><table>
-          <thead><tr><th>Date</th><th>Category</th><th class="r">Order value</th><th class="hide-sm">Counterparty</th><th class="r hide-sm">Seq id</th></tr></thead>
-          <tbody id="fil"></tbody>
-        </table></div>
-      </div>
-    </div>
-
-    <aside class="stack">
-      <div class="panel">
-        <div class="eyebrow">Current conclusion</div>
-        <p class="quote" style="margin:10px 0 12px" id="st-concl">Order intake keeps pace with capacity additions. Three of the last four filings name repeat customers, and the forecast points to steady revenue. Margins and the receivables position were not in the filings read.</p>
-        <p class="note">Checked against the fact sheet below. A reading aid over stored data, not investment advice.</p>
-      </div>
-      <div class="panel">
-        <h2>Fact sheet</h2>
-        <div class="kv" style="margin-top:8px">
-          <span>Revenue, last 4 quarters</span><span>8,412 cr</span>
-          <span>Forecast revenue, next 4</span><span>9,377 cr</span>
-          <span>Order book</span><span>16,011 cr</span>
-          <span>Capacity added, 12 months</span><span>+38%</span>
-          <span>Guidance tone</span><span>positive</span>
-          <span>Peers sharing a customer</span><span>2</span>
-          <span>Fundamentals as of</span><span class="warn">28 Sep</span>
-        </div>
-      </div>
-      <div class="panel">
-        <h2>Data on file</h2>
-        <div class="rows" style="margin-top:8px">
-          <div><span class="l">Price history</span><span class="num">26 years</span></div>
-          <div><span class="l">Filings kept until</span><span class="num">Sep 2029</span></div>
-          <div><span class="l">Last refreshed</span><span class="num">30 Sep 14:12</span></div>
-        </div>
       </div>
     </aside>
   </div>
@@ -559,218 +782,19 @@ dialog h2{font-size:17px;margin-bottom:8px} dialog ul{margin:8px 0 16px;padding-
   </div>
 </section>
 
-<!-- ============ 6. REPORT DASHBOARD ============ -->
-<section class="screen" id="s-report" data-title="Report dashboard">
-  <div class="head">
-    <div>
-      <div class="eyebrow">Report dashboard</div>
-      <h1>How the market is trending across runs</h1>
-      <p class="sub">The workbook's Summary sheet, live and comparable over time. Filters here also drive the tables.</p>
-    </div>
-    <a class="btn" href="#/report" data-toast="Wireframe: downloads the latest .xlsx report">Download latest .xlsx <svg><use href="#i-down"/></svg></a>
-  </div>
-  <div class="grid wide-right">
-    <div class="stack">
-      <div class="sect">
-        <header><h2>Stocks in range per run</h2><span class="hint">last 41 runs</span></header>
-        <svg class="chart" viewBox="0 0 640 200" role="img" aria-label="Stocks in range over time by bucket">
-          <line x1="30" y1="170" x2="630" y2="170" stroke="var(--line)"/>
-          <polyline fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linejoin="round" points="30,140 80,132 130,136 180,118 230,108 280,116 330,92 380,98 430,74 480,80 530,58 580,50 630,40"/>
-          <polyline fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-dasharray="5 4" points="30,164 80,162 130,160 180,158 230,154 280,156 330,150 380,152 430,146 480,148 530,140 580,138 630,132"/>
-          <text x="34" y="14">286 in range</text><text x="34" y="184">23 at ATH</text><text x="30" y="198">Aug</text><text x="300" y="198">Sep</text>
-        </svg>
-        <div class="legend"><span><i style="background:var(--accent)"></i>In range</span><span><i style="background:var(--muted)"></i>At ATH</span></div>
-      </div>
-      <div class="sect">
-        <header><h2>Industry heat</h2><span class="hint">share of each industry's stocks in range</span></header>
-        <div id="heat"></div>
-      </div>
-    </div>
-    <aside class="stack">
-      <div class="sect">
-        <header><h2>Newly at ATH, 7 days</h2></header>
-        <div class="rows" id="newath"></div>
-      </div>
-      <div class="sect">
-        <header><h2>Stance drift</h2><span class="hint">share Constructive</span></header>
-        <div class="rows"><div><span class="l">28 Aug</span><span class="num">31%</span></div><div><span class="l">14 Sep</span><span class="num">34%</span></div><div><span class="l">30 Sep</span><span class="num up">37%</span></div></div>
-      </div>
-    </aside>
-  </div>
-</section>
-
 <!-- ============ 7. MASTER CONFIGURATION ============ -->
 <section class="screen" id="s-config" data-title="Master configuration">
   <div class="head">
     <div>
       <div class="eyebrow">Data sources</div>
       <h1>Master configuration</h1>
-      <p class="sub">Configure when each data source updates: on a schedule (cron in Asia/Kolkata timezone) or manually. Click "Run now" at any time to fetch immediately.</p>
+      <p class="sub">Choose when each data source updates: on a schedule you build below, or manually. All times are India time (IST). Run now fetches straight away.</p>
     </div>
   </div>
 
   <div class="stack">
-    <div class="sect">
-      <header><h2>Candles end of day</h2></header>
-      <div style="display:grid;gap:16px;margin-top:12px">
-        <div class="field" style="display:flex;gap:32px;align-items:flex-start">
-          <div style="flex:1">
-            <label style="display:block;margin-bottom:8px">Mode</label>
-            <div class="seg" role="group" aria-label="Schedule mode">
-              <button aria-pressed="true">Scheduled</button><button aria-pressed="false">Manual</button>
-            </div>
-          </div>
-          <div style="flex:2">
-            <label for="c1">Cron (Asia/Kolkata)</label>
-            <input id="c1" class="mono" value="35 18 * * 1-5" placeholder="minute hour day month dow">
-          </div>
-          <div style="color:var(--muted);padding-top:26px">Every 18:35 on weekdays</div>
-        </div>
-        <div style="border-top:1px solid var(--line);padding-top:12px">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px">
-            <div><span style="color:var(--faint);font-size:12px">Last run</span><div class="num" style="margin-top:4px">30 Sep 18:35</div></div>
-            <div><span style="color:var(--faint);font-size:12px">Status</span><div class="num" style="margin-top:4px"><span class="pill ok"><span class="dot"></span>OK</span></div></div>
-            <div><span style="color:var(--faint);font-size:12px">Rows fetched</span><div class="num" style="margin-top:4px">251</div></div>
-            <div><span style="color:var(--faint);font-size:12px">Rows new</span><div class="num" style="margin-top:4px">251</div></div>
-          </div>
-          <button class="btn primary">Run now</button>
-        </div>
-      </div>
-      <details style="margin-top:16px">
-        <summary style="cursor:pointer;color:var(--accent);font-weight:500;margin-bottom:8px">Last 5 runs</summary>
-        <div class="tbl-wrap"><table style="font-size:13px">
-          <thead><tr><th>Date</th><th>Status</th><th class="r">Fetched</th><th class="r">New</th><th>Note</th></tr></thead>
-          <tbody>
-            <tr><td>30 Sep 18:35</td><td><span class="pill ok">OK</span></td><td class="r">251</td><td class="r">251</td><td>Scheduled</td></tr>
-            <tr><td>29 Sep 18:35</td><td><span class="pill ok">OK</span></td><td class="r">0</td><td class="r">0</td><td>Weekend, skip</td></tr>
-            <tr><td>28 Sep 18:35</td><td><span class="pill ok">OK</span></td><td class="r">248</td><td class="r">248</td><td>Scheduled</td></tr>
-          </tbody>
-        </table></div>
-      </details>
-    </div>
-
-    <div class="sect">
-      <header><h2>Announcements</h2></header>
-      <div style="display:grid;gap:16px;margin-top:12px">
-        <div class="field" style="display:flex;gap:32px;align-items:flex-start">
-          <div style="flex:1">
-            <label style="display:block;margin-bottom:8px">Mode</label>
-            <div class="seg" role="group" aria-label="Schedule mode">
-              <button aria-pressed="true">Scheduled</button><button aria-pressed="false">Manual</button>
-            </div>
-          </div>
-          <div style="flex:2">
-            <label for="c2">Cron (Asia/Kolkata)</label>
-            <input id="c2" class="mono" value="*/30 8-20 * * 1-5" placeholder="minute hour day month dow">
-          </div>
-          <div style="color:var(--muted);padding-top:26px">Every 30 min, 08:00–20:00 on weekdays</div>
-        </div>
-        <div style="border-top:1px solid var(--line);padding-top:12px">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px">
-            <div><span style="color:var(--faint);font-size:12px">Last run</span><div class="num" style="margin-top:4px">30 Sep 20:00</div></div>
-            <div><span style="color:var(--faint);font-size:12px">Status</span><div class="num" style="margin-top:4px"><span class="pill ok"><span class="dot"></span>OK</span></div></div>
-            <div><span style="color:var(--faint);font-size:12px">Rows fetched</span><div class="num" style="margin-top:4px">47</div></div>
-            <div><span style="color:var(--faint);font-size:12px">Rows new</span><div class="num" style="margin-top:4px">12</div></div>
-          </div>
-          <button class="btn primary">Run now</button>
-        </div>
-      </div>
-      <details style="margin-top:16px">
-        <summary style="cursor:pointer;color:var(--accent);font-weight:500;margin-bottom:8px">Last 5 runs</summary>
-        <div class="tbl-wrap"><table style="font-size:13px">
-          <thead><tr><th>Date</th><th>Status</th><th class="r">Fetched</th><th class="r">New</th><th>Note</th></tr></thead>
-          <tbody>
-            <tr><td>30 Sep 20:00</td><td><span class="pill ok">OK</span></td><td class="r">47</td><td class="r">12</td><td>Scheduled</td></tr>
-            <tr><td>30 Sep 19:30</td><td><span class="pill ok">OK</span></td><td class="r">0</td><td class="r">0</td><td>Scheduled</td></tr>
-            <tr><td>30 Sep 19:00</td><td><span class="pill ok">OK</span></td><td class="r">38</td><td class="r">8</td><td>Scheduled</td></tr>
-          </tbody>
-        </table></div>
-      </details>
-    </div>
-
-    <div class="sect">
-      <header><h2>Corporate actions</h2></header>
-      <div style="display:grid;gap:16px;margin-top:12px">
-        <div class="field" style="display:flex;gap:32px;align-items:flex-start">
-          <div style="flex:1">
-            <label style="display:block;margin-bottom:8px">Mode</label>
-            <div class="seg" role="group" aria-label="Schedule mode">
-              <button aria-pressed="true">Scheduled</button><button aria-pressed="false">Manual</button>
-            </div>
-          </div>
-          <div style="flex:2">
-            <label for="c3">Cron (Asia/Kolkata)</label>
-            <input id="c3" class="mono" value="0 */6 * * *" placeholder="minute hour day month dow">
-          </div>
-          <div style="color:var(--muted);padding-top:26px">Every 6 hours</div>
-        </div>
-        <div style="border-top:1px solid var(--line);padding-top:12px">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px">
-            <div><span style="color:var(--faint);font-size:12px">Last run</span><div class="num" style="margin-top:4px">30 Sep 18:00</div></div>
-            <div><span style="color:var(--faint);font-size:12px">Status</span><div class="num" style="margin-top:4px"><span class="pill ok"><span class="dot"></span>OK</span></div></div>
-            <div><span style="color:var(--faint);font-size:12px">Rows fetched</span><div class="num" style="margin-top:4px">3</div></div>
-            <div><span style="color:var(--faint);font-size:12px">Rows new</span><div class="num" style="margin-top:4px">0</div></div>
-          </div>
-          <button class="btn primary">Run now</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="sect">
-      <header><h2>Exchange filings</h2></header>
-      <div style="display:grid;gap:16px;margin-top:12px">
-        <div class="field" style="display:flex;gap:32px;align-items:flex-start">
-          <div style="flex:1">
-            <label style="display:block;margin-bottom:8px">Mode</label>
-            <div class="seg" role="group" aria-label="Schedule mode">
-              <button aria-pressed="true">Scheduled</button><button aria-pressed="false">Manual</button>
-            </div>
-          </div>
-          <div style="flex:2">
-            <label for="c4">Cron (Asia/Kolkata)</label>
-            <input id="c4" class="mono" value="10,40 8-20 * * 1-5" placeholder="minute hour day month dow">
-          </div>
-          <div style="color:var(--muted);padding-top:26px">At 10 and 40 min past, 08:00–20:00 on weekdays</div>
-        </div>
-        <div style="border-top:1px solid var(--line);padding-top:12px">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px">
-            <div><span style="color:var(--faint);font-size:12px">Last run</span><div class="num" style="margin-top:4px">30 Sep 20:10</div></div>
-            <div><span style="color:var(--faint);font-size:12px">Status</span><div class="num" style="margin-top:4px"><span class="pill ok"><span class="dot"></span>OK</span></div></div>
-            <div><span style="color:var(--faint);font-size:12px">Rows fetched</span><div class="num" style="margin-top:4px">94</div></div>
-            <div><span style="color:var(--faint);font-size:12px">Rows new</span><div class="num" style="margin-top:4px">17</div></div>
-          </div>
-          <button class="btn primary">Run now</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="sect">
-      <header><h2>Fundamentals</h2></header>
-      <div style="display:grid;gap:16px;margin-top:12px">
-        <div class="field" style="display:flex;gap:32px;align-items:flex-start">
-          <div style="flex:1">
-            <label style="display:block;margin-bottom:8px">Mode</label>
-            <div class="seg" role="group" aria-label="Schedule mode">
-              <button aria-pressed="true">Scheduled</button><button aria-pressed="false">Manual</button>
-            </div>
-          </div>
-          <div style="flex:2">
-            <label for="c5">Cron (Asia/Kolkata)</label>
-            <input id="c5" class="mono" value="0 7 * * *" placeholder="minute hour day month dow">
-          </div>
-          <div style="color:var(--muted);padding-top:26px">Every day at 07:00</div>
-        </div>
-        <div style="border-top:1px solid var(--line);padding-top:12px">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px">
-            <div><span style="color:var(--faint);font-size:12px">Last run</span><div class="num" style="margin-top:4px">30 Sep 07:00</div></div>
-            <div><span style="color:var(--faint);font-size:12px">Status</span><div class="num" style="margin-top:4px"><span class="pill ok"><span class="dot"></span>OK</span></div></div>
-            <div><span style="color:var(--faint);font-size:12px">Rows fetched</span><div class="num" style="margin-top:4px">286</div></div>
-            <div><span style="color:var(--faint);font-size:12px">Rows new</span><div class="num" style="margin-top:4px">0</div></div>
-          </div>
-          <button class="btn primary">Run now</button>
-        </div>
-      </div>
-    </div>
+    <p class="note">Rate limits shown for the filings, financials and index sources are sample figures for this wireframe. The price source figures are the real limits. A schedule that runs more often than the shortest gap is refused.</p>
+    <div id="jobs" class="jobs"></div>
 
     <div class="sect" style="margin-top:32px">
       <header><h2>Announcements coverage</h2><span class="hint">per stock, 3 years or since listing date</span></header>
@@ -801,8 +825,8 @@ dialog h2{font-size:17px;margin-bottom:8px} dialog ul{margin:8px 0 16px;padding-
 <dialog id="spec">
   <h2>Design notes</h2>
   <ul>
-    <li>Style: data-dense dashboard. Fira Sans for text, Fira Code for every number.</li>
-    <li>One accent, deep blue. Green, red and amber appear only as data meaning.</li>
+    <li>Style: data-dense dashboard. Inter for text and numbers, with aligned digits.</li>
+    <li>One accent, with three skins (indigo, blue, mango), each in light and dark. Green, red and amber appear only as data meaning.</li>
     <li>Stat strips and rule lines replace card rows. Panels only where a block needs lifting.</li>
     <li>Every page has Back and Home; the trail shows where you are.</li>
     <li>All numbers here are sample values. Prices marked "to verify" are not confirmed.</li>
@@ -821,77 +845,135 @@ const RUNS=[
  ["2026-09-24","24 Sep 2026",746,270,19,[34,50,16],1851,"58.2","ok"],
  ["2026-09-23","23 Sep 2026",744,262,12,[33,51,16],1826,"56.9","ok"],
  ["2026-09-22","22 Sep 2026",744,259,14,[33,50,17],1802,"55.4","ok"]];
-const STOCKS=[
- ["DIXON","Dixon Technologies","Consumer durables",14872,3.4,"9 Sep 2026",38.2,1.9,"constructive","Stance up","5"],
- ["KAYNES","Kaynes Technology","Electronic components",6418,0.0,"30 Sep 2026",61.4,2.6,"constructive","New at ATH","ath"],
- ["POLYCAB","Polycab India","Cables",7233,5.8,"14 Sep 2026",22.7,1.1,"mixed","No change","10"],
- ["BSE","BSE Ltd","Capital markets",2946,0.0,"30 Sep 2026",84.9,"n/a","mixed","New at ATH","ath"],
- ["CGPOWER","CG Power and Industrial","Electrical equipment",712,2.1,"18 Sep 2026",29.3,3.2,"constructive","No change","5"],
- ["ASTRAL","Astral Ltd","Plastic products",1682,12.6,"2 Sep 2026",-4.1,0.7,"cautious","Stance down","26"],
- ["TITAN","Titan Company","Jewellery",3941,7.9,"11 Sep 2026",14.8,"n/a","mixed","No change","10"],
- ["PERSISTENT","Persistent Systems","IT services",6207,4.6,"22 Sep 2026",31.9,0.9,"mixed","No change","5"],
- ["SIEMENS","Siemens Ltd","Capital goods",3568,19.4,"20 Aug 2026",2.6,2.3,"cautious","Dropped a bucket","26"],
- ["HAL","Hindustan Aeronautics","Aerospace and defence",4712,1.2,"24 Sep 2026",27.5,4.1,"constructive","Order added","5"]];
-const IND=[["Capital goods",34],["Electrical equipment",28],["IT services",26],["Banks",22],["Consumer durables",19],["Chemicals",17]];
-const STAGES=[["Scan prices and ATH buckets","6m 10s"],["Read NSE filings","11m 42s"],["Extract figures (vLLM)","19m 05s"],["Forecast (TimesFM)","5m 33s"],["Graph facts","1m 12s"],["Conclusions (vLLM)","7m 48s"],["Report and cross-check","1m 30s"]];
 const STAGE_COST=[["Extract figures (vLLM)","19m 05s",1620000,190000,1942,1934],["Conclusions (vLLM)","7m 48s",790000,120000,286,284]];
 const COST=[["30 Sep 2026",2228,2410000,310000,3120,67.3],["28 Sep 2026",2104,2260000,288000,2988,63.1],["25 Sep 2026",1987,2105000,274000,2871,59.8],["19 Aug 2026",412,410000,52000,640,null]];
-const HISTORY=[["30 Sep 2026","Constructive","Within 5%",14872,3.4,["Order book rose to <em>16,011 cr</em> after a new 412 cr filing.","Capacity added, 12 months: <em>+38%</em> (was +31%).","Stance moved from Mixed to Constructive."],"now"],
- ["28 Sep 2026","Mixed","Within 5%",14655,4.8,["No new filings. Price rose <em>1.4%</em>.","Fundamentals unchanged (as of 28 Sep)."]],
- ["25 Sep 2026","Mixed","Within 10%",14310,7.0,["Guidance tone changed from neutral to <em>positive</em>.","Entered Within 5% after a 2.2% weekly gain."]],
- ["19 Aug 2026","Mixed","Within 26%",12984,15.6,["First run in range. 2 filings read, no order value parsed."]]];
-const FILINGS=[["29 Sep 2026","Bagging / receipt of orders","412 cr","Repeat customer A","1849027"],["17 Sep 2026","Capacity expansion","-","-","1841733"],["03 Sep 2026","Bagging / receipt of orders","248 cr","Repeat customer B","1833150"],["21 Aug 2026","Analyst / investor meet","-","-","1822915"]];
 
 /* ---- renderers ---- */
 const fmt=n=>n.toLocaleString("en-IN");
 function mix(a){return `<div class="mix" title="Constructive ${a[0]}%, Mixed ${a[1]}%, Cautious ${a[2]}%"><i class="c" style="width:${a[0]}%"></i><i class="m" style="width:${a[1]}%"></i><i class="x" style="width:${a[2]}%"></i></div>`}
-$("#runs").innerHTML=RUNS.map(r=>`<tr class="link" tabindex="0" data-go="#/run/${r[0]}"><td><b>${r[1]}</b></td><td class="r num hide-sm">${r[2]}</td><td class="r num">${r[3]}</td><td class="r num hide-sm">${r[4]}</td><td class="hide-sm">${mix(r[5])}</td><td class="r num hide-sm hide-md">${fmt(r[6])}</td><td class="r num hide-sm">${r[7]}</td><td><span class="pill ok"><span class="dot"></span>Complete</span></td></tr>`).join("");
-
-const B=[["At ATH",23],["Within 5%",61],["Within 10%",104],["Within 26%",98]];
-$("#buckets").innerHTML=B.map(b=>`<div class="hbar"><span>${b[0]}</span><span class="t"><i style="width:${b[1]/104*100}%"></i></span><span class="num r">${b[1]}</span></div>`).join("");
-$("#inds").innerHTML=IND.map(b=>`<div class="hbar"><span>${b[0]}</span><span class="t"><i style="width:${b[1]/34*100}%"></i></span><span class="num r">${b[1]}</span></div>`).join("");
-$("#changes").innerHTML=[["New at ATH","17",""],["Entered range","17",""],["Left range","11",""],["Stance moved up","9",""],["Stance moved down","6",""]].map(x=>`<div><span class="l">${x[0]}</span><a class="num" href="#/results/2026-09-30">${x[1]}</a></div>`).join("");
-$("#stages").innerHTML=STAGES.map(s=>`<div class="stage"><svg class="ic"><use href="#i-check"/></svg><span>${s[0]}</span><span class="t">${s[1]}</span></div>`).join("");
-
-function pillBucket(b){return b==="ath"?`<span class="pill ath">At ATH</span>`:`<span class="num">${b==="5"?"5%":b==="10"?"10%":"26%"}</span>`}
-let fb="all",fs="all",fq="",fc=false;
-function renderRes(){
-  const rows=STOCKS.filter(s=>(fb==="all"||s[10]===fb||(fb==="ath"&&s[10]==="ath"))&&(fs==="all"||s[8]===fs)&&(!fc||s[9]!=="No change")&&(!fq||(s[0]+s[1]).toLowerCase().includes(fq)));
-  $("#res").innerHTML=rows.length?rows.map(s=>`<tr class="link" tabindex="0" data-go="#/stock/${s[0]}"><td><div class="sym">${s[0]}</div><div class="nm">${s[1]}</div></td><td class="hide-sm">${s[2]}</td><td class="r num">${fmt(s[3])}</td><td class="r num">${s[4]===0?'<span class="pill ath">At ATH</span>':s[4].toFixed(1)+"%"}</td><td class="r num hide-sm">${s[5]}</td><td class="r num hide-sm ${s[6]>=0?"up":"down"}">${s[6]>0?"+":""}${s[6].toFixed(1)}%</td><td class="r num hide-sm">${s[7]==="n/a"?"n/a":s[7]+"x"}</td><td><span class="pill ${s[8]}">${s[8][0].toUpperCase()+s[8].slice(1)}</span></td><td class="hide-sm">${s[9]}</td></tr>`).join(""):`<tr><td colspan="9"><div class="empty">No stocks match these filters. Clear a filter to see the full list of 286.</div></td></tr>`;
-  $("#count").textContent=`Showing ${rows.length} of 286 (sample rows)`;
-}
-$$("#f-bucket button").forEach(b=>b.onclick=()=>{$$("#f-bucket button").forEach(x=>x.setAttribute("aria-pressed",x===b));fb=b.dataset.v;renderRes()});
-$$("#f-stance button").forEach(b=>b.onclick=()=>{$$("#f-stance button").forEach(x=>x.setAttribute("aria-pressed",x===b));fs=b.dataset.v;renderRes()});
-$("#f-changed").onclick=e=>{fc=!fc;e.target.setAttribute("aria-pressed",fc);renderRes()};
-$("#q").oninput=e=>{fq=e.target.value.trim().toLowerCase();renderRes()};
-
-$("#tl").innerHTML=HISTORY.map(h=>`<li class="${h[6]||""}"><div class="when"><b>${h[0]}</b><span class="pill ${h[1].toLowerCase()}">${h[1]}</span><span class="num">${fmt(h[3])} · ${h[4].toFixed(1)}% below ATH</span></div><ul class="chg">${h[5].map(c=>`<li>${c}</li>`).join("")}</ul></li>`).join("");
-$("#fil").innerHTML=FILINGS.map(f=>`<tr><td class="num">${f[0]}</td><td>${f[1]}</td><td class="r num">${f[2]}</td><td class="hide-sm">${f[3]}</td><td class="r num hide-sm">${f[4]}</td></tr>`).join("");
+const RUNHREF=d=>"strategy.html#/stocks?run="+d;
+$("#runs").innerHTML=RUNS.map(r=>`<tr class="link" data-href="${RUNHREF(r[0])}"><td><a class="runlink" href="${RUNHREF(r[0])}" aria-label="Open the stock list for the ${r[1]} run">${r[1]}</a></td><td class="r num hide-sm">${r[2]}</td><td class="r num">${r[3]}</td><td class="r num hide-sm">${r[4]}</td><td class="hide-sm">${mix(r[5])}</td><td class="r num hide-sm hide-md">${fmt(r[6])}</td><td class="r num hide-sm">${r[7]}</td><td><span class="pill ok"><span class="dot"></span>Complete</span></td></tr>`).join("");
 
 $("#stages-cost").innerHTML=STAGE_COST.map(c=>`<tr><td><b>${c[0]}</b></td><td class="r num">${c[1]}</td><td class="r num">${fmt(c[2])}</td><td class="r num">${fmt(c[3])}</td><td class="r num">${fmt(c[4])}</td><td class="r num">${fmt(c[5])}</td></tr>`).join("");
 $("#cost").innerHTML=COST.map(c=>`<tr><td><b>${c[0]}</b></td><td class="r num">${fmt(c[1])}</td><td class="r num">${fmt(c[2])}</td><td class="r num">${fmt(c[3])}</td><td class="r num">${fmt(c[4])}</td><td class="r num">${c[5]==null?"Not measured":c[5].toFixed(1)}</td></tr>`).join("");
 
-$("#heat").innerHTML=[["Capital goods",71],["Electrical equipment",64],["IT services",52],["Consumer durables",49],["Banks",33],["Chemicals",22]].map(b=>`<div class="hbar"><span>${b[0]}</span><span class="t"><i style="width:${b[1]}%"></i></span><span class="num r">${b[1]}%</span></div>`).join("");
-$("#newath").innerHTML=[["KAYNES","30 Sep"],["BSE","30 Sep"],["HAL","24 Sep"],["CGPOWER","18 Sep"],["POLYCAB","14 Sep"]].map(x=>`<div><a class="mono" href="#/stock/${x[0]}">${x[0]}</a><span class="num l">${x[1]}</span></div>`).join("");
+/* ---- sample series: seeded, so every render shows the same numbers ---- */
+function rng(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const dShort=d=>(+d.slice(8))+" "+MON[+d.slice(5,7)-1], dLong=d=>dShort(d)+" "+d.slice(0,4);
+const TREND=(function(){
+  const n=41, out=RUNS.map(r=>r[0]); let t=Date.UTC(2026,8,22);
+  while(out.length<n){ t-=864e5; const w=new Date(t).getUTCDay(); if(w===0||w===6) continue; out.push(new Date(t).toISOString().slice(0,10)); }
+  const r=rng(20260930), known=RUNS.map(x=>[x[3],x[4]]).reverse(), inr=[], ath=[];
+  let v=known[0][0], a=known[0][1];
+  for(let i=n-7;i>=0;i--){ v=Math.max(120,Math.min(330,v-Math.round(r()*7-2.2))); a=Math.max(5,Math.min(34,a+Math.round(r()*10-5))); inr.unshift(v); ath.unshift(a); }
+  known.forEach(k=>{inr.push(k[0]); ath.push(k[1]);});
+  return {ds:out.reverse(),inr:inr,ath:ath};
+})();
 
-/* ---- router ---- */
-const ROUTES={home:"#s-home",run:"#s-run",results:"#s-results",stock:"#s-stock",cost:"#s-cost",report:"#s-report",config:"#s-config"};
+/* ---- trends: line chart, newly at ATH, stance drift ---- */
+(function(){
+  const T=TREND, n=T.ds.length, W=520,H=196,L=34,R=40,Tp=12,B=26,MAX=350;
+  const x=i=>L+(W-L-R)*i/(n-1), y=v=>Tp+(H-Tp-B)*(1-v/MAX);
+  const pts=a=>a.map((v,i)=>x(i).toFixed(1)+","+y(v).toFixed(1)).join(" ");
+  let g="";
+  [0,100,200,300].forEach(t=>{g+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="${L-6}" y="${y(t)+4}" text-anchor="end">${t}</text>`;});
+  [[0,"start"],[Math.floor((n-1)/2),"middle"],[n-1,"end"]].forEach(p=>{g+=`<text x="${p[1]==="start"?L:p[1]==="end"?W-R:x(p[0])}" y="${H-8}" text-anchor="${p[1]}">${dShort(T.ds[p[0]])}</text>`;});
+  const last=n-1;
+  const svg=`<svg class="chart" viewBox="0 0 ${W} ${H}" aria-hidden="true">${g}
+    <polyline points="${pts(T.inr)}" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+    <polyline points="${pts(T.ath)}" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round"/>
+    <text x="${x(last)+6}" y="${y(T.inr[last])+4}" style="fill:var(--accent);font-weight:600">${T.inr[last]}</text>
+    <text x="${x(last)+6}" y="${y(T.ath[last])+4}" style="fill:var(--muted);font-weight:600">${T.ath[last]}</text>
+    <line class="guide" id="tg" x1="0" x2="0" y1="${Tp}" y2="${H-B}" visibility="hidden"/>
+    <circle id="tg1" r="4" fill="var(--accent)" stroke="var(--surface)" stroke-width="1.5" visibility="hidden"/>
+    <circle id="tg2" r="4" fill="var(--muted)" stroke="var(--surface)" stroke-width="1.5" visibility="hidden"/></svg>`;
+  const box=$("#trend-svg");
+  box.innerHTML=svg+`<div class="trend-read" id="trend-read" role="status" aria-live="polite">Latest run, ${dLong(T.ds[last])}: ${T.inr[last]} in range, ${T.ath[last]} at a new high.</div>`;
+  box.setAttribute("tabindex","0"); box.setAttribute("role","group");
+  box.setAttribute("aria-label","Stocks in range per run, "+n+" runs, from "+dLong(T.ds[0])+" to "+dLong(T.ds[last])+". Use the left and right arrow keys to read each run.");
+  let cur=last;
+  function pt(i){
+    cur=Math.max(0,Math.min(n-1,i));
+    $("#tg").setAttribute("x1",x(cur)); $("#tg").setAttribute("x2",x(cur));
+    [["#tg1",T.inr],["#tg2",T.ath]].forEach(p=>{const c=$(p[0]); c.setAttribute("cx",x(cur)); c.setAttribute("cy",y(p[1][cur]));});
+    $$("#tg,#tg1,#tg2").forEach(e=>e.setAttribute("visibility","visible"));
+    $("#trend-read").textContent=dLong(T.ds[cur])+": "+T.inr[cur]+" in range, "+T.ath[cur]+" at a new high.";
+  }
+  box.addEventListener("pointermove",e=>{const s=box.querySelector("svg").getBoundingClientRect(); const px=(e.clientX-s.left)/s.width*W; pt(Math.round((px-L)/(W-L-R)*(n-1)));});
+  box.addEventListener("keydown",e=>{const d={ArrowLeft:-1,ArrowRight:1}[e.key]; if(e.key==="Home") {pt(0);e.preventDefault();} else if(e.key==="End"){pt(n-1);e.preventDefault();} else if(d){pt(cur+d);e.preventDefault();}});
+  const NEW=[["KAYNES","30 Sep"],["BSE","30 Sep"],["HAL","25 Sep"],["CGPOWER","24 Sep"],["DIXON","23 Sep"]];
+  $("#newath").innerHTML=NEW.map(s=>`<div><a href="strategy.html#/stock/${s[0]}">${s[0]}</a><span class="num l">${s[1]}</span></div>`).join("");
+  const dr=RUNS.slice(0,5).map((r,i)=>{const prev=RUNS[i+1]?RUNS[i+1][5][0]:null, c=r[5][0], dl=prev==null?null:c-prev;
+    return `<div><span class="l">${r[1].slice(0,6)}</span><span class="mini"><i><b style="width:${c}%"></b></i><span class="num">${c}%</span><span class="num ${dl>0?"up":dl<0?"down":"l"}" style="min-width:68px;text-align:right">${dl==null?"":dl>0?"+"+dl+" pts":dl<0?dl+" pts":"no change"}</span></span></div>`;});
+  $("#drift").innerHTML=dr.join("");
+  const tg=$("#trend-toggle");
+  tg.onclick=()=>{const s=$("#trends"), o=s.dataset.open!=="true"; s.dataset.open=o; tg.setAttribute("aria-expanded",o); $("#trend-toggle-t").textContent=o?"Hide trends":"Show trends";};
+})();
+
+/* ---- industry heat map: top 10 industries by latest share, last 12 runs ---- */
+const HEAT=(function(){
+  const NAMES=["Capital goods","Electrical equipment","IT services","Consumer durables","Banks","Chemicals","Aerospace and defence","Electronic components","Capital markets","Cables","Plastic products","Jewellery"];
+  const LATEST=[71,64,52,49,33,22,58,55,41,37,29,26];
+  const ds=TREND.ds.slice(-13), rows=NAMES.map((nm,k)=>{
+    const r=rng(9100+k*37), slope=Math.round((r()*5-2.2)*10)/10, v=[LATEST[k]];
+    for(let i=1;i<13;i++){ v.unshift(Math.max(4,Math.min(94,Math.round(v[0]-slope+(r()*10-5))))); }
+    return {name:nm,v:v};
+  });
+  rows.sort((a,b)=>b.v[12]-a.v[12]);
+  return {ds:ds,rows:rows.slice(0,10)};
+})();
+const heat={view:"share",r:0,c:11};
+function heatRender(){
+  const H=HEAT, cols=H.ds.slice(1), share=heat.view==="share";
+  let mn=100,mx=0,ma=1;
+  H.rows.forEach(r=>{for(let c=1;c<13;c++){mn=Math.min(mn,r.v[c]);mx=Math.max(mx,r.v[c]);ma=Math.max(ma,Math.abs(r.v[c]-r.v[c-1]));}});
+  const cell=(v,p)=>{ if(share) return ["s",((v-mn)/Math.max(1,mx-mn)).toFixed(3)];
+    const d=v-p; return d===0?["z","0"]:[d>0?"g":"l",(Math.abs(d)/ma).toFixed(3)];};
+  let h=`<thead><tr><th class="hm-corner" scope="col">Industry</th>${cols.map((d,i)=>`<th scope="col"${i===11?' class="cur"':""}>${dShort(d)}</th>`).join("")}</tr></thead><tbody>`;
+  H.rows.forEach((r,ri)=>{
+    h+=`<tr><th scope="row">${r.name}</th>`;
+    for(let c=0;c<12;c++){const v=r.v[c+1], p=r.v[c], d=v-p, k=cell(v,p);
+      h+=`<td role="gridcell" tabindex="${ri===heat.r&&c===heat.c?0:-1}" data-r="${ri}" data-c="${c}" class="${k[0]}${c===11?" cur":""}" style="--t:${k[1]}">${share?v+"%":(d>0?"+":"")+d}</td>`;}
+    h+="</tr>";
+  });
+  $("#hm").innerHTML=h+"</tbody>";
+  $("#hm-legend").innerHTML=share
+    ?`<span>Fewer in range</span><span class="num">${mn}%</span><span class="grad grad-s"></span><span class="num">${mx}%</span><span>More in range. Each cell prints its share, so colour is never the only signal.</span>`
+    :`<span>Fell</span><span class="num">-${ma}</span><span class="grad grad-d"></span><span class="num">+${ma}</span><span>Rose. Points of share since the previous run; each cell prints its change with a sign.</span>`;
+}
+function heatNote(){
+  const H=HEAT, ch=H.rows.map(r=>({n:r.name,d:r.v[12]-r.v[9],v:r.v[12]})).sort((a,b)=>b.d-a.d), up=ch[0], dn=ch[ch.length-1];
+  const s=x=>(x>0?"+":"")+x;
+  $("#heat-read-sum").innerHTML=`<b>What to read:</b> over the last 3 runs, ${up.n} rose the most (${s(up.d)} points, now ${up.v}% in range)`+(dn.d<0?` and ${dn.n} fell the most (${s(dn.d)} points, now ${dn.v}%).`:`. No industry fell.`);
+}
+function heatInfo(c){
+  const r=+c.dataset.r, k=+c.dataset.c, row=HEAT.rows[r], v=row.v[k+1], p=row.v[k], d=v-p, run=dLong(HEAT.ds[k+1]);
+  const ds=d>0?"+"+d:""+d;
+  $("#hm-readout").textContent=heat.view==="share"
+    ?`${row.name}, ${run}: ${v}% of its stocks in range. Change vs previous run: ${ds} ${Math.abs(d)===1?"point":"points"}.`
+    :`${row.name}, ${run}: ${d===0?"no change":(d>0?"up ":"down ")+Math.abs(d)+(Math.abs(d)===1?" point":" points")} vs the previous run (${p}% to ${v}%).`;
+}
+heatNote(); heatRender();
+$("#heat-view").addEventListener("click",e=>{const b=e.target.closest("button"); if(!b) return;
+  $$("#heat-view button").forEach(x=>x.setAttribute("aria-pressed",x===b)); heat.view=b.dataset.v; heatRender();});
+$("#hm").addEventListener("mouseover",e=>{const c=e.target.closest("td"); if(c) heatInfo(c);});
+$("#hm").addEventListener("focusin",e=>{const c=e.target.closest("td"); if(c){heat.r=+c.dataset.r;heat.c=+c.dataset.c; heatInfo(c);}});
+$("#hm").addEventListener("keydown",e=>{const c=e.target.closest("td"); if(!c) return;
+  let r=+c.dataset.r,k=+c.dataset.c; const R=HEAT.rows.length;
+  if(e.key==="ArrowRight")k=Math.min(11,k+1); else if(e.key==="ArrowLeft")k=Math.max(0,k-1); else if(e.key==="ArrowDown")r=Math.min(R-1,r+1); else if(e.key==="ArrowUp")r=Math.max(0,r-1);
+  else if(e.key==="Home")k=0; else if(e.key==="End")k=11; else return;
+  e.preventDefault(); const t=$(`#hm td[data-r="${r}"][data-c="${k}"]`); c.tabIndex=-1; t.tabIndex=0; t.focus();});
+
+const ROUTES={home:"#s-home",cost:"#s-cost",config:"#s-config"};
 function go(h){
-  h=h||location.hash||"#/home"; const [,name,arg]=h.split("/");
+  h=h||location.hash||"#/home"; const name=h.split("/")[1];
   const key=ROUTES[name]?name:"home";
   $$(".screen").forEach(s=>s.classList.remove("on")); $(ROUTES[key]).classList.add("on");
   $$("#nav a").forEach(a=>a.removeAttribute("aria-current"));
-  const navKey=key==="results"?"run":key==="stock"?"":key; const cur=$(`#nav a[data-nav="${navKey}"]`); if(cur)cur.setAttribute("aria-current","page");
+  const cur=$(`#nav a[data-nav="${key}"]`); if(cur)cur.setAttribute("aria-current","page");
   let t=`<a href="#/home">Home</a>`;
-  if(key==="run") t+=`<span>/</span><b>Run 30 Sep 2026</b>`;
-  if(key==="results") t+=`<span>/</span><a href="#/run/2026-09-30">Run 30 Sep 2026</a><span>/</span><b>Results</b>`;
-  if(key==="stock"){const s=STOCKS.find(x=>x[0]===arg)||STOCKS[0];
-    t+=`<span>/</span><a href="#/run/2026-09-30">Run 30 Sep 2026</a><span>/</span><a href="#/results/2026-09-30">Results</a><span>/</span><b>${s[0]}</b>`;
-    $("#st-name").textContent=s[1];$("#st-sym").textContent=s[0];$("#st-ind").textContent=s[2];$("#st-price").textContent=fmt(s[3]);$("#st-off").textContent=s[4].toFixed(1)+"%";
-    $("#st-stance").className="pill "+s[8];$("#st-stance").textContent=s[8][0].toUpperCase()+s[8].slice(1);
-    $("#st-bucket").textContent=s[4]===0?"At ATH":"Within "+s[10]+"%";}
   if(key==="cost") t+=`<span>/</span><b>Cost center</b>`;
-  if(key==="report") t+=`<span>/</span><b>Report dashboard</b>`;
   if(key==="config") t+=`<span>/</span><b>Master configuration</b>`;
   $("#trail").innerHTML=key==="home"?`<b>Home</b>`:t;
   $("#crumbs").style.display=key==="home"?"none":"";
@@ -908,35 +990,296 @@ function nav(h,push=true){
 let toastT; function toast(m){const t=$("#toast"); t.textContent=m; t.classList.add("on"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"),2600);}
 addEventListener("hashchange",()=>{ if(location.hash&&location.hash!==here){here=location.hash; go(here);} });
 try{ if(location.hash) here=location.hash; }catch(e){}
-go(here); renderRes();
+go(here);
 document.addEventListener("click",e=>{
   const a=e.target.closest('a[href^="#/"]');
   if(a){ e.preventDefault(); if(a.dataset.toast) toast(a.dataset.toast); else nav(a.getAttribute("href")); return; }
-  const r=e.target.closest("[data-go]"); if(r) nav(r.dataset.go);
+  if(e.target.closest("a,button,input,select,summary,label")) return;
+  const r=e.target.closest("tr[data-href]"); if(r) location.href=r.dataset.href;
 });
-document.addEventListener("keydown",e=>{if(e.key==="Enter"){const r=e.target.closest&&e.target.closest("tr[data-go]"); if(r) nav(r.dataset.go);}});
 $("#back").onclick=()=>{ nav(trail.length?trail.pop():"#/home",false); };
 $("#menu").onclick=()=>{const o=$("#nav").classList.toggle("open");$("#menu").setAttribute("aria-expanded",o)};
 $("#specBtn").onclick=()=>$("#spec").showModal();
 const PERIOD={"Latest run":"Figures for the 30 Sep 2026 run.","30 days":"Totals over the last 30 days: 14 runs, 31,204 LLM calls, 33.9M input tokens, 4.3M output tokens, 941 Wh (sample).","All runs":"Totals over all 41 runs on file (sample)."};
 $$("#f-period button").forEach(b=>b.onclick=()=>{$$("#f-period button").forEach(x=>x.setAttribute("aria-pressed",x===b)); toast(PERIOD[b.textContent]||"");});
-/* Master configuration: mode switch, cron field, Run now */
-$$("#s-config .sect").forEach(sec=>{
-  const seg=sec.querySelector(".seg"), cron=sec.querySelector("input"), run=[...sec.querySelectorAll("button.btn")].find(b=>b.textContent.trim()==="Run now");
-  const name=sec.querySelector("h2").textContent;
-  seg.onclick=e=>{const b=e.target.closest("button"); if(!b) return;
-    seg.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",x===b));
-    const manual=b.textContent.trim()==="Manual"; cron.disabled=manual;
-    toast(manual?name+": manual only. It never runs on its own; use Run now.":name+": runs on the schedule. Run now still works.");};
-  if(run) run.onclick=()=>{ if(run.disabled) return; const t=run.textContent; run.disabled=true; run.textContent="Queued...";
-    toast(name+": run requested. The collector picks it up within a minute.");
-    setTimeout(()=>{run.disabled=false; run.textContent=t;},2500); };
-});
-/* Results pagination */
-$$("#s-results .tfoot .seg").forEach(seg=>seg.onclick=e=>{const b=e.target.closest("button"); if(!b) return;
-  const nums=[...seg.querySelectorAll("button")].filter(x=>/^\d+$/.test(x.textContent)); let i=nums.findIndex(x=>x.getAttribute("aria-pressed")==="true");
-  const t=b.textContent.trim(); if(t==="Prev") i=Math.max(0,i-1); else if(t==="Next") i=Math.min(nums.length-1,i+1); else i=nums.indexOf(b);
-  nums.forEach((x,k)=>x.setAttribute("aria-pressed",k===i)); toast("Wireframe: page "+(i+1)+" of the results (sample rows stay the same).");});
+/* ---- Master configuration: schedule builder (plain JS, no library). Everything derives from the cron string. ---- */
+const SCHED_KEY="ath-sched-v1";
+const NOW=Date.UTC(2026,8,30,21,0);   /* "now" for the wireframe: 30 Sep 2026, 9:00 pm IST, held in UTC fields so no time zone maths is needed */
+const DN=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const pad=n=>String(n).padStart(2,"0");
+const t12=(h,m)=>(h%12||12)+":"+pad(m)+" "+(h<12?"am":"pm");
+const EVERY=[5,10,15,20,30], HOURK=[1,2,3,4,6,8,12], DOMS=Array.from({length:28},(_,i)=>i+1);
+const JOBS=[
+ {id:"candles",name:"Candles end of day",src:"price source",rec:"35 18 * * 1-5",runMin:14,gap:30,
+  why:"The final prices are set after the close and change once a day, so one run after 6:30 pm is enough.",
+  limit:"The price source allows 50 requests a second, 500 a minute and 2,000 per 30 minutes. The scanner uses 80% of each",
+  extra:"An incremental run needs about 752 requests (about 14 minutes). A cold full run needs about 2,252 requests (about 42 minutes), so it can run once every 90 minutes at most.",
+  last:["30 Sep 18:35","251","251"],
+  runs:[["30 Sep 18:35","251","251","Scheduled"],["29 Sep 18:35","249","1","Scheduled"],["28 Sep 18:35","248","248","Scheduled"],["25 Sep 18:35","251","251","Scheduled"],["24 Sep 18:35","251","3","Scheduled"]]},
+ {id:"filings",name:"NSE filings and announcements",src:"filings source",rec:"0 9-18 * * 1-5",runMin:15,gap:30,
+  why:"Filings are published all day, so it checks once an hour from 9:00 am to 6:00 pm on weekdays.",
+  limit:"The filings source allows 1 request a second",extra:"",
+  last:["30 Sep 18:00","94","17"],
+  runs:[["30 Sep 18:00","94","17","Scheduled"],["30 Sep 17:00","61","9","Scheduled"],["30 Sep 16:00","73","14","Scheduled"],["30 Sep 15:00","58","6","Scheduled"],["30 Sep 14:00","66","11","Scheduled"]]},
+ {id:"fin",name:"Company financials",src:"financials source",rec:"0 20 * * 1-5",runMin:30,gap:60,
+  why:"Results land after market hours and change a few times a week, so one evening run on weekdays is enough.",
+  limit:"The financials source allows 1 request every 2 seconds",extra:"",
+  last:["30 Sep 20:00","286","4"],
+  runs:[["30 Sep 20:00","286","4","Scheduled"],["29 Sep 20:00","286","7","Scheduled"],["28 Sep 20:00","286","2","Scheduled"],["25 Sep 20:00","286","9","Scheduled"],["24 Sep 20:00","286","3","Scheduled"]]},
+ {id:"index",name:"Exchange index data",src:"index data source",rec:"50 18 * * 1-5",runMin:15,gap:30,
+  why:"Index levels and membership are final after the close, so one run shortly after the candles run is enough.",
+  limit:"The index data source allows 5 requests a second",extra:"",
+  last:["30 Sep 18:50","12","12"],
+  runs:[["30 Sep 18:50","12","12","Scheduled"],["29 Sep 18:50","12","0","Scheduled"],["28 Sep 18:50","12","12","Scheduled"],["25 Sep 18:50","12","0","Scheduled"],["24 Sep 18:50","12","12","Scheduled"]]}
+];
+
+/* cron parsing: five fields, numbers, lists, ranges, steps */
+function parseField(str,lo,hi,name){
+  const set=new Set();
+  for(const part of str.split(",")){
+    const m=/^(\*|(\d+)(?:-(\d+))?)(?:\/(\d+))?$/.exec(part);
+    if(!m) return {err:`The ${name} field "${str}" is not valid.`};
+    let a,b;
+    if(m[1]==="*"){a=lo;b=name==="weekday"?6:hi;} else {a=+m[2]; b=m[3]!==undefined?+m[3]:(m[4]!==undefined?hi:a);}
+    const st=m[4]?+m[4]:1;
+    if(st<1||a<lo||b>hi||a>b) return {err:`The ${name} field "${str}" is out of range (${lo} to ${hi}).`};
+    for(let v=a;v<=b;v+=st) set.add(name==="weekday"&&v===7?0:v);
+  }
+  return {set:set};
+}
+function parseCron(s){
+  const f=String(s).trim().split(/\s+/);
+  if(f.length!==5) return {err:"A cron expression has five fields: minute, hour, day of month, month, weekday."};
+  const D=[[0,59,"minute"],[0,23,"hour"],[1,31,"day of month"],[1,12,"month"],[0,7,"weekday"]], sets=[];
+  for(let i=0;i<5;i++){const r=parseField(f[i],D[i][0],D[i][1],D[i][2]); if(r.err) return r; sets.push(r.set);}
+  return {min:sets[0],hr:sets[1],dom:sets[2],mon:sets[3],dow:sets[4],domStar:f[2]==="*",dowStar:f[4]==="*",f:f};
+}
+function dayOK(p,dt){
+  if(!p.mon.has(dt.getUTCMonth()+1)) return false;
+  const a=p.dom.has(dt.getUTCDate()), b=p.dow.has(dt.getUTCDay());
+  if(p.domStar&&p.dowStar) return true; if(p.domStar) return b; if(p.dowStar) return a; return a||b;
+}
+function fires(p,from,max,days){
+  const out=[], mins=[...p.min].sort((a,b)=>a-b), hrs=[...p.hr].sort((a,b)=>a-b), d0=new Date(from), day0=Date.UTC(d0.getUTCFullYear(),d0.getUTCMonth(),d0.getUTCDate());
+  for(let i=0;i<days;i++){
+    const day=day0+i*864e5; if(!dayOK(p,new Date(day))) continue;
+    for(const h of hrs) for(const m of mins){const t=day+h*36e5+m*6e4; if(t>from){out.push(t); if(out.length>=max) return out;}}
+  }
+  return out;
+}
+function minGap(list){let g=Infinity; for(let i=1;i<list.length;i++) g=Math.min(g,(list[i]-list[i-1])/6e4); return g;}
+
+/* builder state <-> cron */
+const daysOf=st=>st.days.map((on,i)=>on?i+1:0).filter(Boolean);
+function dowText(st){
+  const d=daysOf(st); if(!d.length) return null; if(d.length===7) return "*";
+  const parts=[]; let i=0;
+  while(i<d.length){let j=i; while(j+1<d.length&&d[j+1]===d[j]+1) j++; parts.push(j>i?d[i]+"-"+d[j]:""+d[i]); i=j+1;}
+  return parts.join(",");
+}
+function hoursText(st,k){
+  const full=st.from===0&&st.to===23;
+  if(k===1) return full?"*":st.from+"-"+st.to;
+  return full?"*/"+k:st.from+"-"+st.to+"/"+k;
+}
+function toCron(st){
+  if(st.from>st.to&&(st.freq==="every"||st.freq==="hourly")) return {err:"The end hour must not be before the start hour."};
+  const dow=dowText(st), tm=/^(\d{1,2}):(\d{2})$/.exec(st.time||"");
+  if((st.freq==="every"||st.freq==="hourly"||st.freq==="weekly")&&!dow) return {err:"Pick at least one day."};
+  if((st.freq==="daily"||st.freq==="weekly"||st.freq==="monthly")&&!tm) return {err:"Pick a time."};
+  if(st.freq==="hourly"&&!(st.minute>=0&&st.minute<=59)) return {err:"Enter a minute from 0 to 59."};
+  switch(st.freq){
+    case "every": return {cron:`*/${st.n} ${hoursText(st,1)} * * ${dow}`};
+    case "hourly": return {cron:`${st.minute} ${hoursText(st,st.k)} * * ${dow}`};
+    case "daily": return {cron:`${+tm[2]} ${+tm[1]} * * *`};
+    case "weekly": return {cron:`${+tm[2]} ${+tm[1]} * * ${dow}`};
+    case "monthly": return {cron:`${+tm[2]} ${+tm[1]} ${st.dom} * *`};
+  }
+  return {err:"Pick a frequency."};
+}
+function fromCron(c,base){
+  const f=c.trim().split(/\s+/); if(f.length!==5) return null;
+  const mi=f[0],hr=f[1],dm=f[2],mo=f[3],dw=f[4], num=/^\d+$/; if(mo!=="*") return null;
+  const dset=parseField(dw,0,7,"weekday"); if(dset.err) return null;
+  const days=[0,0,0,0,0,0,0]; dset.set.forEach(d=>{days[(d+6)%7]=1;});
+  const win=h=>{let m; if(h==="*") return [0,23,1]; if((m=/^\*\/(\d+)$/.exec(h))) return [0,23,+m[1]]; if((m=/^(\d+)-(\d+)(?:\/(\d+))?$/.exec(h))&&+m[1]<=+m[2]&&+m[2]<=23) return [+m[1],+m[2],m[3]?+m[3]:1]; return null;};
+  const st=Object.assign({},base,{days:days});
+  let m;
+  if(dm==="*"){
+    if((m=/^\*\/(\d+)$/.exec(mi))&&EVERY.includes(+m[1])){const w=win(hr); if(w&&w[2]===1) return Object.assign(st,{freq:"every",n:+m[1],from:w[0],to:w[1]});}
+    if(num.test(mi)&&+mi<=59){
+      if(num.test(hr)&&+hr<=23) return Object.assign(st,{freq:dw==="*"?"daily":"weekly",time:pad(+hr)+":"+pad(+mi)});
+      const w=win(hr); if(w&&HOURK.includes(w[2])) return Object.assign(st,{freq:"hourly",minute:+mi,k:w[2],from:w[0],to:w[1]});
+    }
+  } else if(num.test(dm)&&+dm>=1&&+dm<=28&&dw==="*"&&num.test(mi)&&num.test(hr)&&+mi<=59&&+hr<=23){
+    return Object.assign(st,{freq:"monthly",dom:+dm,time:pad(+hr)+":"+pad(+mi)});
+  }
+  return null;
+}
+function daysPhrase(days){
+  const on=days.map((v,i)=>v?i:-1).filter(i=>i>=0), s=on.join();
+  if(on.length===7) return "every day"; if(s==="0,1,2,3,4") return "weekdays"; if(s==="5,6") return "Saturday and Sunday";
+  const n=on.map(i=>DN[i]); return "on "+(n.length>1?n.slice(0,-1).join(", ")+" and "+n[n.length-1]:n[0]);
+}
+function sentenceOf(st,cron){
+  const d=daysPhrase(st.days), dd=d==="every day"?"":d==="weekdays"?" on weekdays":d.startsWith("on ")?" "+d:" on "+d;
+  const win=(a,b)=>a===0&&b===23?"":" from "+t12(a,0)+" to "+t12(b,0);
+  const tm=()=>{const [h,m]=st.time.split(":").map(Number); return t12(h,m);};
+  switch(st.freq){
+    case "every": {const last=st.to===23&&st.from===0?"":" from "+t12(st.from,0)+" to "+t12(st.to,60-st.n); return `Every ${st.n} minutes${last}${dd}`;}
+    case "hourly": {const pre=st.k===1?"Every hour":"Every "+st.k+" hours"; const at=st.minute?" at "+st.minute+" minutes past":""; return pre+at+win(st.from,st.to)+dd;}
+    case "daily": return "Every day at "+tm();
+    case "weekly": return "Every "+(d==="weekdays"?"weekday":d==="every day"?"day":d==="Saturday and Sunday"?"Saturday and Sunday":d.slice(3))+" at "+tm();
+    case "monthly": return "On day "+st.dom+" of every month at "+tm();
+  }
+  return "Custom schedule";
+}
+function check(job,cron){
+  const p=parseCron(cron); if(p.err) return {err:p.err};
+  const list=fires(p,NOW,20000,60);
+  if(!list.length) return {err:"That schedule never runs."};
+  if(minGap(list)<job.gap) return {err:`Too frequent. One run needs about ${job.runMin} minutes at the ${job.src}'s limit, so the shortest gap is ${job.gap} minutes.`};
+  return {p:p,list:list};
+}
+
+/* markup */
+const opts=(a,sel,lab)=>a.map(v=>`<option value="${v}"${v===sel?" selected":""}>${lab?lab(v):v}</option>`).join("");
+function jobHTML(j){
+  const i=j.id, wk=["<span></span>",...["12 am","6 am","12 pm","6 pm"].map(t=>`<span class="hl">${t}</span>`)].join("");
+  let cells=""; DN.forEach((d,di)=>{cells+=`<span class="dl">${d}</span>`; for(let h=0;h<24;h++) cells+=`<i data-d="${di}" data-h="${h}"></i>`;});
+  const hrOpts=a=>opts(Array.from({length:24},(_,h)=>h),a,h=>t12(h,0));
+  return `<section class="sect job" data-job="${i}" aria-labelledby="${i}-h">
+  <header><h2 id="${i}-h">${j.name}</h2>
+    <div class="seg" role="group" aria-label="Schedule mode for ${j.name}"><button type="button" data-mode="scheduled" aria-pressed="true">Scheduled</button><button type="button" data-mode="manual" aria-pressed="false">Manual</button></div></header>
+  <div class="job-grid">
+    <div class="job-col">
+      <fieldset class="sb" data-freq="weekly" data-r="sb"><legend class="sr-only">Schedule for ${j.name}</legend>
+        <div class="sb-row">
+          <div class="field"><label for="${i}-freq">Frequency</label><select id="${i}-freq" data-f="freq"><option value="every">Every N minutes</option><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="custom" hidden>Custom (from cron)</option></select></div>
+          <div class="field" data-g="every"><label for="${i}-n">Every</label><select id="${i}-n" data-f="n">${opts(EVERY,30,v=>v+" minutes")}</select></div>
+          <div class="field" data-g="hourly"><label for="${i}-k">Every</label><select id="${i}-k" data-f="k">${opts(HOURK,1,v=>v===1?"1 hour":v+" hours")}</select></div>
+          <div class="field" data-g="hourly"><label for="${i}-mi">Minutes past the hour</label><input id="${i}-mi" data-f="minute" type="number" min="0" max="59" step="1" inputmode="numeric" value="0"></div>
+          <div class="field" data-g="daily weekly monthly"><label for="${i}-t">Time (IST)</label><input id="${i}-t" data-f="time" type="time" value="18:35"></div>
+          <div class="field" data-g="monthly"><label for="${i}-dom">Day of the month</label><select id="${i}-dom" data-f="dom">${opts(DOMS,1)}</select></div>
+          <div class="field" data-g="every hourly"><label for="${i}-from">From</label><select id="${i}-from" data-f="from">${hrOpts(0)}</select></div>
+          <div class="field" data-g="every hourly"><label for="${i}-to">To (last hour a run can start)</label><select id="${i}-to" data-f="to">${hrOpts(23)}</select></div>
+        </div>
+        <div class="field wide" data-g="every hourly weekly"><span class="lbl" id="${i}-dl">Days</span>
+          <div class="chips" role="group" aria-labelledby="${i}-dl">${DN.map((d,k)=>`<button type="button" class="chip" data-day="${k}" aria-pressed="false" aria-label="${["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"][k]}">${d}</button>`).join("")}<button type="button" class="preset" data-preset="weekdays">Weekdays</button><button type="button" class="preset" data-preset="all">Every day</button></div></div>
+        <p class="cnote" data-g="custom">This saved schedule is not one of the simple patterns. Pick a frequency to replace it.</p>
+        <input id="${i}-cron" class="cron" data-f="cron" type="hidden" aria-hidden="true" tabindex="-1">
+        <div><button type="button" class="btn" data-act="rec">Use recommended</button></div>
+      </fieldset>
+      <p class="sb-err" id="${i}-err" role="alert" data-r="err"></p>
+      <p class="limit" data-r="limit"></p>
+      <div class="job-act"><button type="button" class="btn primary" data-act="save">Save schedule</button><span class="saved" data-r="saved" role="status"></span></div>
+    </div>
+    <div class="pv" data-r="pv">
+      <div class="pv-sent"><span data-r="sent"></span><span class="pill measured" data-r="badge" hidden>Recommended</span></div>
+      <p class="why" data-r="why"></p>
+      <p class="stale" data-r="stale"></p>
+      <div><div class="sub-h">A typical week, India time</div>
+        <div class="wk" role="img" data-r="wk" aria-label="Week grid">${wk}${cells}</div>
+        <p class="wk-cap">A filled square means a run starts in that hour.</p></div>
+      <div><div class="sub-h">Next five runs</div><ol class="next" data-r="next"></ol></div>
+    </div>
+  </div>
+  <div class="job-foot">
+    <div class="stat"><span>Last run</span><div class="num">${j.last[0]}</div></div>
+    <div class="stat"><span>Status</span><div><span class="pill ok"><span class="dot"></span>OK</span></div></div>
+    <div class="stat"><span>Rows fetched</span><div class="num">${j.last[1]}</div></div>
+    <div class="stat"><span>Rows new</span><div class="num">${j.last[2]}</div></div>
+    <button type="button" class="btn primary" data-act="run">Run now</button>
+  </div>
+  <details class="runs"><summary>Last 5 runs</summary><div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Status</th><th class="r">Fetched</th><th class="r">New</th><th>Note</th></tr></thead><tbody>${j.runs.map(r=>`<tr><td class="num">${r[0]}</td><td><span class="pill ok">OK</span></td><td class="r num">${r[1]}</td><td class="r num">${r[2]}</td><td>${r[3]}</td></tr>`).join("")}</tbody></table></div></details>
+</section>`;
+}
+
+/* state per job */
+const BASE={freq:"weekly",n:30,k:1,minute:0,time:"18:35",dom:1,from:0,to:23,days:[1,1,1,1,1,0,0]};
+let STORE={}; try{STORE=JSON.parse(localStorage.getItem(SCHED_KEY)||"{}")||{};}catch(e){STORE={};}
+const SJ={};
+function initJob(j){
+  const el=$(`#jobs [data-job="${j.id}"]`), s=STORE[j.id], J={def:j,el:el,mode:"scheduled",err:"",stale:false,view:null,st:null,cron:"",res:null};
+  let cron=j.rec, mode="scheduled";
+  if(s&&typeof s.cron==="string"&&check(j,s.cron).p){cron=s.cron; mode=s.mode==="manual"?"manual":"scheduled";}
+  J.mode=mode; setCron(J,cron); J.saved=JSON.stringify({mode:J.mode,cron:J.cron}); SJ[j.id]=J; sync(J,{});
+}
+function setCron(J,cron){
+  const r=check(J.def,cron); J.res=r; J.cron=cron.trim().replace(/\s+/g," ");
+  J.st=fromCron(J.cron,J.view||BASE)||Object.assign({},J.view||BASE,{freq:"custom",days:(J.view||BASE).days.slice()});
+  J.view=Object.assign({},J.st,{days:J.st.days.slice()}); J.err=""; J.stale=false;
+}
+const q=(J,f)=>J.el.querySelector(`[data-f="${f}"]`), r_=(J,k)=>J.el.querySelector(`[data-r="${k}"]`);
+function sync(J,o){
+  const v=J.view, sb=r_(J,"sb"), ae=document.activeElement;
+  sb.dataset.freq=v.freq;
+  const set=(f,val)=>{const c=q(J,f); if(c&&c!==ae) c.value=val;};
+  set("freq",v.freq); set("n",v.n); set("k",v.k); set("minute",v.minute); set("time",v.time); set("dom",v.dom); set("from",v.from); set("to",v.to);
+  if(!o.keepCron) q(J,"cron").value=J.cron;
+  J.el.querySelectorAll("[data-day]").forEach(b=>b.setAttribute("aria-pressed",!!v.days[+b.dataset.day]));
+  const manual=J.mode==="manual";
+  J.el.querySelectorAll(".seg [data-mode]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===J.mode));
+  sb.disabled=manual;
+  const p=r_(J,"pv"); p.classList.toggle("dim",manual);
+  r_(J,"sent").textContent=(manual?"Manual only. ":"")+sentenceOf(J.st,J.cron)+(manual?"":"");
+  r_(J,"badge").hidden=J.cron!==J.def.rec;
+  r_(J,"why").innerHTML=`<b>Recommended:</b> ${sentenceOf(fromCron(J.def.rec,BASE),J.def.rec)}. ${J.def.why}`;
+  r_(J,"stale").textContent=J.err?"Showing your last valid schedule below.":"";
+  r_(J,"err").textContent=J.err;
+  q(J,"cron").setAttribute("aria-invalid",J.err&&o.cronErr?"true":"false");
+  r_(J,"limit").innerHTML=`<b>Limit:</b> ${J.def.limit}. <b>Shortest gap:</b> ${J.def.gap} minutes.`+(J.def.extra?` ${J.def.extra}`:"");
+  /* week grid and next five come from the last valid schedule */
+  const list=J.res.list, cnt={};
+  list.forEach(t=>{ if(t-NOW>35*864e5) return; const d=new Date(t), k=((d.getUTCDay()+6)%7)+"-"+d.getUTCHours(); cnt[k]=(cnt[k]||0)+1; });
+  J.el.querySelectorAll(".wk i").forEach(c=>c.classList.toggle("on",!!cnt[c.dataset.d+"-"+c.dataset.h]));
+  const hours=Object.keys(cnt).length;
+  r_(J,"wk").setAttribute("aria-label",hours?`Week grid: runs start in ${hours} hour slots across the week. ${sentenceOf(J.st,J.cron)}.`:"Week grid: no runs in a typical week.");
+  const nx=fires(J.res.p,NOW,5,800), fm=t=>{const d=new Date(t); return DN[(d.getUTCDay()+6)%7]+" "+d.getUTCDate()+" "+MON[d.getUTCMonth()]+" "+d.getUTCFullYear();};
+  r_(J,"next").innerHTML=manual?`<li class="none">Manual mode: nothing runs on its own. Use Run now.</li>`:nx.map(t=>{const d=new Date(t); return `<li><span class="num">${fm(t)}</span><span class="num">${t12(d.getUTCHours(),d.getUTCMinutes())} IST</span></li>`;}).join("");
+  const dirty=JSON.stringify({mode:J.mode,cron:J.cron})!==J.saved, save=J.el.querySelector('[data-act="save"]');
+  save.disabled=!!J.err||!dirty;
+  r_(J,"saved").textContent=J.err?"Fix the schedule to save.":dirty?"Unsaved changes":"Saved";
+  J.el.querySelector('[data-act="rec"]').disabled=J.cron===J.def.rec&&!J.err;
+}
+function readView(J){
+  const v=J.view, g=f=>q(J,f).value;
+  return Object.assign({},v,{freq:g("freq"),n:+g("n"),k:+g("k"),minute:g("minute")===""?NaN:+g("minute"),time:g("time"),dom:+g("dom"),from:+g("from"),to:+g("to")});
+}
+function apply(J,view,o){
+  J.view=view;
+  if(view.freq==="custom"){ J.err=""; sync(J,o||{}); return; }
+  const c=toCron(view), r=c.err?c:check(J.def,c.cron);
+  if(r.err){J.err=r.err; sync(J,o||{}); return;}
+  J.res=r; J.cron=c.cron; J.st=Object.assign({},view,{days:view.days.slice()}); J.err=""; sync(J,o||{});
+}
+function jobEvent(e){
+  const el=e.target.closest(".job"); if(!el) return; const J=SJ[el.dataset.job];
+  if(e.type==="input"||e.type==="change"){
+    const f=e.target.dataset.f; if(!f) return;
+    if(f==="cron"){
+      const val=e.target.value, r=check(J.def,val);
+      if(r.err){J.err=r.err; sync(J,{keepCron:true,cronErr:true}); return;}
+      setCron(J,val); sync(J,{keepCron:true}); return;
+    }
+    if(e.type==="input"&&f!=="minute"&&f!=="time") return;
+    apply(J,readView(J)); return;
+  }
+  if(e.type!=="click") return;
+  const b=e.target.closest("button"); if(!b) return;
+  if(b.dataset.day!==undefined){const v=Object.assign({},readView(J),{days:J.view.days.slice()}); v.days[+b.dataset.day]=v.days[+b.dataset.day]?0:1; apply(J,v); return;}
+  if(b.dataset.preset){const v=readView(J); v.days=b.dataset.preset==="all"?[1,1,1,1,1,1,1]:[1,1,1,1,1,0,0]; apply(J,v); return;}
+  if(b.dataset.mode){ J.mode=b.dataset.mode; sync(J,{keepCron:true});
+    toast(J.def.name+(J.mode==="manual"?": manual only. It never runs on its own; use Run now.":": runs on the schedule. Run now still works.")); return;}
+  if(b.dataset.act==="rec"){ setCron(J,J.def.rec); sync(J,{}); toast(J.def.name+": recommended schedule restored."); return;}
+  if(b.dataset.act==="save"){ if(b.disabled) return; STORE[J.def.id]={mode:J.mode,cron:J.cron}; try{localStorage.setItem(SCHED_KEY,JSON.stringify(STORE));}catch(x){}
+    J.saved=JSON.stringify({mode:J.mode,cron:J.cron}); sync(J,{keepCron:true}); toast(J.def.name+": schedule saved."); return;}
+  if(b.dataset.act==="run"){ if(b.disabled) return; const t=b.textContent; b.disabled=true; b.textContent="Queued...";
+    toast(J.def.name+": run requested. The collector picks it up within a minute."); setTimeout(()=>{b.disabled=false;b.textContent=t;},2500);}
+}
+$("#jobs").innerHTML=JOBS.map(jobHTML).join("");
+["click","input","change"].forEach(t=>$("#jobs").addEventListener(t,jobEvent));
+JOBS.forEach(initJob);
 
 (function(){
   const root=document.documentElement, box=document.getElementById("theme");
@@ -947,5 +1290,6 @@ $$("#s-results .tfoot .seg").forEach(seg=>seg.onclick=e=>{const b=e.target.close
   box.onclick=e=>{const b=e.target.closest("button"); if(!b) return; apply(b.dataset.t); try{localStorage.setItem("ath-theme",b.dataset.t);}catch(e){}};
 })();
 </script>
+<script>(function(){var r=document.documentElement,sk=document.getElementById("skin");function s(v){if(v)r.dataset.skin=v;else delete r.dataset.skin;sk.querySelectorAll("button").forEach(function(x){x.setAttribute("aria-pressed",x.dataset.skinSet===(v||""))});}var v="";try{v=localStorage.getItem("ath-skin")||""}catch(e){}s(v);sk.onclick=function(e){var x=e.target.closest("[data-skin-set]");if(!x)return;s(x.dataset.skinSet);try{localStorage.setItem("ath-skin",x.dataset.skinSet)}catch(er){}};})();</script>
 </body>
 </html>
