@@ -954,3 +954,17 @@ Prompt changes to make (`scanner/conclude.py`):
 4. Volume pipeline: `daily_volume`, NSE delivery, derived spike and delivery columns, redefine `breakout_quality`.
 5. Wait for the user's scoring update; only then redesign the scorecard and the stance explanation.
 6. UI wireframe (charts, chat, tooltips, stock page, flags), user sign-off, then the Node build.
+
+## Tokenfrugal test items (moved from tokenfrugal handoff, 2026-10-27)
+
+These two checks belong to the tokenfrugal repo (`C:\Users\vaibh\Downloads\Projects\tokenfrugal`; the branch was merged as PR #43, and the cap change is commit `13cbe7b`). They were moved here to be tested. Nothing in this repo has changed for them.
+
+1. **Automatic coding path on a real bench run.** Open.
+   - Done: a temp-copy check (`scratchpad/coding_path_check.py`) ran `suite_detail` → `publish_detail` → `summarize` → `upsert_summary` on a copy of `Benchmark/results`. The summary row picked up the new `datetime_coding`, the older live rows were marked superseded, and the real CSVs were byte-identical afterwards. The source was a legacy coding JSON relabelled to another model, so this tests the plumbing only.
+   - Not done: a real `run_benchmark.py --role coding` run with a model, the Docker suite and the endpoint.
+
+2. **Live `dispatch_task` check after the docstring change.** Open, not run.
+   - Change: the `dispatch_task` docstring in `router/server.py` now says "up to 5000 tokens" (the cap was raised from 300 on `main` in `ba98023`). Tokenfrugal's CLAUDE.md says a docstring change alters local-model delegation behaviour.
+   - Not run: a live call through the tokenfrugal MCP. The tokenfrugal repo's memory rule says to use Haiku subagents there, not that MCP, so this needs an explicit decision before it runs.
+
+**How to pick this up.** Run item 1 from the tokenfrugal repo with a real model. Run item 2 with one routine task, then compare the summary length and quality with the previous behaviour.
