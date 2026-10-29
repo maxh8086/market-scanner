@@ -123,6 +123,17 @@ services:
       - "127.0.0.1:8080:8080"            # loopback only: the UI has no login
     restart: always
 
+  scanner-mongo:         # this project's MongoDB, data kept in ./data/mongo. Not the infra's `mongo` (mri-mongo):
+    image: mongo:7       # the service name differs on purpose, so the two never share the `mongo` alias on market-infra.
+    container_name: ath-scanner-mongo
+    # --auth matches mri-mongo: the copied store already holds the ath_scanner and admin users.
+    command: ["--auth", "--wiredTigerCacheSizeGB", "0.5", "--bind_ip_all"]
+    volumes:
+      - ./data/mongo:/data/db            # bind mount: the database files stay in this project folder
+    ports:
+      - "127.0.0.1:${SCANNER_MONGO_PORT:-27018}:27017"   # 27017 belongs to the tokenfrugal Mongo on this machine
+    restart: unless-stopped
+
   laya:                  # decision-model service; profile `laya` (start.ps1 -WithLaya). Not wired into ranking.
     build: {context: ., dockerfile: docker/laya/Dockerfile}
     container_name: ath-laya

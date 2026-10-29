@@ -65,6 +65,41 @@ placeholders only.
   to raise `PermissionError` and destroy that work. It now falls back to
   `ath_scan_<date>_<HHMMSS>.xlsx` and says so.
 
+- **Expansion category question: closed 2026-09-29.** Neither `Acquisition` nor `Diversification/Disinvestment` is added to the column.
+  Measured over the cached announcements:
+  - `Acquisition` (2,602 rows) — **0%** of the metadata mentions capacity,
+    tonnage, MW or a plant. Not because acquisitions are irrelevant to
+    expansion, but because `attchmnt_text` is one-line boilerplate: 391,077
+    rows, none empty, average 139 characters. Whatever an acquisition says
+    about capacity is in the PDF, so this category cannot be decided from
+    metadata at all and would need the filings stage pointed at it.
+  - `Diversification/Disinvestment` (174 rows) — 0 mention capacity and **44
+    mention divestment**, which is the *opposite* of expansion. Adding it
+    would inject a contrary signal into the column.
+
+  The 0% figure was checked before being believed: an empty-text bug would
+  produce the same number, so the text column was counted first. It is
+  populated and uninformative, which is a different and more useful answer
+  than "no match".
+
+- **`NEW_ATH_TODAY` bucket checked against a second source (2026-09-29) --
+  closed.** All six names were compared with Screener's overview. Five of six
+  scan LTPs equal Screener's `previous_close` to the paisa (QPOWER 1592.7,
+  ENGINERSIN 313.9, WELCORP 2739.7, SHRIPISTON 4645.3, PGIL 1296.1);
+  DYNAMATECH is 0.46% off (13200 vs 13139), consistent with BSE/NSE divergence
+  in a thin name. ATH highs agree with Screener's 52-week high to rounding
+  (ENGINERSIN 321.4/321, SHRIPISTON 4843/4843, PGIL 1357.9/1358, DYNAMATECH
+  13500/13507, and APLAPOLLO 2301.4/2301 for an ATH dated months back). The two
+  apparent gaps (QPOWER 1613 vs 1593.6, WELCORP 2870 vs 2838) are one session
+  *later*: Screener answered intraday on 2026-09-29 against a 09-28 scan, and
+  WELCORP was +4.6% that morning. The history cache confirms it -- QPOWER's
+  newest cached candle is 09-25 with a highest-ever cached high of 1570, so
+  the 09-28 print is a genuine new ATH. `5-15%` was not spot-checked.
+  `output/ath_scan_2026-09-28.csv` predates an `as_of` column, so post-close
+  finality is inferred from the exact close match rather than read from a field.
+
+- **Rate limits verified 2026-09-29 (closed by measurement).** The cold scan made 1,969 requests with 0 HTTP 429s in about 30 minutes, under the 80%-of-limit windows in `scanner/upstox.py` (40/s, 400/min, 1600/30min). The 30-minute window has been exercised, so the earlier "unmeasured" note is resolved.
+
 ## Questions closed this session
 
 1. **Split/bonus adjustment — ADJUSTED.** Verified on two stocks and two
@@ -127,23 +162,27 @@ placeholders only.
 ## Still open
 
 - **Expansion (factor 4) is the least trustworthy column** and has not been
-  eyeballed against actual filings. The category question is **closed, 2026-09-29:
-  neither `Acquisition` nor `Diversification/Disinvestment` should be added.**
-  Measured over the cached announcements:
-  - `Acquisition` (2,602 rows) — **0%** of the metadata mentions capacity,
-    tonnage, MW or a plant. Not because acquisitions are irrelevant to
-    expansion, but because `attchmnt_text` is one-line boilerplate: 391,077
-    rows, none empty, average 139 characters. Whatever an acquisition says
-    about capacity is in the PDF, so this category cannot be decided from
-    metadata at all and would need the filings stage pointed at it.
-  - `Diversification/Disinvestment` (174 rows) — 0 mention capacity and **44
-    mention divestment**, which is the *opposite* of expansion. Adding it
-    would inject a contrary signal into the column.
-
-  The 0% figure was checked before being believed: an empty-text bug would
-  produce the same number, so the text column was counted first. It is
-  populated and uninformative, which is a different and more useful answer
-  than "no match".
+  eyeballed against actual filings. Open: spot-check about 10 filings against stored text,
+  or decide to exclude the column from scoring.
+  **Was blocked 2026-10-29 (see below for the fix):** the stored filing text was not in this checkout. `data/factors.db`
+  is absent here, the copies in `app/data/` and the worktrees are empty, and the MongoDB on
+  `localhost:27017` has an empty `ath_scanner` database. The infra env file points at host
+  `mongo`, which does not resolve from this machine. Candidates (the 12 text-match-only rows
+  in `output/ath_enriched_2026-09-28.csv`): AXISCADES, COALINDIA, WELSPUNLIV, AARTIPHARM,
+  ASKAUTOLTD, SHYAMMETL, TI, ADANIPORTS, INDHOTEL, POWERINDIA, AMBER, RELIANCE.
+  **Unblocked 2026-10-29.** MongoDB now runs in a container, `ath-scanner-mongo` (`mongo:7`),
+  with `data/mongo` under this project mounted as `/data/db`. The container is published on
+  `127.0.0.1:27018`, because `27017` belongs to the tokenfrugal project's own Mongo container.
+  The store was copied from `Shared-Market-Research-Infra\data\mongo`, not moved. `ath_scanner`
+  holds `filings` 968, `extractions` 868, `conclusions` 586 and `fundamentals` 298. The 968
+  count matches the 968 unique filings recorded in the handoff's scope. Not yet checked: that
+  the expansion filings' text is present in `filings`. The spot-check can now run.
+  The container is now a `scanner-mongo` service in `docker-compose.yml` (started with `--auth`, as
+  `mri-mongo` is), and the `ath_scanner` login from the infra secrets works against it.
+  **Still open:** the scanner reads the infra's `mongo` host (from `ath_scanner.env`), so new writes
+  still land in `mri-mongo`. The benchmark and the 2026-09-29/30 conclusions used that store. The
+  infra copy `Shared-Market-Research-Infra\data\mongo` is still mounted by `mri-mongo`, so it is kept
+  until its owner agrees to retire it.
 - **Order-book *value* — BUILT AND MEASURED 2026-09-29 over 964 real PDFs.**
   The value is in the attached filing PDF, and SEBI LODR Schedule III Part A
   para 4 mandates a template whose field (g) is literally
@@ -371,30 +410,13 @@ placeholders only.
   guard had been silently dead. `pypdf` 6.19.0 is installed in `.venv`.
   `hasXbrl: True` on every announcement is announcement-type tagging only; the
   API exposes no XBRL payload and the order value is not in a tagged taxonomy.
-- **`NEW_ATH_TODAY` bucket checked against a second source (2026-09-29) --
-  closed.** All six names were compared with Screener's overview. Five of six
-  scan LTPs equal Screener's `previous_close` to the paisa (QPOWER 1592.7,
-  ENGINERSIN 313.9, WELCORP 2739.7, SHRIPISTON 4645.3, PGIL 1296.1);
-  DYNAMATECH is 0.46% off (13200 vs 13139), consistent with BSE/NSE divergence
-  in a thin name. ATH highs agree with Screener's 52-week high to rounding
-  (ENGINERSIN 321.4/321, SHRIPISTON 4843/4843, PGIL 1357.9/1358, DYNAMATECH
-  13500/13507, and APLAPOLLO 2301.4/2301 for an ATH dated months back). The two
-  apparent gaps (QPOWER 1613 vs 1593.6, WELCORP 2870 vs 2838) are one session
-  *later*: Screener answered intraday on 2026-09-29 against a 09-28 scan, and
-  WELCORP was +4.6% that morning. The history cache confirms it -- QPOWER's
-  newest cached candle is 09-25 with a highest-ever cached high of 1570, so
-  the 09-28 print is a genuine new ATH. `5-15%` was not spot-checked.
-  `output/ath_scan_2026-09-28.csv` predates an `as_of` column, so post-close
-  finality is inferred from the exact close match rather than read from a field.
+- **`5-15%` bucket not spot-checked against a second source.** The `NEW_ATH_TODAY` bucket was checked against Screener on 2026-09-29 and is closed (see What's done).
 - **LTP cross-check is 3 symbols deep**, not 6: the Kite MCP session expired
   mid-session, so HDFCBANK/BSE/SWIGGY were not independently confirmed
   against a second broker. Re-login to Kite MCP and re-check if that matters.
   (The six `NEW_ATH_TODAY` names were since confirmed against Screener --
   see above -- so this now concerns the wider universe only.)
-- **Sustained rate limits unmeasured beyond 30 requests.** 7.2 req/sec held
-  over a short burst, but a per-30-minute account cap (if any) would only
-  show up during a full run. The client honours `Retry-After` on 429 and
-  backs off exponentially, so the failure mode is slowness, not data loss.
+- **Limiter defects, not fixed (`scanner/upstox.py`).** The limiter sleeps while holding its lock. `float(Retry-After)` fails on an HTTP-date value.
 
 ## Known limitations / deliberate design choices
 
@@ -954,6 +976,23 @@ Prompt changes to make (`scanner/conclude.py`):
 4. Volume pipeline: `daily_volume`, NSE delivery, derived spike and delivery columns, redefine `breakout_quality`.
 5. Wait for the user's scoring update; only then redesign the scorecard and the stance explanation.
 6. UI wireframe (charts, chat, tooltips, stock page, flags), user sign-off, then the Node build.
+
+## Pilot: surface container stdout in run logs (parked, 2026-10-27)
+
+Parked until the tokenfrugal changes are finished. Nothing in this repo has changed for this item.
+
+**Why this item.** It is the pilot for the EGM planning workflow. The `_create_index` auth fix that was also on the list is already in the uncommitted `scanner/mongo.py`, so it was not used.
+
+**State.** `start.ps1` starts Docker containers, such as `mri-vllm`, and logs only its own steps. When a container fails, the cause is visible only through `docker logs`, which is not written to `logs/`.
+
+**Work plan once resumed.** Use a git worktree from committed HEAD `fe4d56b`, so the uncommitted changes stay untouched. Run `egm:egm-brainstorm` (the plugin is now installed and registered), then write the design, then have the local builder do the tasks.
+
+**Open questions for the user (answer in chat, one at a time):**
+1. When a container fails, what must the log show: its stdout only, or also start time and exit code?
+2. Should every container that `start.ps1` launches be captured, or only the ones the pipeline waits on, such as `mri-vllm`?
+3. vLLM output can be long. Should the run log keep everything, or only the tail when a container fails?
+4. How will you know the pilot worked?
+5. Brainstorm reviewers (decided 2026-10-27): use the EGM default, six Goldfish lenses plus the synthesizer. The user may reduce this later to two lenses plus one synthesizer. The CLAUDE.md section now says the same.
 
 ## Tokenfrugal test items (moved from tokenfrugal handoff, 2026-10-27)
 
