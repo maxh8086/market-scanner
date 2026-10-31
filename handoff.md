@@ -17,6 +17,13 @@ Credentials live in `.env` (gitignored) as `UPSTOX_ANALYTICS_ACCESS_TOKEN`.
 **Not** in `.env.example` — that is the committed template and holds
 placeholders only.
 
+## Priority next (recorded 2026-10-30, before the ruflo cleanup was finished)
+
+1. **Ruflo cleanup in this project: unfinished.** Remove the untracked `package.json`, `package-lock.json`, `.agents/`, `.claude-flow/` and the ruflo and claude-flow packages in `node_modules/` (`ruflo`, `@claude-flow`). Strip ruflo and claude-flow entries from `.claude/settings.json` (the `ruflo-*@ruflo` mod flags, the `CLAUDE_FLOW_*` env vars, the `claude-flow` permissions and the `ruflo` marketplace block) and from `.claude/settings.local.json`. Remove the claude-flow command, agent and skill files under `.claude/`, keeping any file the user still uses. Drop `ruvector.db` and the ruflo header lines from `.gitignore`. Check the `.claude/settings.json.bak-ruflo-mods-*` backup before deleting it.
+2. **Ruflo mods at user scope need a decision from the user.** The mods `ruflo-mods`, `ruflo-swarm` and `ruflo-console` were loaded with trust grants that let them write files, run host commands, rewrite prompts and answer tool-permission verdicts. That registration is outside this project, so it is not removed here. Confirm before anything is changed there.
+3. **Verify the `market_scanner` Mongo database through an authenticated query.** The store contains it (see What's done), but the `market_scanner` login in the secrets file does not authenticate against the copy. Check whether the password changed after the store user was created. Until this is settled, the scanner's ath_scanner data is the only part read and written through this container.
+
+
 ## What's done
 
 - Full project per the original spec: `ath_scan.py` CLI + `scanner/` package.
@@ -100,6 +107,12 @@ placeholders only.
 
 - **Rate limits verified 2026-09-29 (closed by measurement).** The cold scan made 1,969 requests with 0 HTTP 429s in about 30 minutes, under the 80%-of-limit windows in `scanner/upstox.py` (40/s, 400/min, 1600/30min). The 30-minute window has been exercised, so the earlier "unmeasured" note is resolved.
 
+- **Scanner Mongo store copied from the infra, 2026-10-30.** `data/mongo/` (bind-mounted into `market-scanner-mongo`) holds the same files as `Shared-Market-Research-Infra/data/mongo`, which contains two databases: `ath_scanner` (filings 968, extractions 868, conclusions 586, fundamentals 298) and `market_scanner` (filings 968, extractions 868, conclusions 586, fundamentals 1048). The file lists match exactly. The copy is verified by file set; an authenticated count of `market_scanner` is still open (see Priority next).
+
+- **Retry-After parsing fixed 2026-10-30.** `_parse_retry_after` in `scanner/upstox.py` accepts delta-seconds or an HTTP-date (past dates give 0). Covered by two tests in `tests/test_upstox.py`. Full offline suite: 848 tests, OK (46 skipped).
+
+- **Limiter sleep moved outside its lock, 2026-10-30.** `_RateLimiter.wait` in `scanner/upstox.py` reserves the send slot under the lock and sleeps after releasing it, so other threads are no longer blocked during a wait. Covered by `test_sleep_runs_outside_lock_and_reserves_slot` in `tests/test_upstox.py`. Full offline suite: 849 tests, OK (46 skipped).
+
 ## Questions closed this session
 
 1. **Split/bonus adjustment — ADJUSTED.** Verified on two stocks and two
@@ -161,16 +174,25 @@ placeholders only.
 
 ## Still open
 
-- **Expansion (factor 4) is the least trustworthy column** and has not been
-  eyeballed against actual filings. Open: spot-check about 10 filings against stored text,
-  or decide to exclude the column from scoring.
+- **Expansion (factor 4) is the least trustworthy column.** Spot-check run 2026-10-30 on the
+  12 candidates (15 stored `kind: expansion` filings, text from `ath_scanner.filings.raw_text`,
+  matched with `_expansion_text` and `EXPANSION_KEYWORDS`). Result: 14 filings have a keyword
+  hit. 12 read as real capacity or commercial-production news (WELSPUNLIV, AARTIPHARM,
+  ASKAUTOLTD x2, SHYAMMETL x3, TI, ADANIPORTS, INDHOTEL, POWERINDIA, AMBER). Weak: COALINDIA
+  (quarterly capex result, not a new project) and RELIANCE (brand portfolio expansion, generic
+  keyword). AXISCADES' one filing has no keyword hit in stored text, so the candidate list's
+  "text-match" label does not hold for it. Verdict:
+  keep the column; precision looks acceptable on this sample of 12, recall is unmeasured.
+  Also note: `select_expansion_filings` cannot run on stored docs as-is (they have no `sm_isin`,
+  `attchmntText` or `an_dt`), so any scoring must match on `raw_text` and `desc`.
+  Still open: confirm the keep decision and close this item.
   **Was blocked 2026-10-29 (see below for the fix):** the stored filing text was not in this checkout. `data/factors.db`
   is absent here, the copies in `app/data/` and the worktrees are empty, and the MongoDB on
   `localhost:27017` has an empty `ath_scanner` database. The infra env file points at host
   `mongo`, which does not resolve from this machine. Candidates (the 12 text-match-only rows
   in `output/ath_enriched_2026-09-28.csv`): AXISCADES, COALINDIA, WELSPUNLIV, AARTIPHARM,
   ASKAUTOLTD, SHYAMMETL, TI, ADANIPORTS, INDHOTEL, POWERINDIA, AMBER, RELIANCE.
-  **Unblocked 2026-10-29.** MongoDB now runs in a container, `ath-scanner-mongo` (`mongo:7`),
+  **Unblocked 2026-10-29.** MongoDB now runs in a container, `market-scanner-mongo` (`mongo:7`),
   with `data/mongo` under this project mounted as `/data/db`. The container is published on
   `127.0.0.1:27018`, because `27017` belongs to the tokenfrugal project's own Mongo container.
   The store was copied from `Shared-Market-Research-Infra\data\mongo`, not moved. `ath_scanner`
@@ -416,7 +438,7 @@ placeholders only.
   against a second broker. Re-login to Kite MCP and re-check if that matters.
   (The six `NEW_ATH_TODAY` names were since confirmed against Screener --
   see above -- so this now concerns the wider universe only.)
-- **Limiter defects, not fixed (`scanner/upstox.py`).** The limiter sleeps while holding its lock. `float(Retry-After)` fails on an HTTP-date value.
+
 
 ## Known limitations / deliberate design choices
 
@@ -519,9 +541,11 @@ gets `.env`:
 - **`enrich-timesfm`** (`docker/timesfm/Dockerfile`, profile `timesfm`,
   `./start.ps1 -WithTimesfm`): CPU torch + `timesfm[torch]==3.0.2`, runs
   `enrich.py --report --timesfm`. Re-writes `output/ath_enriched_<date>.csv`
-  with the TimesFM forecast columns. Checkpoint downloads on first run into the
-  shared `huggingface_cache` volume. Kept out of the light `enrich` image so the
-  everyday run does not carry ~2 GB of torch.
+  with the TimesFM forecast columns. Checkpoint is read from the project folder
+  `./data/huggingface` (bind mount, not the shared infra models folder). Downloaded
+  2026-10-30 into that folder (`google/timesfm-2.5-200m-pytorch`, 883 MB, snapshot
+  `1d952420fba87f3c6dee4f240de0f1a0fbc790e3`) and verified loadable offline. Kept
+  out of the light `enrich` image so the everyday run does not carry ~2 GB of torch.
 - **`vllm`** (`docker/vllm/Dockerfile`, profile `vllm`,
   `./start.ps1 -WithConclusions`): `vllm/vllm-openai:v0.30.0` serving
   `Qwen/Qwen3-4B-Instruct-2507` (Apache-2.0, ungated) as `qwen3-4b` on
@@ -770,7 +794,7 @@ State at the end of 2026-09-30: committed and pushed (`d5f885f` and later docs).
 run B (full, 291 scanned, 11 at ATH, Postgres run `61b38ae4-1e25-4be8-85bd-9b39930866de`) are
 complete and verified. The old volumes `kite-ath-scanner_huggingface_vllm`,
 `kite-ath-scanner_neo4j_data` and image `kite-ath-scanner-vllm` have been removed; keep
-`kite-ath-scanner_huggingface_cache`.
+`kite-ath-scanner_huggingface_cache` (not used by compose now; compose volume is `market-scanner_huggingface_cache`, empty, re-downloads weights).
 
 **What exists.**
 - Storage split: Postgres (runs, snapshots, changes, `llm_calls`, collector tables, candles,
