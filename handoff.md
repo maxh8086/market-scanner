@@ -19,7 +19,7 @@ placeholders only.
 
 ## Priority next (updated 2026-10-31)
 
-1. **Ruflo cleanup in this project: mostly done, three decisions open.** Done: the `node_modules`, `package*.json`, `.agents/`, `.claude-flow/` and `ruvector.db` entries were already gone; ruflo and claude-flow entries are out of `.claude/settings.json` and `.claude/settings.local.json`; the claude-flow command, agent and skill files were removed (kept: READMEs and the files with no ruflo or claude-flow reference); the backup `settings.json.bak-ruflo-mods-*` is deleted. Snapshot before the change: `scratchpad/claude_snapshot_before_ruflo_cleanup`. Open, need the user's decision: (a) `.claude/proven-config.json` still names ruflo (`"schema": "ruflo.proven-config/v1"`, `ruflo >=3.24.0`); (b) the `statusLine` entry in `.claude/settings.json` points at a helper that does not exist in this project; (c) `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` is kept in `env` and may be ruflo-related. Note: `.claude/` is git-ignored, so none of this is committed.
+None open. The ruflo cleanup in this project is closed (2026-10-31, see "Questions closed this session", item 8).
 
 
 ## What's done
@@ -159,6 +159,18 @@ placeholders only.
    readWrite `dbStats` passes. Counts match the copy: filings 968, extractions
    868, conclusions 586, fundamentals 1048. Only the `.env` login was tested;
    the infra secrets-file login was not checked.
+
+8. **Ruflo cleanup in this project — CLOSED (2026-10-31).** The three open
+   decisions were resolved by removal: (a) `.claude/proven-config.json` is
+   deleted (it named ruflo); (b) the `statusLine` entry is removed from
+   `.claude/settings.json` (its helper `.claude/helpers/statusline.cjs` did not
+   exist, and the user-scope fallback did not exist either); (c)
+   `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` is removed from `env`. `.claude/` is
+   git-ignored, so these edits are local only; the commit records the decision.
+   Backups: `scratchpad/settings.json.before-ruflo-decisions` and
+   `scratchpad/proven-config.json.before-ruflo-decisions`. The `skillUsage` key
+   and the `usage.db` / `history.jsonl` / `ruflo-console` marker from item 6
+   remain as recorded there.
 
 ## Factor design notes (read before touching `scanner/factors.py`)
 
