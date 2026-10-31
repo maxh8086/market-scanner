@@ -23,7 +23,15 @@ None open. The ruflo cleanup in this project is closed (2026-10-31, see "Questio
 
 ### Wireframe review and sign-off (2026-10-31)
 
-Source: `ui/wireframes/strategy.html`, "For review" screen (`#/review`). Nothing below is approved by the user unless marked.
+Source: `ui/wireframes/strategy.html`, "For review" screen (`#/review`). Decisions and proposals below were approved by the user on 2026-11-01 (all 22, as recommended). Everything else is unapproved unless marked.
+
+**Review screen sections (`#/review`), tracked 2026-11-01**
+- Design decisions for approval: 17 items, all approved 2026-11-01 as recommended. Recorded in `CHANGELOG.md` under Decisions.
+- Decided by you: 8 items, recorded, not open.
+- Calculator function contract: one pure function, written as a spec only. Not built. To be ported to Python after sign-off.
+- UI implementation notes: build notes, not for approval. Not started.
+- Proposals for approval: interaction touches: 5 items, all approved 2026-11-01. P2 (compare two stocks) is for after the first release; the others are queued as follow-ups.
+- Answered 2026-11-01: the sections were removed from `#/review`. Their full text is kept in `docs/wireframe-review-2026-11-01.md`. The page now shows a "Review closed 1 Nov 2026" card plus Intentionally deferred, New glossary keys and the glossary table.
 
 **Completed**
 - Shared glossary: RFC, ADR 0001 (accepted), `config/glossary.json` (empty `{}`), loader `scanner/glossary.py`, 20 tests, CHANGELOG move. Pushed (`a065941`).
@@ -31,23 +39,30 @@ Source: `ui/wireframes/strategy.html`, "For review" screen (`#/review`). Nothing
 - Missing `run` glossary entry added (it blanked the stocks list and killed the menu and theme toggle). Committed `64da241`.
 - Phone (375px) and tablet (768px) test by Haiku agents: no page-level sideways scroll on stocks, holdings, review, sizing, HAL (and KAYNES at tablet); nav, Home link and theme toggle work.
 - Chart section and stock tab bar were hidden by a static `hidden` attribute (since `d661f23`); attribute removed (uncommitted).
+- Phone (640px and below): Ask AI, Size this position and Connect Broker moved into a collapsed right-side "Actions" pane, opened from a handle on the right edge. Closes on Escape, outside tap, Close or any action. Checked 2026-11-01 and passed: opens, closes, Escape returns focus to the handle, hidden on other routes, no sideways scroll.
+- Bucket column sort cycles A to Z, Z to A, verdict rank, then default (alphabetical).
+- Static (i) buttons converted to dotted-underline label tips (decision 16). Only the three sort-header tips (verdict, score, run), built at runtime, still use the (i) button.
+- Decision 10 reversed 2026-11-01: the wireframe uses a simple 200-day moving average (200 DMA) and a 50-day exponential average (50 EMA). No 200 EMA anywhere. Glossary keys `ema200`, `cross50_200` and `exit_rule_ema` keep their names, and their text says 200 DMA. The technical vote list counts EMAs 10, 20, 50 and 100 only. Recorded in `CHANGELOG.md` under Decisions.
 
-**Pending: decisions for the user (17, none approved)**
-1 Verdict wording for non-owned stocks; 2 Governance points required for a buy (4, 5, 18); 3 A 3 of 3 stock with a required point missing; 4 All-time high tolerance (2%); 5 Profit high within the data window; 6 Exit price proposal rule; 7 Largest allocation (15% of NAV); 8 Trim advice; 9 Verdict for a held 3 of 3 stock; 10 200-day EMA not simple average; 11 Holdings outside the universe; 12 Rank cut on the Stocks list; 13 Holdings input: upload first; 14 Mutual funds and ETFs in an import; 15 Chart defaults and events; 16 Glossary tooltips on label text (conflicts with the remaining Score, Indices, Sector info buttons); 17 Interface build.
+**Approved 2026-11-01: decisions (17, all as recommended)**
+1 Verdict wording for non-owned stocks; 2 Governance points required for a buy (4, 5, 18); 3 A 3 of 3 stock with a required point missing; 4 All-time high tolerance (2%); 5 Profit high within the data window; 6 Exit price proposal rule; 7 Largest allocation (15% of NAV); 8 Trim advice; 9 Verdict for a held 3 of 3 stock; 10 200-day EMA not simple average; 11 Holdings outside the universe; 12 Rank cut on the Stocks list; 13 Holdings input: upload first; 14 Mutual funds and ETFs in an import; 15 Chart defaults and events; 16 Glossary tooltips on label text (conflicts with the remaining Score, Indices, Sector info buttons); 17 Interface build. Follow-ups that approval creates: apply decision 16 to the remaining Score, Indices and Sector info buttons (convert to a dotted underline on the label); reword the old terms (200-day EMA, TTM, Trade risk) in text outside `G` to match decision 10 and the item 8 wording.
 
-**Pending: proposals for the user (5, none approved)**
-P1 Sticky verdict header; P2 Compare two stocks (after first release); P3 Saved filters (browser storage); P4 Exit watch count in navigation; P5 Sortable columns and column chooser.
+**Approved 2026-11-01: proposals (5, all as recommended)**
+P1 Sticky verdict header; P2 Compare two stocks (after first release); P3 Saved filters (browser storage); P4 Exit watch count in navigation; P5 Sortable columns and column chooser. P2 is for after the first release.
 
 **Done: "Decided by you" cleanup (2026-10-31)**
 Merged the duplicates into 8 items; the governance sources file note moved to "Intentionally deferred".
 
 **Pending: wireframe work**
+- Approved decisions and proposals applied to the wireframe 2026-11-01 (decisions 10 and 16 for Score, Indices and Sector, P1, P3, P4, P5). Browser-checked: desktop and phone for sort, columns, saved filters, exit badge, sticky header; tablet not checked. Resolved since: all static (i) buttons converted (decision 16); phone placement of Ask AI, Size this position and Connect Broker (Actions pane); DEC 10 title (now 200 DMA, see Completed). Not done: P2 compare two stocks (after first release). Uncommitted.
+- Sector and industry performance chart (replaces the sector heat strip on the stock page, Sector tab): Desktop, phone, tablet, Industry tab, window buttons, keyboard and dark theme all checked: passed (2026-11-01). The All Industries list and Technical trends cards from the user's screenshots are not included; ask the user.
 - Item 8 glossary wording applied (2026-10-31) except `fd_cfo`, left as is: its formula text still needs a data-source check. All seven suspect keys are kept (the glossary screen lists every key). Old terms (200-day EMA, TTM, Trade risk) remain in text outside `G`: legend near line 2085, chart-features note, JS-built strings, proposal text.
 - Phone (375px) and tablet (768px) re-test with the chart and tabs visible: passed, no sideways page scroll on any screen, 12 tabs, chart 1218px tall at tablet. A visual check on a real screenshot is still not done.
 - Review screen overlap (UI implementation notes text over the proposal cards): fixed and committed. Cause was the class `dot` on the two `.rv-facts` lists matching the global `.dot{width:6px;height:6px}` rule; renamed to `bul`.
 - Stock page findings not fixed: legend clipped at phone width, four `.tbl-wrap` scroll areas without keyboard access, tooltip trigger spans lost accessible name, truncated sector eyebrow, fixed `.tl-in` height 340px.
 - Sizing is not in the menu (only in-page links); confirm whether intended.
 - One unexplained route jump (theme toggle click ended on `#/stock/HAL`) and a menu that stayed open once; not reproduced.
+- Backend 200 EMA check (open): the scanner backend may still compute a 200 EMA. `scanner/indicators.py` computes `sma200` (simple) and `ema50` today (see "What's done"). Check that no 200 EMA is computed or used anywhere, against decision 10 reversed on 2026-11-01 (200 DMA, no 200 EMA).
 - After sign-off: wire the wireframe to `config/glossary.json` (still `{}`), then the Node build.
 
 
