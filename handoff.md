@@ -17,11 +17,10 @@ Credentials live in `.env` (gitignored) as `UPSTOX_ANALYTICS_ACCESS_TOKEN`.
 **Not** in `.env.example` — that is the committed template and holds
 placeholders only.
 
-## Priority next (recorded 2026-10-30, before the ruflo cleanup was finished)
+## Priority next (updated 2026-10-31)
 
-1. **Ruflo cleanup in this project: unfinished.** Remove the untracked `package.json`, `package-lock.json`, `.agents/`, `.claude-flow/` and the ruflo and claude-flow packages in `node_modules/` (`ruflo`, `@claude-flow`). Strip ruflo and claude-flow entries from `.claude/settings.json` (the `ruflo-*@ruflo` mod flags, the `CLAUDE_FLOW_*` env vars, the `claude-flow` permissions and the `ruflo` marketplace block) and from `.claude/settings.local.json`. Remove the claude-flow command, agent and skill files under `.claude/`, keeping any file the user still uses. Drop `ruvector.db` and the ruflo header lines from `.gitignore`. Check the `.claude/settings.json.bak-ruflo-mods-*` backup before deleting it.
-2. **Ruflo mods at user scope need a decision from the user.** The mods `ruflo-mods`, `ruflo-swarm` and `ruflo-console` were loaded with trust grants that let them write files, run host commands, rewrite prompts and answer tool-permission verdicts. That registration is outside this project, so it is not removed here. Confirm before anything is changed there.
-3. **Verify the `market_scanner` Mongo database through an authenticated query.** The store contains it (see What's done), but the `market_scanner` login in the secrets file does not authenticate against the copy. Check whether the password changed after the store user was created. Until this is settled, the scanner's ath_scanner data is the only part read and written through this container.
+1. **Ruflo cleanup in this project: mostly done, three decisions open.** Done: the `node_modules`, `package*.json`, `.agents/`, `.claude-flow/` and `ruvector.db` entries were already gone; ruflo and claude-flow entries are out of `.claude/settings.json` and `.claude/settings.local.json`; the claude-flow command, agent and skill files were removed (kept: READMEs and the files with no ruflo or claude-flow reference); the backup `settings.json.bak-ruflo-mods-*` is deleted. Snapshot before the change: `scratchpad/claude_snapshot_before_ruflo_cleanup`. Open, need the user's decision: (a) `.claude/proven-config.json` still names ruflo (`"schema": "ruflo.proven-config/v1"`, `ruflo >=3.24.0`); (b) the `statusLine` entry in `.claude/settings.json` points at a helper that does not exist in this project; (c) `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` is kept in `env` and may be ruflo-related. Note: `.claude/` is git-ignored, so none of this is committed.
+2. **Verify the `market_scanner` Mongo database through an authenticated query.** The store contains it (see What's done), but the `market_scanner` login in the secrets file does not authenticate against the copy. Check whether the password changed after the store user was created. Until this is settled, the scanner's ath_scanner data is the only part read and written through this container.
 
 
 ## What's done
@@ -142,6 +141,19 @@ placeholders only.
    the sent key comes back inside the payload as `instrument_token`. Mapping
    on the response key alone would have matched nothing and reported a
    silent zero-result scan. 200/200 mapped correctly via `instrument_token`.
+6. **Ruflo mods at user scope — removed (2026-10-31).** The `ruflo-mods`,
+   `ruflo-swarm`, `ruflo-console` and `ruflo-ai-team` plugins were removed
+   from the user's `~/.claude.json` usage records, the `claude-flow` MCP
+   server entry under project `C:/Windows/System32` was removed, and the
+   plugin registry (`installed_plugins.json`, `known_marketplaces.json`,
+   `plugin-directory-cache-v2.json`) no longer lists ruflo. The
+   `cache/ruflo` and `marketplaces/ruflo` folders are deleted. Backup:
+   `scratchpad/user_config_backup_before_ruflo_removal`. Left in place on
+   purpose: the `ruflo-test` project records (a different folder), old copies
+   in `~/.claude/backups/`, and `usage.db`, `history.jsonl` and the
+   `plugins/store/ruflo-console` marker, which only mention ruflo. Still
+   to decide: the `skillUsage` key `ruflo-ai-team:launch-ai-team` in
+   `~/.claude.json`.
 
 ## Factor design notes (read before touching `scanner/factors.py`)
 
