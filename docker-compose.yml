@@ -51,13 +51,13 @@ services:
     env_file:                            # database logins, for reading candles and filings
       - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
     environment:
-      - HF_HUB_OFFLINE=1                 # weights are pre-fetched by the infra's models.ps1
+      - HF_HUB_OFFLINE=1                 # weights are fetched once into ./data/huggingface, then read offline
       - RUN_ID=${RUN_ID:-}
     volumes:
       - ./data:/app/data
       - ./output:/app/output
       - ./logs:/app/logs
-      - ${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/models/huggingface:/home/appuser/.cache/huggingface:ro   # shared weights
+      - ./data/huggingface:/home/appuser/.cache/huggingface   # TimesFM weights, project-owned
       - ./config:/app/config:ro
     restart: "no"
 
@@ -97,7 +97,7 @@ services:
     env_file:                            # MONGO_URI for conclusions, PG_* to record LLM calls
       - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
     environment:
-      - CONCLUDE_URL=http://vllm:8000     # so `run --rm conclude --limit 5` still finds the server
+      - CONCLUDE_URL=http://host.docker.internal:11434  # the host's own Ollama API, not a container
       - RUN_ID=${RUN_ID:-}
     volumes: *persist
     restart: "no"
@@ -125,7 +125,7 @@ services:
 
   scanner-mongo:         # this project's MongoDB, data kept in ./data/mongo. Not the infra's `mongo` (mri-mongo):
     image: mongo:7       # the service name differs on purpose, so the two never share the `mongo` alias on market-infra.
-    container_name: ath-scanner-mongo
+    container_name: market-scanner-mongo
     # --auth matches mri-mongo: the copied store already holds the ath_scanner and admin users.
     command: ["--auth", "--wiredTigerCacheSizeGB", "0.5", "--bind_ip_all"]
     volumes:
