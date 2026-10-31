@@ -10,7 +10,7 @@
 /* ==== src/base.css ==== */
 :root{
   --bg:#F6F8F9; --surface:#FFFFFF; --ink:#10202B; --muted:#435563; --faint:#5B6D7A;
-  --line:#E1E7EB; --line-strong:#C6D0D7; --tint:#EEF2F4;
+  --line:#E1E7EB; --line-strong:#83929D; --tint:#EEF2F4;
   --accent:#0B6E8A; --accent-ink:#FFFFFF; --accent-soft:#E3F1F5;
   --gain:#166534; --loss:#B42318; --caution:#8A4B08;
   --gain-soft:#E4F3EA; --loss-soft:#FBEAE8; --caution-soft:#FAEFDD; --on-solid:#FFFFFF;
@@ -21,7 +21,7 @@
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     --bg:#0C1317; --surface:#121B21; --ink:#E4ECF0; --muted:#A0B1BC; --faint:#869AA6;
-    --line:#1F2B33; --line-strong:#2C3B45; --tint:#17222A;
+    --line:#1F2B33; --line-strong:#52636F; --tint:#17222A;
     --accent:#4FB8D6; --accent-ink:#04141B; --accent-soft:#10303B;
     --gain:#52D68A; --loss:#F28B82; --caution:#F0B35E;
     --gain-soft:#12281D; --loss-soft:#2D1A19; --caution-soft:#2A2213; --on-solid:#04141B;
@@ -30,7 +30,7 @@
 }
 :root[data-theme="dark"]{
   --bg:#0C1317; --surface:#121B21; --ink:#E4ECF0; --muted:#A0B1BC; --faint:#869AA6;
-  --line:#1F2B33; --line-strong:#2C3B45; --tint:#17222A;
+  --line:#1F2B33; --line-strong:#52636F; --tint:#17222A;
   --accent:#4FB8D6; --accent-ink:#04141B; --accent-soft:#10303B;
   --gain:#52D68A; --loss:#F28B82; --caution:#F0B35E;
   --gain-soft:#12281D; --loss-soft:#2D1A19; --caution-soft:#2A2213; --on-solid:#04141B;
@@ -38,7 +38,7 @@
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.55 var(--sans);min-height:100dvh;overflow-x:hidden}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.55 var(--sans);min-height:100dvh}
 .mono,.num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
 button{font:inherit;color:inherit;cursor:pointer}
@@ -167,8 +167,8 @@ td .rs{display:none;white-space:normal;color:var(--muted);font-size:12px;line-he
 .search{flex:1 1 220px;position:relative;min-width:180px}
 .search input{width:100%;min-height:44px;padding:0 14px 0 40px;border-radius:10px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font:inherit}
 .search svg{position:absolute;left:13px;top:14px;width:16px;height:16px;color:var(--faint)}
-.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:10px;overflow:hidden;background:var(--surface);max-width:100%}
-.seg button{min-height:44px;padding:0 14px;border:0;background:transparent;color:var(--muted);font-weight:500;border-right:1px solid var(--line)}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:10px;overflow:hidden;overflow-x:auto;background:var(--surface);max-width:100%}
+.seg button{min-height:44px;padding:0 14px;border:0;background:transparent;color:var(--muted);font-weight:500;white-space:nowrap;border-right:1px solid var(--line)}
 .seg button:last-child{border-right:0}
 .seg button[aria-pressed=true],.seg button[aria-selected=true]{background:var(--accent-soft);color:var(--accent)}
 .seg button:disabled{opacity:.5;cursor:not-allowed}
@@ -302,7 +302,7 @@ textarea{width:100%;min-height:110px;border-radius:10px;border:1px solid var(--l
 @media (max-width:1023px){.grid,.grid.wide-right{grid-template-columns:minmax(0,1fr)}.two{grid-template-columns:minmax(0,1fr)}.top .wrap{gap:12px}nav.main a{padding:0 9px}}
 @media (max-width:1099px){nav.main a.hide-nav{display:none}}
 @media (max-width:899px){
-  nav.main{display:none;position:absolute;left:0;right:0;top:56px;flex-direction:column;background:var(--bg);border-bottom:1px solid var(--line);padding:8px 16px;margin:0;z-index:25}
+  nav.main{display:none;position:absolute;left:0;right:0;top:60px;flex-direction:column;background:var(--bg);border-bottom:1px solid var(--line);padding:8px 16px;margin:0;z-index:25}
   nav.main.open{display:flex}
   nav.main a.hide-nav{display:flex}
   .btn.menu-btn{display:inline-flex}
@@ -455,7 +455,7 @@ td .held{border:0;background:var(--accent-soft);color:var(--accent);border-radiu
 .gp.na{border-color:var(--line-strong);color:var(--muted)}
 
 /* segmented control */
-.seg{display:inline-flex;gap:2px;padding:3px;background:var(--tint);border:1px solid var(--line);border-radius:10px;overflow:visible;max-width:100%}
+.seg{display:inline-flex;gap:2px;padding:3px;background:var(--tint);border:1px solid var(--line);border-radius:10px;overflow:visible;overflow-x:auto;max-width:100%}
 .seg button{min-height:var(--hit);padding:0 12px;border:0;border-right:0;border-radius:8px;background:transparent;color:var(--muted);font-size:13px;font-weight:500;white-space:nowrap}
 .seg button:hover{color:var(--ink)}
 .seg button[aria-pressed=true],.seg button[aria-selected=true]{background:var(--seg-on);color:var(--ink);box-shadow:0 1px 2px rgba(15,23,42,.14),0 0 0 1px var(--line)}
@@ -2050,7 +2050,7 @@ tbody tr:hover td{background:var(--tint)}
     <span class="spacer"></span>
     <span class="stamp mono">data as of 30 Sep 2026 15:30 IST</span>
     <div class="skin" id="skin" role="group" aria-label="Colour skin"><button type="button" data-skin-set="" aria-pressed="true" aria-label="Indigo skin" title="Indigo"></button><button type="button" data-skin-set="blue" aria-pressed="false" aria-label="Blue skin" title="Blue"></button><button type="button" data-skin-set="mango" aria-pressed="false" aria-label="Mango skin" title="Mango"></button></div>
-    <button class="btn icon round" id="theme" aria-label="Switch to dark theme" aria-pressed="false" title="Switch theme"><svg class="ic-moon" aria-hidden="true"><use href="#i-moon"/></svg><svg class="ic-sun" aria-hidden="true"><use href="#i-sun"/></svg></button>
+    <button class="btn round" id="theme" aria-pressed="false" title="Switch theme"><svg class="ic-moon" aria-hidden="true"><use href="#i-moon"/></svg><svg class="ic-sun" aria-hidden="true"><use href="#i-sun"/></svg><span id="theme-txt">Theme: light</span></button>
     <button class="btn ghost menu-btn" id="menu" aria-label="Menu" aria-expanded="false"><svg><use href="#i-menu"/></svg></button>
   </div>
 </header>
@@ -2094,10 +2094,10 @@ tbody tr:hover td{background:var(--tint)}
         <button type="button" class="vchip" data-tone="all" aria-pressed="true" data-v="all">All<span class="n" data-c="all">0</span></button><button type="button" class="vchip" data-tone="gain" aria-pressed="false" data-v="BUY">Buy<span class="n" data-c="BUY">0</span></button><button type="button" class="vchip" data-tone="hold" aria-pressed="false" data-v="HOLD">Hold<span class="n" data-c="HOLD">0</span></button><button type="button" class="vchip" data-tone="loss" aria-pressed="false" data-v="EXIT">Exit<span class="n" data-c="EXIT">0</span></button><button type="button" class="vchip" data-tone="loss" aria-pressed="false" data-v="REJECT">Rejected<span class="n" data-c="REJECT">0</span></button>
       </div>
       <div class="search"><svg><use href="#i-search"/></svg><input id="q" type="search" placeholder="Search symbol or company" aria-label="Search symbol or company" aria-keyshortcuts="/ Control+K Meta+K" autocomplete="off"><span class="kbd" aria-hidden="true">/</span></div>
-      <div class="selwrap"><label for="f-score">Score <button type="button" class="info" data-tip="score" aria-label="About Score">i</button></label>
+      <div class="selwrap"><label for="f-score">Score </label><button type="button" class="info" data-tip="score" aria-label="About Score">i</button>
         <select id="f-score"><option value="all">Any</option><option value="3">3 of 3</option><option value="2">2 of 3</option><option value="low">0 or 1 of 3</option></select></div>
-      <div class="selwrap"><label for="f-index">Indices <button type="button" class="info" data-tip="st_indices" aria-label="About Indices">i</button></label><select id="f-index"></select></div>
-      <div class="selwrap"><label for="f-sector">Sector <button type="button" class="info" data-tip="strat_sector" aria-label="About Sector">i</button></label><select id="f-sector"></select></div>
+      <div class="selwrap"><label for="f-index">Indices </label><button type="button" class="info" data-tip="st_indices" aria-label="About Indices">i</button><select id="f-index"></select></div>
+      <div class="selwrap"><label for="f-sector">Sector </label><button type="button" class="info" data-tip="strat_sector" aria-label="About Sector">i</button><select id="f-sector"></select></div>
       <button type="button" class="btn" id="f-held" aria-pressed="false">Holdings only</button>
     </div>
 
@@ -2114,7 +2114,7 @@ tbody tr:hover td{background:var(--tint)}
 <section class="screen" id="s-stock" data-title="Stock strategy">
   <header class="ws-head" id="ws-head" aria-label="Stock summary">
     <div class="ws-row">
-      <div class="ws-id"><div class="eyebrow" id="st-eyebrow"></div><h1 id="st-h1"></h1></div>
+      <div class="ws-id"><div class="eyebrow" id="st-eyebrow"></div><h1 id="st-h1-2"></h1></div>
       <div class="ws-px mono" id="st-px"></div>
       <div class="ws-vd" id="st-vbox"><span id="st-vd"></span><span class="mono score" id="st-score"></span><span id="st-held"></span></div>
       <div class="ws-act" id="st-act" role="group" aria-label="Actions"></div>
@@ -2124,7 +2124,7 @@ tbody tr:hover td{background:var(--tint)}
       <p class="ws-cap" id="st-cap"></p>
     </div>
   </header>
-  <p class="sub ws-sub" id="st-sub"></p>
+  <p class="sub ws-sub" id="st-sub-2"></p>
   <div id="st-alert"></div>
 
   <section class="tv" id="chartbox" aria-label="Price chart" hidden>
@@ -2686,6 +2686,7 @@ const G={
  verdict_hold:["Hold","Keep it if you own it, but add nothing. If you do not own it, it is not a buy.","Score 2 of 3. Also shown for 3 of 3 when a required governance point is not assessed, with the reason."],
  verdict_reject:["Rejected","Governance failed, so the stock is out however strong its price is.","At least one of the 18 governance points is graded Bad."],
  score:["Score","How many of the three momentum rules the stock meets today.","Price at its all-time high, profit at its high, and 52-week return ahead of both indexes. Each is met or not met. A rule that could not be checked is shown as not assessed and does not count as met."],
+ run:["Run date","The date of the scan run these results come from.","Prices and profits are as of that day's close. Every row in the list shows the run date selected above the table."],
  rank:["Rank","Position by 52-week return among the stocks in the chosen index that pass the first two momentum checks. 1 is the strongest. Worked out again on every scan. Stocks that do not qualify show a dash.","The first two momentum checks are price at its all-time high and profit at its high. Stocks that pass both are ordered by 52-week return, highest first, within the index chosen in the Indices drop-down."],
  ret52:["52-week return","How much the price rose or fell over the last 52 weeks.","Closing price today divided by the closing price 52 weeks ago, minus 1. Adjusted for splits and bonuses."],
  alpha_n:["Alpha vs Nifty 500","How far the stock's 52-week return is ahead of, or behind, the Nifty 500.","Stock 52-week return minus Nifty 500 52-week return, in percentage points. Exchange index data."],
@@ -5701,8 +5702,8 @@ function critRow(key,e,i){
 function renderStock(sym){
   const known=sym&&EM[sym], e=known?EM[sym]:EM.SBIN, out=!!e.out;
   $("#st-eyebrow").textContent=e.sec;
-  $("#st-h1").innerHTML=`${esc(e.n)} <span class="mono ws-sym">${esc(e.s)}</span>`;
-  $("#st-sub").textContent=out?"Outside the scan universe. The scanner does not score it, so it has no stance score and no bucket."
+  $("#st-h1-2").innerHTML=`${esc(e.n)} <span class="mono ws-sym">${esc(e.s)}</span>`;
+  $("#st-sub-2").textContent=out?"Outside the scan universe. The scanner does not score it, so it has no stance score and no bucket."
     :`Bucket ${e.v} from the run of ${frun}. Governance, 200-day EMA and sizing data are TBD.`;
   $("#st-vd").innerHTML=out?`<span class="gp plain">Not in universe</span>`:`<span class="vd big ${e.v}">${e.v}</span>${tip("verdict")}`;
   $("#st-score").innerHTML=out?`<span class="note">Not scored</span>`:`<span class="ws-sc">${e.score}</span>${tip("score")}`;
@@ -6604,7 +6605,7 @@ $("#menu").onclick=()=>{const o=$("#nav").classList.toggle("open");$("#menu").se
 (function(){
   const root=document.documentElement, b=document.getElementById("theme");
   const sys=()=>matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";
-  function apply(t){root.dataset.theme=t; b.setAttribute("aria-pressed",t==="dark"); b.setAttribute("aria-label",t==="dark"?"Switch to light theme":"Switch to dark theme"); if($("#s-stock").classList.contains("on")) drawChart();}
+  function apply(t){root.dataset.theme=t; b.setAttribute("aria-pressed",t==="dark"); document.getElementById("theme-txt").textContent="Theme: "+t; if($("#s-stock").classList.contains("on")) drawChart();}
   let saved=null; try{saved=localStorage.getItem("ath-theme");}catch(e){}
   apply(saved||sys());
   const sk=document.getElementById("skin");
