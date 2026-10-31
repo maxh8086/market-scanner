@@ -2512,15 +2512,11 @@ tbody tr:hover td{background:var(--tint)}
       <ul class="rv-facts chk">
         <li>The calculator sizes against Net Asset Value. Investment Value is the secondary tab. Net Asset Value is Investment Value plus notional profit, or minus notional loss.</li>
         <li>No sin-business filter anywhere. The sin filter is dropped.</li>
-        <li>No positions board and no portfolio management. The system gives entry and exit signals, and a sizing calculator.</li>
+        <li>No positions board and no portfolio management. You manage your own positions. The system gives entry and exit signals, and a sizing calculator only.</li>
         <li>Scope is the universe. Holdings are checked against the exit rules after the table is built, and are not stored beyond the session.</li>
-        <li>Fundamentals are labelled "Company financials"; index data is labelled "Exchange index data".</li>
+        <li>Fundamentals are labelled "Company financials" and index data is labelled "Exchange index data". The third-party fundamentals connector is removed. Index data comes from the price-data feed already in use.</li>
         <li>No order placement and no buy or sell buttons.</li>
-        <li>The third-party fundamentals connector is removed. Financials are labelled "Company financials".</li>
         <li>The strategy drives scoring and ranking. The old analyst stance stays as a context column only.</li>
-        <li>Index data comes from the price-data feed already in use and is labelled "Exchange index data".</li>
-        <li>The governance sources file is awaiting your review.</li>
-        <li>You manage your own positions. The system gives signals and a sizing calculator only.</li>
         <li>The WhatsApp bot is the next phase.</li>
       </ul>
     </div>
@@ -2557,6 +2553,7 @@ tbody tr:hover td{background:var(--tint)}
     <div class="sect">
       <header><h2>Intentionally deferred</h2></header>
       <ul class="rv-facts bul">
+        <li>Governance sources file: awaiting your review.</li>
         <li>WhatsApp bot: the next phase. Nothing is designed here and nothing in the navigation points to it.</li>
         <li>Broker login for holdings, and testing the importer on sample broker exports: a next phase (decision 13).</li>
         <li>Automatic refresh of prices and indexes during market hours: not part of this design. Screens show a data-as-of stamp instead.</li>
@@ -2681,7 +2678,7 @@ const ic=(n,c="")=>`<svg class="${c}" aria-hidden="true"><use href="#i-${n}"/></
 /* ---------------- glossary (label, meaning, derivation) ---------------- */
 const G={
  universe:["Universe","The stocks the strategy looks at: India's 750 largest companies by market value.","Ranked by market capitalisation from exchange data. Refreshed at each weekly review."],
- verdict:["Verdict","The single call for a stock: BUY, HOLD, EXIT or REJECT. For a stock you do not own, HOLD and EXIT both mean it is not a buy.","REJECT if any governance point is Bad. Otherwise from the score: 3 of 3 is BUY (only when the required governance points are assessed), 2 of 3 is HOLD, 0 or 1 is EXIT. Below the 200-day EMA while behind the Nifty 500 is also EXIT."],
+ verdict:["Verdict","The single call for a stock: BUY, HOLD, EXIT or REJECT. For a stock you do not own, HOLD and EXIT both mean it is not a buy.","REJECT if any governance point is Bad. Otherwise from the score: 3 of 3 is BUY (only when the required governance points are assessed), 2 of 3 is HOLD, 0 or 1 is EXIT. Below the 200-day exponential moving average while behind the Nifty 500 is also EXIT."],
  verdict_buy:["Buy","All three momentum rules are met and governance passed, so new money may go in.","Score 3 of 3, no Bad governance grade, and governance points 4, 5 and 18 assessed."],
  verdict_hold:["Hold","Keep it if you own it, but add nothing. If you do not own it, it is not a buy.","Score 2 of 3. Also shown for 3 of 3 when a required governance point is not assessed, with the reason."],
  verdict_reject:["Rejected","Governance failed, so the stock is out however strong its price is.","At least one of the 18 governance points is graded Bad."],
@@ -2692,26 +2689,26 @@ const G={
  alpha_n:["Alpha vs Nifty 500","How far the stock's 52-week return is ahead of, or behind, the Nifty 500.","Stock 52-week return minus Nifty 500 52-week return, in percentage points. Exchange index data."],
  alpha_s:["Alpha vs sector","How far the stock's 52-week return is ahead of, or behind, its own sector index.","Stock 52-week return minus the 52-week return of the sector index the stock is mapped to, in percentage points. Blank when the index data is missing."],
  below_ath:["Below all-time high","How far the latest close is under the highest close on record.","(All-time high close minus latest close) divided by all-time high close. Within 2% counts as at the high."],
- pat_chg:["Adjusted profit change","Change in the last twelve months of profit after tax against the twelve months before, with one-off items taken out.","TTM profit after tax minus exceptional items (land sales, stake sales), compared with the same figure a year earlier. Company financials."],
+ pat_chg:["Adjusted profit change","Change in the last twelve months of profit after tax against the twelve months before, with one-off items taken out.","Last twelve months profit after tax minus exceptional items (land sales, stake sales), compared with the same figure a year earlier. Company financials."],
  gov:["Governance","How many of the 18 governance points have evidence, and the worst grade among them.","Each point is graded Good, Neutral or Bad from filings and company financials. Points without evidence are Not assessed."],
  gov_grade:["Governance grade","The grade for one governance point.","Good: no concern found. Neutral: some concern, not disqualifying. Bad: disqualifying, which rejects the stock. Not assessed: no evidence yet."],
  gov_required:["Required for buy","Debt, pledged shares and exceptional items must be assessed before a buy is allowed.","Points 4, 5 and 18. While any of them is Not assessed the verdict cannot be BUY, and the screen says why."],
  not_assessed:["Not assessed","The data needed to grade this point or check this rule is missing. It is never treated as good.","Shown in words wherever the data is missing. Not assessed governance points do not count as passed; a rule that could not be checked does not count as met."],
- reason:["AI Analysis","A one-line plain-words summary of what most decided the verdict. The full text is on hover and on the stock page.","Chosen by the rules in order: governance Bad, exit trigger, missing data that blocks a buy, then the first rule not met."],
+ reason:["Verdict reason","A one-line reason for the verdict. Hover to read the full text.","Chosen by the rules in order: governance Bad, exit trigger, missing data that blocks a buy, then the first rule not met."],
  crit_ath:["Price at all-time high","Whether the stock is trading at the highest price it has ever closed at.","Latest close within 2% of the all-time high close. The tolerance is 2%."],
- crit_pat:["Profit at its high","Whether the last twelve months of profit after tax are the highest in the data window, with one-offs removed.","TTM profit after tax minus exceptional items, compared with every earlier TTM figure in the data window (about 13 quarters and 12 years). It is the highest within the data window, not lifetime."],
+ crit_pat:["Profit at its high","Whether the last twelve months of profit after tax are the highest in the data window, with one-offs removed.","Last twelve months profit after tax minus exceptional items, compared with every earlier last-twelve-months figure in the data window (about 13 quarters and 12 years). It is the highest within the data window, not lifetime."],
  crit_alpha:["Ahead of both indexes","Whether the 52-week return beats both the Nifty 500 and the stock's own sector index.","Stock 52-week return greater than the Nifty 500 return and greater than the sector index return. Ahead of only one does not count."],
  data_window:["Data window","The stretch of history the profit and price checks can see.","About 13 quarters of quarterly profit and 12 years of yearly profit. Highs are highs within this window."],
  exchange_index:["Exchange index data","Index levels published by the exchange, used for the Nifty 500 and sector comparisons.","Daily index closes stored in our own database."],
  one_offs:["One-off items","Profit that will not repeat, such as a property sale or the sale of a stake.","Exceptional items reported by the company are subtracted from profit after tax before the high is tested."],
  ema200:["200-day EMA","A smoothed average of the last 200 closing prices that gives more weight to recent days.","Exponential moving average with a 200-day span on closing prices."],
- exit_rule_ema:["Moving-average exit","A hard exit when the price is below its 200-day EMA and the stock is behind the Nifty 500.","Both must be true: latest close under the 200-day EMA, and 52-week return under the Nifty 500 return."],
- exit_trigger:["Exit trigger","A rule that says to exit a holding, in plain words.","Score of 1 of 3 or lower, or below the 200-day EMA while behind the Nifty 500."],
+ exit_rule_ema:["Moving-average exit","A hard exit when the price is below its 200-day exponential moving average and the stock is behind the Nifty 500.","Both must be true: latest close under the 200-day exponential moving average, and 52-week return under the Nifty 500 return."],
+ exit_trigger:["Exit trigger","A rule that says to exit a holding, in plain words.","Score of 1 of 3 or lower, or below the 200-day exponential moving average while behind the Nifty 500."],
  analyst_stance:["Analyst stance (context)","The older six-pillar read of the company: Constructive, Mixed or Cautious.","From the earlier scorecard on filings and financials. It is context and no longer drives ranking."],
  trade_risk:["Trade risk","The share of the price you would lose if the stock fell to your exit.","(Buy price minus exit price) divided by buy price."],
- risk_per_position:["Risk per position","The most you are willing to lose on one stock, as a share of the chosen base.","18% maximum drawdown divided by 15 stocks is 1.2%. You can change it."],
- exit_price:["Exit price","The price at which you will sell if the stock falls to it. Decide it before you buy.","Proposal: the lower of the 200-day EMA and 80% of the buy price, kept within 5% to 30% trade risk. Your own price always wins."],
- alloc:["Allocation","How much of the base goes into this stock.","Risk per position divided by trade risk. Buy at 100 with exit at 80 is 20% risk, so 1.2% / 20% = 6%."],
+ risk_per_position:["Risk per position","The most you are willing to lose on one stock, as a share of the chosen base.","18% total loss budget divided by 15 stocks is 1.2%."],
+ exit_price:["Exit price","The price you set before buying, to sell at if the stock falls to it. Position sizing uses it.","Suggested value: the lower of the 200-day exponential moving average and 80% of the buy price. The suggestion stays between 5% and 30% below the buy price. A price you type replaces it."],
+ alloc:["Allocation","How much of the base goes into this stock.","Risk per position divided by the percentage fall from buy price to exit. Buy at 100 with exit at 80 is a 20% fall, so 1.2% / 20% = 6%."],
  allocation_cap:["Largest allocation","A ceiling on any one position, as a share of Net Asset Value.","Default 15%. A very tight exit would otherwise ask for a huge position."],
  investment_value:["Investment Value","The total cost of what is invested in your portfolio today.","Sum of quantity times average cost over your holdings. You type it."],
  notional_pnl:["Notional profit or loss","The gain or loss on paper on your holdings, not yet sold.","Current market value of holdings minus Investment Value. Enter a negative number for a loss."],
@@ -2724,7 +2721,7 @@ const G={
  add_hold_trim:["Add, Hold or Trim","What the target size means for shares you already own.","Target quantity minus quantity held. Never advises adding when the price is below your average cost."],
  rank_chg:["Rank Change","Places moved since the previous scan of this index (the run date is shown). Up means a better rank. New means it was not ranked in the previous scan. A stock can move only because others moved. A rank change never changes the verdict.","Rank in the previous completed scan of the same index minus rank in this scan. Scans run on market days only, so the previous scan is not always the previous calendar day."],
  held:["You hold","Marks stocks that are in the holdings you loaded this session.","Matches symbols from your holdings. Not stored after the session."],
- not_in_universe:["Not in universe","The stock is not in the top 750, so only what can be computed is tested.","Price, 200-day EMA and 52-week return can be computed; profit history, sector index and governance may not be."],
+ not_in_universe:["Not in universe","The stock is not in the top 750, so only what can be computed is tested.","Price, 200-day exponential moving average and 52-week return can be computed; profit history, sector index and governance may not be."],
  change_entry:["Change since entry","How much the price has moved since your average cost.","(Last price minus average price) divided by average price."],
  exit_watch:["Exit watch","Holdings currently triggering an exit rule.","Count of loaded holdings with at least one exit trigger."]
 };
@@ -2735,7 +2732,7 @@ const tip=k=>`<button type="button" class="info" data-tip="${k}" aria-label="Abo
 /* extra glossary keys for the Stocks list: Object.assign(G,{key:[label,meaning,derivation]}) */
 Object.assign(G,{
  rules3:["Momentum rules","The three tests a stock must pass to be a buy: price at its all-time high, profit at its high, and a 52-week return ahead of both the Nifty 500 and its sector index.","Each test is scored met, not met or not assessed. Not assessed never counts as met. Three of three is a buy, two of three is a hold, and one or none is an exit."],
- verdict_exit:["Exit","Sell if you own it. If you do not own it, it is not a buy.","Score of 1 of 3 or lower, or the price is below the 200-day EMA while the stock is behind the Nifty 500."],
+ verdict_exit:["Exit","Sell if you own it. If you do not own it, it is not a buy.","Score of 1 of 3 or lower, or the price is below the 200-day exponential moving average while the stock is behind the Nifty 500."],
  strat_sector:["Sector","The industry group a company belongs to. Use it to narrow the list.","Each company is mapped to one sector, which is also the index it is compared with."],
  st_indices:["Indices","Pick the index whose stocks you want to see. Rank and Rank Change are worked out inside the chosen index. Nifty All Cap covers almost every stock.","The scan runs once, on Nifty All Cap. Each stock is tagged with every index it belongs to, and this list is filtered by that tag. One stock is one row."],
  st_last_assess:["Last assessment results","What the latest scan found, in one place: when it ran, how many stocks it covered and what each verdict means.","The same counts are on the filter chips above the list. Select a chip to show only those stocks."],
@@ -2749,11 +2746,11 @@ Object.assign(G,{
  rsi14:["RSI 14","A 0 to 100 gauge of how fast the price has been rising or falling over the last 14 periods. Above 70 is often called stretched, below 30 washed out.","Relative Strength Index, 14 periods, Wilder smoothing of average gains against average losses."],
  ema50:["50 EMA","A smoothed average of the last 50 closing prices that gives more weight to recent days. It shows the medium-term trend.","Exponential moving average with a 50-day span on daily closing prices. On weekly and monthly charts it is still the daily line."],
  dma200:["200 DMA","The plain average of the last 200 daily closing prices. A long-term trend line that many investors watch.","Simple moving average over 200 trading days. It stays 200 days on weekly and monthly charts."],
- exit_line:["Exit line","The price level where this system would exit if you hold the stock. It is drawn from the 200-day EMA.","The 200-day exponential moving average of daily closes. The position sizing page turns it into a proposed exit price."],
- cross50_200:["50 EMA against 200 DMA","Whether the medium-term average sits above or below the long-term one. Above means the trend has been rising lately.","50-day EMA divided by 200-day simple average, minus 1, in percent."],
+ exit_line:["Exit line","The 200-day exponential moving average, drawn on the chart. Exit prices are in Exit price and Exit line on the holdings page.","The 200-day exponential moving average of daily closes. The position sizing page turns it into a proposed exit price."],
+ cross50_200:["50 EMA against 200 DMA","Whether the medium-term average sits above or below the long-term one. Above means the trend has been rising lately.","50-day exponential moving average divided by 200-day simple average, minus 1, in percent."],
  range52:["52-week range","Where today's close sits between the lowest low and the highest high of the last 52 weeks. 0% is the low, 100% is the high.","(Close minus 52-week low) divided by (52-week high minus 52-week low). Uses the daily high and low."],
  vol_avg:["Volume against 20-day average","Today's traded shares compared with the usual daily amount. Above 1.5 times means unusually heavy trading.","Latest day's volume divided by the average volume of the last 20 trading days."],
- delivery_pct:["Delivery","The part of the day's traded shares that were taken for delivery into a demat account, not squared off the same day. A high share suggests buyers who intend to hold.","Delivered quantity divided by total traded quantity, from the exchange's daily delivery data. The darker part of each volume bar is the delivered share."],
+ delivery_pct:["Delivery","The part of the day's traded shares that were taken into a demat account to be held, rather than bought and sold again the same day. A high share suggests buyers who intend to hold.","Delivered quantity divided by total traded quantity, from the exchange's daily delivery data. The darker part of each volume bar is the delivered share."],
  events:["Chart events","Markers placed on the day each event happened: results (E), dividends (D), splits and bonus (S), exchange filings (N) and verdict changes (V). Use Next event and Previous event to step through them.","Results, dividends and splits come from exchange corporate action data, filings from the filings the scanner reads, verdict changes from our own history."],
  peers:["Peer comparison","The stock next to similar companies: first those in the same sector index, then the nearest by 52-week return. Values here are samples.","Same sector index first, ordered by how close the 52-week return is to this stock. Market cap, P/E and other figures are company financials."],
  mcap:["Market cap","The total value of all the company's shares at today's price, shown in crore rupees (1 crore is 10 million).","Share price times number of shares in issue."],
@@ -2784,21 +2781,21 @@ Object.assign(G,{
  unmatched:["Unmatched","Rows whose stock could not be identified. They are listed and left out, never guessed.","Identity is tried by exact NSE symbol first, then by name. A name match needs your confirmation. A row with neither stays unmatched."],
  needs_confirm:["Needs confirmation","A name match that is probably right but is not applied until you tick it.","The file name is compared with company names and symbols once suffixes such as Ltd are dropped. Nothing is merged silently."],
  distance_exit:["Distance to exit","How far the exit line is below the last price, as a share of the price.","(Exit line minus last price) divided by last price. A larger gap means more room before the exit, and more open risk."],
- risk_budget_total:["Open risk budget","The most total open risk the portfolio should carry: 18% of Net Asset Value.","The strategy's 18% maximum drawdown. Total open risk is the sum of open risk over every holding."],
+ risk_budget_total:["Open risk budget","The most total open risk the portfolio should carry: 18% of Net Asset Value.","The strategy's 18% limit on total open risk."],
  not_scored:["Not scored","The strategy does not score mutual funds and ETFs, so they get no verdict. They still count for allocation and risk.","No governance check or momentum rules are run on them."],
  assumed_fall:["Assumed fall for funds and ETFs","Funds and ETFs have no exit line. This is the fall in price you assume so their open risk can be counted.","Open risk = value times the assumed fall. Default 10%. Change it to test other cases."],
- hold_review:["Review Holding","Tests each stock you hold against the exit rules and your risk limits. Run it again whenever you want a fresh look.","Each holding gets the same checks as the universe: score, the 200-day EMA exit rule, open risk and weight. Funds and ETFs count for risk but are not scored."],
+ hold_review:["Review Holding","Tests each stock you hold against the exit rules and your risk limits. Run it again whenever you want a fresh look.","Each holding gets the same checks as the universe: score, the 200-day exponential moving average exit rule, open risk and weight. Funds and ETFs count for risk but are not scored."],
  hold_last_reviewed:["Last reviewed","When the assessment of your holdings was last run in this browser, and the data date it used.","The stamp is kept in this browser only. Position sizing needs it, because open risk and room in the portfolio depend on the assessed holdings."],
- hold_exit_line:["Exit line","The price at which a holding would be sold under the exit price rule.","Stocks: the lower of the 200-day EMA and 80% of the last price, kept between 5% and 30% below it. Funds and ETFs: the assumed fall."]
+ hold_exit_line:["Exit line","The price at which a holding you own would be sold. Review Holding works it out from the last price, not the buy price.","Stocks: the lower of the 200-day exponential moving average and 80% of the last price, kept between 5% and 30% below the last price. Funds and ETFs: no exit line (see Assumed fall for funds and ETFs)."]
 });
 
 /* ==== src/gloss_sizing.js ==== */
 /* extra glossary keys for the sizing page: Object.assign(G,{key:[label,meaning,derivation]}) */
 Object.assign(G,{
- sizing_shares:["Shares to buy","The whole number of shares that keeps the loss at your exit within the risk budget. It is worked out only from the numbers you typed.","Amount to invest divided by the buy price, rounded down. Amount to invest is the risk budget divided by trade risk, then cut back to the position cap and to cash if either is lower."],
+ sizing_shares:["Shares to buy","The whole number of shares that keeps the loss at your exit within the risk budget. It is worked out only from the numbers you typed.","Amount to invest divided by the buy price, rounded down. Amount to invest is the risk budget divided by the percentage fall from buy price to exit, then cut back to the position cap and to cash if either is lower."],
  sizing_position_value:["Position value","What the whole position costs at your planned buy price, including any shares you already hold.","Final quantity times the buy price."],
  sizing_loss_at_exit:["Risk if exit is hit","The rupees you would lose if the price fell to your exit, and what that is as a share of your Net Asset Value.","Final quantity times (buy price minus exit price). The percentage divides that by Net Asset Value."],
- sizing_cap_applied:["Position cap","Says whether the rule asked for more than the largest allocation, so the position was cut back to the cap.","Applied when risk budget divided by trade risk is above the largest allocation as a share of Net Asset Value."],
+ sizing_cap_applied:["Position cap","Says whether the rule asked for more than the largest allocation, so the position was cut back to the cap.","Applied when risk budget divided by the percentage fall from buy price to exit is above the largest allocation as a share of Net Asset Value."],
  sizing_room:["Portfolio room","How much of the open risk budget is still free after this position is added to the holdings you already review.","Open risk of your other holdings plus the loss at exit of this position, divided by Net Asset Value, against the 18% budget. Room is the budget minus that total."],
  sizing_review_first:["Holdings review","The assessment of the stocks you hold. Sizing needs it so the open risk of your holdings is known before a new position is added.","Run from the Review Holding page or from the button here. The result is kept in this browser."],
  sizing_held_qty:["Quantity already held","How many shares of this stock you own now. The result then says whether to add, hold or trim.","Optional. Target quantity minus this number gives the shares to add or trim."]
@@ -2812,7 +2809,7 @@ Object.assign(G,{
  review_holdings_input:["Holdings input","How your positions get into the tool: two typed totals, or an Excel or CSV upload where the columns are mapped.","Totals only feed the position-sizing calculator. An upload also feeds Review Holding. Broker login is a next phase."],
  review_mf_etf:["Mutual funds and ETFs","Funds in your import. They count toward your total allocation and risk, but the strategy does not score them.","Included in total allocation and risk management figures, left out of scoring and verdicts."],
  review_chart_events:["Chart events","Dated markers on the price chart that show what happened around a price move.","Results, dividends, splits and bonus, filings and verdict changes, each placed on its date."],
- review_gloss_tips:["Glossary tooltips","The short explanation that opens when you hover or focus a label with a dotted underline.","The text comes from the shared glossary, the same one used for the Excel header comments."]
+ review_gloss_tips:["Glossary tooltips","The short explanation that opens when you hover or focus a label with a dotted underline.",""]
 });
 
 /* ==== src/gloss_stock_tools.js ==== */
@@ -2823,9 +2820,9 @@ Object.assign(G,{
   ct_pct_scale:["% scale","Shows the price axis as percent change from the first bar you can see instead of rupees. Handy for comparing how far a move has gone.","(price / first visible close - 1) x 100"],
   ct_auto_scale:["Auto scale","When on, the price axis refits to the bars in view every time you zoom or pan. Turn it off to keep the price axis fixed while you scroll through time.",""],
   ct_bb:["Bollinger Bands","A 20-day average with a band two standard deviations above and below it. The bands widen when the price swings a lot and narrow when it is calm.","Middle = 20-day average of closes. Upper and lower = middle plus or minus 2 x the standard deviation of the last 20 closes."],
-  ct_macd:["MACD","Moving Average Convergence Divergence. The gap between a fast and a slow average, a signal line, and bars for the distance between them. Bars above zero mean the fast average is above the slow one.","MACD = 12-day EMA minus 26-day EMA. Signal = 9-day EMA of the MACD. Bars = MACD minus signal. Daily closes."],
+  ct_macd:["MACD","Moving Average Convergence Divergence. The gap between a fast and a slow average, a signal line, and bars for the distance between them. Bars above zero mean the fast average is above the slow one.","MACD = 12-day exponential moving average minus 26-day exponential moving average. Signal = 9-day exponential moving average of the MACD. Bars = MACD minus signal. Daily closes."],
   ct_vwap:["VWAP","Volume-weighted average price. The average price paid over the last 20 days, counting heavily traded days more. Price above it means recent buyers are in profit.","Sum of (typical price x volume) over 20 days divided by the sum of volume. Typical price = (high + low + close) / 3."],
-  ct_supertrend:["Supertrend","A trailing line that sits below the price in an uptrend (green) and above it in a downtrend (red). It flips colour when the price closes through it.","Midpoint of the day plus or minus 3 x the 10-day average true range, ratcheted so it only moves in the trend's direction."],
+  ct_supertrend:["Supertrend","A trailing line that sits below the price in an uptrend (green) and above it in a downtrend (red). It flips colour when the price closes through it.","Midpoint of the day plus or minus 3 x the 10-day average true range, adjusted so it only moves in the direction of the trend."],
   ct_donchian:["Donchian Channels","The highest high and the lowest low of the last 20 days. A close at the top edge is a 20-day breakout.","Upper = highest high of 20 days. Lower = lowest low of 20 days."],
   ct_alert:["Chart alert","A message from the WhatsApp bot when the price crosses a level you pick, or when the strategy verdict for this stock changes. It never places an order.",""]
 });
@@ -2833,7 +2830,7 @@ Object.assign(G,{
 /* ==== src/gloss_stock_draw.js ==== */
 /* glossary keys for stock_draw (prefix "dr_"). Shown through the shared popover: data-tip="dr_..." on rail buttons and menu items. */
 Object.assign(G,{
- dr_magnet:["Magnet","Pulls the point you place onto the nearest candle price, so lines start and end exactly on a high, low, open or close. Weak only snaps when you are already close to a price. Strong always snaps to the nearest of the four prices on the candle under the pointer.","Compares the pointer height with the open, high, low and close of the candle under it. Weak snaps within about 14 pixels, strong always snaps."],
+ dr_magnet:["Magnet","Snaps the point you place to the nearest open, high, low or close of the candle under the pointer. Lines then start and end on a real price. Weak snaps only when the pointer is close to one of those prices. Strong always snaps.","Compares the pointer height with the open, high, low and close of the candle under it. Weak snaps within about 14 pixels. Strong always snaps to the nearest of the four."],
  dr_fib:["Fib retracement","Horizontal levels between two points at 0, 23.6, 38.2, 50, 61.8, 78.6 and 100 percent of the move. Traders watch them as places where a pullback may pause. It is a drawing aid only and it does not change any score.","Level price = end price + (start price - end price) x level. Level 0 sits on the end point, level 1 on the start point."],
  dr_fibext:["Fib extension","Projects levels beyond a move, using three points: the start and end of the first move, then where the pullback ended. Levels at 0, 61.8, 100, 127.2, 161.8 and 261.8 percent show where a continued move could reach.","Level price = third point + (end price - start price) x level."],
  dr_ruler:["Ruler","Click two points to read the move between them: the price change, the percent change, the number of candles and the number of calendar days. The ruler is temporary and disappears when you click away.","Percent = (second price / first price - 1) x 100. Candles are counted on the timeframe you are viewing. Days are calendar days."],
@@ -2848,7 +2845,7 @@ Object.assign(G,{
 /* glossary keys for stock_fund (Fundamentals and Technicals tabs). Prefix fd_. */
 Object.assign(G,{
  fd_fin:["Company financials","The company's reported results: profit and loss, cash flow, balance sheet and who owns the shares. Values on this page are samples.","Quarterly and yearly figures from the company's exchange filings, stored in our own database."],
- fd_pnl:["Profit and loss","What the company earned and spent in each period, from sales down to net profit. One-off items sit on their own line so they can be taken out.","Each column is one quarter or one financial year. The TTM column adds up the last four quarters."],
+ fd_pnl:["Profit and loss","What the company earned and spent in each period, from sales down to net profit. One-off items sit on their own line so they can be taken out.","Each column is one quarter or one financial year. The TTM column (last twelve months) adds up the last four quarters."],
  fd_ttm:["TTM","Trailing twelve months: the last four reported quarters added together. It smooths out the season and is the figure the profit rule uses.","Sum of the latest four quarters. Not the same as the last financial year until the year ends."],
  fd_sales:["Sales","Money the company earned from selling its products and services, before any cost.","Revenue from operations as reported, in crore rupees."],
  fd_op:["Operating profit","What is left of sales after the cost of running the business, before interest, depreciation and tax. Other income is not included.","Sales minus operating expenses, in crore rupees."],
@@ -2859,15 +2856,15 @@ Object.assign(G,{
  fd_pbt:["Profit before tax","Profit after interest and depreciation and before income tax. One-off items are shown on their own line below.","Operating profit plus other income, minus interest and depreciation."],
  fd_tax:["Tax %","The share of profit before tax that went to income tax.","(Profit before tax minus profit after tax before one-offs) divided by profit before tax."],
  fd_net:["Net profit","Profit after tax as reported, including any one-off items. This is the figure that earnings per share is worked out from.","Profit before tax, less tax, plus one-off items. One-offs are shown after tax and are not taxed again here."],
- fd_adj:["Adjusted profit after tax","Net profit with the one-off items taken out. It is the figure the Profit at its high rule tests.","Net profit minus one-off items. The TTM figure is the one on the Verdict."],
+ fd_adj:["Adjusted profit after tax","Net profit with the one-off items taken out. It is the figure the Profit at its high rule tests.","Net profit minus one-off items. The last-twelve-months figure is the one on the Verdict."],
  fd_eps:["EPS","Earnings per share: net profit divided by the number of shares. It is the profit that belongs to one share.","Net profit divided by the shares in issue, as shown under the table."],
  fd_growth:["Growth","How much a figure changed against the same period a year earlier. Quarters are compared with the same quarter a year ago so the season does not distort them.","(This period divided by the same period a year earlier) minus 1. The yearly view also shows a three-year compound rate."],
- fd_ttmchart:["Adjusted TTM profit","The profit rule drawn over time: each bar is the last twelve months of profit after tax with one-offs taken out. The green bar is the highest within the data window.","Same figure as the Verdict. The line shows the reported TTM profit with one-offs left in, so you can see how much the one-offs moved it."],
+ fd_ttmchart:["Adjusted last twelve months profit","The profit rule drawn over time: each bar is the last twelve months of profit after tax with one-offs taken out. The green bar is the highest within the data window.","Same figure as the Verdict. The line shows the reported last twelve months profit with one-offs left in, so you can see how much the one-offs moved it."],
  fd_ratios:["Margins and returns","How well the company turns sales and capital into profit, and how much debt it carries. Read each against the sector, not alone.","Worked out from the figures in the tables on this tab. Price ratios use today's close."],
- fd_roe:["ROE","Return on equity: yearly profit as a share of the money shareholders have in the company. Higher is better if it is not bought with heavy debt.","Adjusted TTM profit after tax divided by net worth."],
- fd_roce:["ROCE","Return on capital employed: how much operating profit the company makes on all the money in the business, borrowed and its own.","(Profit before tax plus interest) divided by (net worth plus borrowings), on TTM figures."],
+ fd_roe:["ROE","Return on equity: yearly profit as a share of the money shareholders have in the company. Higher is better if it is not bought with heavy debt.","Adjusted last twelve months profit after tax divided by net worth."],
+ fd_roce:["ROCE","Return on capital employed: how much operating profit the company makes on all the money in the business, borrowed and its own.","(Profit before tax plus interest) divided by (net worth plus borrowings), on last twelve months figures."],
  fd_de:["Debt to equity","How many rupees the company has borrowed for each rupee of its own money. Above 1 means it owes more than it owns.","Borrowings divided by net worth, from the latest balance sheet."],
- fd_icr:["Interest cover","How many times operating earnings cover the interest bill. Below 2 is thin. Very high means little debt.","(Profit before tax plus interest) divided by interest, on TTM figures."],
+ fd_icr:["Interest cover","How many times operating earnings cover the interest bill. Below 2 is thin. Very high means little debt.","(Profit before tax plus interest) divided by interest, on last twelve months figures."],
  fd_cf:["Cash flow","Where the company's cash actually came from and went. Profit can be on paper, cash is in the bank.","Three yearly totals: operating, investing and financing. Free cash flow is operating cash less capital spending."],
  fd_cfo:["Operating cash flow","Cash the business itself produced in the year, after working capital moves. The cleanest sign that profit is real.","Net profit plus depreciation, adjusted for money tied up in receivables and stock."],
  fd_capex:["Capital expenditure","Money spent on buying or building machines, plants and other long-lived assets.","As reported in the cash flow statement."],
@@ -2880,7 +2877,7 @@ Object.assign(G,{
  fd_borrow:["Borrowings","Loans and bonds the company owes, short and long term.","As reported on the balance sheet."],
  fd_fixed:["Fixed assets","Land, buildings, machines and other long-lived things the company uses to earn money.","Net block after depreciation, as reported."],
  fd_sh:["Shareholding pattern","Who owns the company's shares: promoters (the founding group), foreign institutions, domestic institutions and the public. Changes since last quarter can show who is buying or selling.","Reported by the company to the exchange every quarter. The four groups add up to 100%."],
- fd_promoter:["Promoters","The founders or controlling group. A falling promoter share is worth a look, a very low one means the company has no clear owner.","Percent of all shares held by the promoter group."],
+ fd_promoter:["Promoters","The founders or controlling owners of the company.","Percent of all shares held by the promoter group, as shown in the shareholding pattern."],
  fd_fii:["FIIs","Foreign institutional investors: overseas funds that own shares. They can move quickly in and out.","Percent of all shares held by registered foreign portfolio investors."],
  fd_dii:["DIIs","Domestic institutional investors: Indian mutual funds, insurers and banks.","Percent of all shares held by Indian institutions."],
  fd_public:["Public","Everyone else: individuals, small companies and trusts holding shares.","Percent of all shares not held by promoters or institutions. It is the balance that makes the total 100%."],
@@ -2892,7 +2889,7 @@ Object.assign(G,{
  fd_ema:["EMA","Exponential moving average: an average that reacts faster to new prices than the simple one.","Each day's EMA is today's close weighted by 2 divided by (N plus 1), plus the previous EMA weighted by the rest."],
  fd_osc:["Oscillators","Gauges that swing between extremes to show if a move looks stretched or washed out, or is gaining or losing strength. Each one votes on its own rule, shown in the last column.","Computed from daily open, high, low, close. The rules are the common textbook ones."],
  fd_stoch:["Stochastic %K","Where today's close sits between the lowest low and highest high of the last 14 days, on a 0 to 100 scale. Above 80 is stretched, below 20 is washed out.","%K = (close minus 14-day low) divided by (14-day high minus 14-day low) times 100, smoothed over 3 days. %D is a 3-day average of %K."],
- fd_macd:["MACD","The gap between a fast (12-day) and a slow (26-day) EMA. When it is above its 9-day signal line, momentum is rising.","MACD line = 12-day EMA minus 26-day EMA. Signal line = 9-day EMA of the MACD line. Buy above the signal, Sell below."],
+ fd_macd:["MACD","The gap between a fast (12-day) and a slow (26-day) EMA. When it is above its 9-day signal line, momentum is rising.","MACD line = 12-day exponential moving average minus 26-day exponential moving average. Signal line = 9-day exponential moving average of the MACD line. Buy above the signal, Sell below."],
  fd_cci:["CCI","Commodity Channel Index: how far the typical price is from its 20-day average, in units of normal swing. Above +100 is stretched, below -100 is washed out.","(Typical price minus its 20-day average) divided by (0.015 times the mean deviation). Typical price = (high + low + close) / 3."],
  fd_adx:["ADX","Average Directional Index: how strong the trend is, not which way. Above 25 is a real trend. The direction comes from +DI against -DI.","Wilder's 14-day smoothing of directional movement. Buy if ADX is above 25 and +DI is above -DI, Sell if ADX is above 25 and -DI is above +DI, else Neutral."],
  fd_willr:["Williams %R","Like Stochastic but upside down: where the close sits against the 14-day high, from 0 (at the high) to -100 (at the low). Above -20 is stretched, below -80 is washed out.","(14-day high minus close) divided by (14-day high minus 14-day low), times -100."],
@@ -2927,12 +2924,12 @@ Object.assign(G,{
 /* ==== src/gloss_stock_ai.js ==== */
 /* Glossary keys for the stock workspace header, the Your position tab and Ask AI. Prefix ai_. */
 Object.assign(G,{
- ai_ask:["Ask AI","A chat box that answers questions about this stock from our own databases only. It shows the row or filing behind each answer and cannot place orders.","In the product a local model writes the reply from the rows the scanner already holds. Nothing is sent to an outside service."],
+ ai_ask:["Ask AI","A chat box that answers questions about this stock. Each answer shows the data it came from. It cannot place orders.","Answers use only data the scanner already holds. Figures that are missing show as not assessed."],
  ai_sources:["Sources","The rows and filings the answer was taken from. Select one to jump to that part of this page.","Each answer lists the table row, governance point or filing it used. If a figure is missing the answer says not assessed."],
  ai_position:["Your position","What you hold in this stock from the holdings you loaded, with the exit checks that apply to it.","Quantity, average cost and last price come from your holdings file. Exit line and open risk use the same rules as the Review Holding page."],
  ai_value:["Current value","What your shares in this stock are worth at the last close.","Quantity times last close."],
  ai_gain:["Gain or loss","The rupee gain or loss on the shares you hold, against what you paid.","Current value minus quantity times average cost. The percent is that gain divided by the cost."],
- ai_exit_checks:["Exit checks","The three checks that decide whether to keep holding: the score, the 200-day EMA and the 52-week return against the Nifty 500.","The score check triggers at 1 of 3 or lower. The moving-average exit triggers when the price is below the 200-day EMA and the stock is also behind the Nifty 500. Each is shown as Clear or Triggered."],
+ ai_exit_checks:["Exit checks","The three checks that decide whether to keep holding: the score, the 200-day exponential moving average and the 52-week return against the Nifty 500.","The score check triggers at 1 of 3 or lower. The moving-average exit triggers when the price is below the 200-day exponential moving average and the stock is also behind the Nifty 500. Each is shown as Clear or Triggered."],
 });
 
 const GLOSS_KEYS=Object.keys(G);

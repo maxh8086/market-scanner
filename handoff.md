@@ -38,17 +38,16 @@ Source: `ui/wireframes/strategy.html`, "For review" screen (`#/review`). Nothing
 **Pending: proposals for the user (5, none approved)**
 P1 Sticky verdict header; P2 Compare two stocks (after first release); P3 Saved filters (browser storage); P4 Exit watch count in navigation; P5 Sortable columns and column chooser.
 
-**Pending: "Decided by you" section cleanup (needs user yes)**
-Items 5, 7, 9 repeat the Company financials and Exchange index data labels; items 3 and 11 repeat each other; item 10 (governance sources file awaiting review) is a task, not a decision.
+**Done: "Decided by you" cleanup (2026-10-31)**
+Merged the duplicates into 8 items; the governance sources file note moved to "Intentionally deferred".
 
 **Pending: wireframe work**
-- Item 8 glossary wording (exit_price vs hold_exit_line, dr_magnet, fd_cfo and fd_promoter claims, ai_ask and review_gloss_tips implementation details, reason label "AI Analysis", define TTM/EMA/squared off/ratcheted/trade risk/drawdown). Drafted, awaiting the user's answer on applying it. fd_cfo formula text needs a data-source check. All seven suspect keys (exchange_index, exit_watch, gov_grade, gov_required, log_scale, rank_chg, st_size) are in fact listed by the glossary screen, so keep them.
-- Re-test the stock page at phone and tablet widths now that the chart and tabs are visible.
-- Review screen overlap (UI implementation notes text over the proposal cards): fixed, uncommitted. Cause was the class `dot` on the two `.rv-facts` lists matching the global `.dot{width:6px;height:6px}` rule; renamed to `bul`.
+- Item 8 glossary wording applied (2026-10-31) except `fd_cfo`, left as is: its formula text still needs a data-source check. All seven suspect keys are kept (the glossary screen lists every key). Old terms (200-day EMA, TTM, Trade risk) remain in text outside `G`: legend near line 2085, chart-features note, JS-built strings, proposal text.
+- Phone (375px) and tablet (768px) re-test with the chart and tabs visible: passed, no sideways page scroll on any screen, 12 tabs, chart 1218px tall at tablet. A visual check on a real screenshot is still not done.
+- Review screen overlap (UI implementation notes text over the proposal cards): fixed and committed. Cause was the class `dot` on the two `.rv-facts` lists matching the global `.dot{width:6px;height:6px}` rule; renamed to `bul`.
 - Stock page findings not fixed: legend clipped at phone width, four `.tbl-wrap` scroll areas without keyboard access, tooltip trigger spans lost accessible name, truncated sector eyebrow, fixed `.tl-in` height 340px.
 - Sizing is not in the menu (only in-page links); confirm whether intended.
 - One unexplained route jump (theme toggle click ended on `#/stock/HAL`) and a menu that stayed open once; not reproduced.
-- Commit the unhide change; push `64da241`.
 - After sign-off: wire the wireframe to `config/glossary.json` (still `{}`), then the Node build.
 
 
