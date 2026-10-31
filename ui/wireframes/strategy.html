@@ -2205,10 +2205,11 @@ body.st-page #st-handle{display:flex}
     <div class="chiprow" style="margin-top:12px">
       <span class="chiplab"><span class="tipl" data-tip="events" tabindex="0">Events on the chart</span> </span>
       <div class="chips" role="group" aria-label="Events on the chart" id="ev-chips">
-        <button type="button" class="chip" data-ev="E" aria-pressed="true"><i style="background:#4F46E5">E</i>Results</button>
+        <button type="button" class="chip" data-ev="R" aria-pressed="true"><i style="background:#4F46E5">R</i>Results</button>
         <button type="button" class="chip" data-ev="D" aria-pressed="true"><i style="background:#B45309">D</i>Dividends</button>
-        <button type="button" class="chip" data-ev="S" aria-pressed="true"><i style="background:#7C3AED">S</i>Splits and bonus</button>
-        <button type="button" class="chip" data-ev="N" aria-pressed="true"><i style="background:#475569">N</i>Filings</button>
+        <button type="button" class="chip" data-ev="S" aria-pressed="true"><i style="background:#7C3AED">S</i>Splits</button>
+        <button type="button" class="chip" data-ev="B" aria-pressed="true"><i style="background:#0F766E">B</i>Bonus</button>
+        <button type="button" class="chip" data-ev="F" aria-pressed="true"><i style="background:#475569">F</i>Filings</button>
         <button type="button" class="chip" data-ev="V" aria-pressed="true"><i class="vk" style="background:var(--evv)">V</i>Verdict changes</button>
       </div>
     </div>
@@ -2287,7 +2288,7 @@ body.st-page #st-handle{display:flex}
   <div class="tabpane" role="tabpanel" id="p-ca" aria-labelledby="xt-p-ca" hidden>
     <div class="sect">
       <header><h2><span class="tipl" data-tip="corp_action" tabindex="0">Corporate actions</span> </h2><span class="hint">Past and upcoming. The timeline scrolls sideways. Upcoming actions have a dashed outline.</span></header>
-      <div class="bar"><div class="seg" id="ca-mode" role="group" aria-label="Kind of action"><button type="button" data-v="all" aria-pressed="true">All</button><button type="button" data-v="D" aria-pressed="false">Dividend</button><button type="button" data-v="S" aria-pressed="false">Bonus and split</button><button type="button" data-v="O" aria-pressed="false">Other</button></div></div>
+      <div class="bar"><div class="seg" id="ca-mode" role="group" aria-label="Kind of action"><button type="button" data-v="all" aria-pressed="true">All</button><button type="button" data-v="D" aria-pressed="false">Dividend</button><button type="button" data-v="S" aria-pressed="false">Split</button><button type="button" data-v="B" aria-pressed="false">Bonus</button><button type="button" data-v="O" aria-pressed="false">Other</button></div></div>
       <div class="tl" id="tl" tabindex="0" role="region" aria-label="Corporate actions timeline, scrolls sideways"></div>
     </div>
   </div>
@@ -2906,7 +2907,7 @@ Object.assign(G,{
  mo_gov_table:["The 18 governance points","Every point the strategy checks, with its grade, the evidence behind the grade, and where the evidence came from. One Bad grade rejects the stock. Not assessed points are never counted as a pass.","Each point is graded Good, Neutral or Bad from filings and company financials. A point with no evidence on file is Not assessed."],
  mo_gov_blocker:["What blocks a buy","The one governance reason a buy is not allowed today, in words. It says so plainly when governance is not the reason.","A Bad grade on any point rejects the stock. Otherwise a buy waits until the required points (4, 5 and 18) are assessed."],
  mo_timeline:["Events and filings","Everything that happened to the stock, newest first, grouped by month. Each row matches a marker on the price chart, and Show on chart takes you to it.","Results, dividends and splits come from exchange corporate action data, filings from the filings the scanner reads, verdict changes from our own history."],
- mo_ev_kinds:["Event kinds","Letters match the chart markers. E is results, D is dividends, S is splits and bonus issues, N is exchange filings and V is verdict changes. Turn a kind off to hide its rows.","The same five kinds as the chips under the price chart. The count is the number of rows of that kind."],
+ mo_ev_kinds:["Event kinds","Letters match the chart markers. R is results, D is dividends, S is splits, B is bonus issues, F is exchange filings and V is verdict changes. Filings show an importance of High, Medium or Low. Turn a kind off to hide its rows.","The same six kinds as the chips under the price chart. The count is the number of rows of that kind."],
  mo_screens:["Saved screens","Ready-made filters. Click one to load its rules into the builder and see the stocks that match today.","Each screen is a short list of rules on the same fields as the Stocks list, applied to the scan universe."],
  mo_builder:["Filter builder","Build your own screen. Each row is one rule: a field, a test and a value. A stock must pass every row to appear.","Rows are combined with AND. Press Apply to run them. Fields are the same measures used across the app."],
  mo_results:["Screen results","The stocks that pass every rule of the screen, in the same order as the Stocks list. Click a row to open the stock page, or use Quick view for a short summary.","Verdict, score, below high and 52-week return are the scanner's own figures for each stock."],
@@ -3532,38 +3533,44 @@ function haOf(t){
 }
 
 /* ----- events on the chart and in the timeline ----- */
-const EVC={E:"#4F46E5",D:"#B45309",S:"#7C3AED",N:"#475569",V:"var(--evv)"};
-const EVN={E:"Results",D:"Dividend",S:"Split or bonus",N:"Filing",V:"Verdict change"};
+const EVC={R:"#4F46E5",D:"#B45309",S:"#7C3AED",B:"#0F766E",F:"#475569",V:"var(--evv)"};
+const EVN={R:"Results",D:"Dividend",S:"Split",B:"Bonus",F:"Filing",V:"Verdict change"};
+// Sample logic for the wireframe: order book is tracked from LODR disclosures.
+const ORDER_WORDS=["order win","awarded","letter of award","contract secured","lowest bidder","L1","receipt of order","work order","purchase order","bags order","execution of agreement"];
+function classifyFiling(text){ const s=String(text||""); return ORDER_WORDS.some(w=>new RegExp("(^|[^a-z0-9])"+w+"($|[^a-z0-9])","i").test(s))?{ft:"Order win",imp:"High"}:null; }
+const filingSub=(ft,imp)=>ft==="Order win"?"Order win. Importance: High. Disclosed to the exchange under SEBI LODR.":`${ft}. Importance: ${imp}. Exchange filing, read by the scanner.`;
+const FILINGS=[[2026,8,29,"Order received, 412 cr","Order win","High"],[2026,8,17,"Capacity expansion announced","Capacity expansion","Medium"],[2026,8,3,"Order received, 248 cr","Order win","High"],[2026,6,22,"Credit rating reaffirmed","Credit rating","Medium"],[2026,5,4,"Change in senior management","Change in senior management","Medium"],[2026,2,18,"Order received, 96 cr","Order win","High"],[2026,7,12,"Quarterly filing submitted","Quarterly filing","Medium"],[2026,7,20,"Investor call on the quarter","Concall / investor meet","Medium"]];
 function idxOn(ms){ if(ms<WD[0].getTime()) return -1; if(ms>WD[N-1].getTime()) return N; let lo=0,hi=N-1; while(lo<hi){const mid=(lo+hi+1)>>1; if(WD[mid].getTime()<=ms) lo=mid; else hi=mid-1;} return lo; }
 const dMs=ms=>dFmt(new Date(ms));
 function eventsFor(e){
   const d=chartData(e); if(d.ev) return d.ev;
   const hh=hashStr(e.s), r=mul(hh^0xa11), out=[];
-  const add=(k,cat,ms,title,sub,chart)=>{const i=idxOn(ms); if(i<0) return; out.push({k,cat,ms,i,title,sub,chart:chart!==false,up:i>=N});};
+  const add=(k,cat,ms,title,sub,chart,ft,imp)=>{const i=idxOn(ms); if(i<0) return; out.push({k,cat,ms,i,title,sub,chart:chart!==false,up:i>=N,ft:ft||null,imp:imp||null});};
   if(e.pat){
     const q=[], base=e.pat[0]/4, g=(e.pg==null?8:e.pg)/100;
     for(let k=0;k<17;k++) q.push(base*Math.pow(1+g,-k/4)*(.94+r()*.12));
     for(let k=0;k<13;k++){
       const dt=new Date(Date.UTC(2026,7-3*k,8+((hh>>>k)%14))), m=dt.getUTCMonth(), y=dt.getUTCFullYear(), qn={7:1,10:2,1:3,4:4}[m], fy=qn<=2?y+1:y;
       const yoy=(q[k]/q[k+4]-1)*100;
-      add("E","E",dt.getTime(),`Q${qn} FY${String(fy).slice(2)} results`,`Profit after tax ${IN(q[k])} cr, ${pct(yoy)} on a year ago. Sample figure.`);
+      add("R","R",dt.getTime(),`Q${qn} FY${String(fy).slice(2)} results`,`Profit after tax ${IN(q[k])} cr, ${pct(yoy)} on a year ago. Sample figure.`,true,qn===4?"Results, consolidated audited":"Results, standalone unaudited",qn===4?"High":"Medium");
     }
   }
   if(hh%5!==0) [2024,2025,2026].forEach(y=>{
     [[6,12+hh%10,"Final"],[0,8+hh%12,"Interim"]].forEach(x=>{ const amt=Math.max(1,Math.round(e.px*(.004+r()*.006)*10)/10); add("D","D",Date.UTC(y,x[0],x[1]),`Dividend ${INR2(amt)} per share`,`${x[2]} dividend. The price drops by about this amount on the ex-date.`); });
   });
   if(hh%5!==0){ const amt=Math.max(1,Math.round(e.px*.006*10)/10); add("D","D",Date.UTC(2026,10,19),`Dividend ${INR2(amt)} per share`,"Interim dividend. The ex-date is upcoming, so the price has not dropped yet."); }
-  if(hh%3===0){ const bonus=hh%2===0; add("S","S",Date.UTC(2023,2+hh%8,15),bonus?"Bonus issue 1 for 1":"Stock split, face value 10 to 2","Prices on the chart are already adjusted for it."); }
-  [[2026,8,29,"Order received, 412 cr"],[2026,8,17,"Capacity expansion announced"],[2026,8,3,"Order received, 248 cr"],[2026,6,22,"Credit rating reaffirmed"],[2026,5,4,"Change in senior management"],[2026,2,18,"Order received, 96 cr"]].forEach(f=>add("N","N",Date.UTC(f[0],f[1],f[2]),f[3],"Exchange filing, read by the scanner."));
+  if(hh%3===0){ const bonus=hh%2===0; add(bonus?"B":"S",bonus?"B":"S",Date.UTC(2023,2+hh%8,15),bonus?"Bonus issue 1 for 1":"Stock split, face value 10 to 2","Prices on the chart are already adjusted for it."); }
+  FILINGS.forEach(f=>{ const c=classifyFiling(f[3]), ft=c?c.ft:f[4], imp=c?c.imp:f[5]; add("F","F",Date.UTC(f[0],f[1],f[2]),f[3],filingSub(ft,imp),true,ft,imp); });
   (e.hist||[]).forEach(hm=>{const i=N-1-hm[0]; out.push({k:"V",cat:"V",ms:WD[i].getTime(),i,title:"Verdict "+hm[1],sub:"The verdict changed to "+hm[1]+" on this day.",chart:true,up:false});});
-  add("N","O",Date.UTC(2026,7,20),"Annual general meeting","Shareholders met and approved the accounts.",false);
-  add("N","O",Date.UTC(2026,10,12),"Board meeting","Expected to consider the Q2 FY27 results.",false);
+  add("F","O",Date.UTC(2026,7,20),"Annual general meeting","AGM. Importance: Low. Shareholders met and approved the accounts.",false,"AGM","Low");
+  add("F","O",Date.UTC(2026,2,27),"Special general meeting","SGM. Importance: Low. Shareholders voted on a special resolution.",false,"SGM","Low");
+  add("F","O",Date.UTC(2026,10,12),"Board meeting","Board meeting. Importance: Low. Expected to consider the Q2 FY27 results.",false,"Board meeting","Low");
   out.sort((a,b)=>a.ms-b.ms);
   return d.ev=out;
 }
 
 const chs={tf:"D",n:253,off:0,cn:false,cs:false,log:false,pct:false,auto:true,lock:null,type:"candle",cur:null,sel:null,e:null,geo:null,evBars:{},evOf:{},
-  ov:{e50:1,d200:1,exit:0,ath:1,vol:1,rsi:1},x:{bb:0,macd:0,vwap:0,st:0,don:0},hid:{},style:{},alerts:[],set:{legend:1,events:1,last:1,lg:1},ev:{E:1,D:1,S:1,N:1,V:1}};
+  ov:{e50:1,d200:1,exit:0,ath:1,vol:1,rsi:1},x:{bb:0,macd:0,vwap:0,st:0,don:0},hid:{},style:{},alerts:[],set:{legend:1,events:1,last:1,lg:1},ev:{R:1,D:1,S:1,B:1,F:1,V:1}};
 const TPER={D:1,W:5,M:21}, TDEF={D:253,W:1260,M:"all"};
 const TYN={candle:"Candles",hollow:"Hollow candles",ha:"Heikin Ashi",bars:"Bars",line:"Line",area:"Area"};
 /* ----- indicator registry. live: drawn from the sample series. The rest are previews (the product draws them with KLineChart). ----- */
@@ -3865,7 +3872,7 @@ function renderEvDetail(){
   let body;
   if(!bars.length) body=`<p class="evhint">No events in this range, or all event types are switched off.</p>`;
   else if(!L) body=`<p class="evhint">Click or tap a marker, or use the buttons, to read an event. With the chart focused, N and P step through them.</p>`;
-  else body=L.map(ev=>`<div class="evline"><span class="evtag${ev.k==="V"?" vk":""}" style="background:${EVC[ev.k]}" title="${EVN[ev.k]}">${ev.k}</span><span class="d">${dMs(ev.ms)}</span><span><b>${esc(ev.title)}</b> <span class="mute">${esc(ev.sub)}</span></span></div>`).join("");
+  else body=L.map(ev=>`<div class="evline"><span class="evtag${ev.k==="V"?" vk":""}" style="background:${EVC[ev.k]}" title="${EVN[ev.k]}">${ev.k}</span><span class="d">${dMs(ev.ms)}</span><span><b>${esc(ev.title)}</b> ${ev.ft?`<span class="mute">${esc(ev.ft)}, ${esc(ev.imp)} importance.</span> `:""}<span class="mute">${esc(ev.sub)}</span></span></div>`).join("");
   box.innerHTML=nav+body;
   if(keep){ const nb2=box.querySelector(`[data-evnav="${keep}"]`); if(nb2&&!nb2.disabled) nb2.focus({preventScroll:true}); }
 }
@@ -4954,7 +4961,7 @@ function finOf(e){
   const gr=e.g&&e.g.rows[4], hp=hashStr(e.s+5)%97;
   let pledge=null; if(gr&&gr.grade!=="Not assessed"){ const v=gr.grade==="Good"?(hp%3)/2:gr.grade==="Neutral"?6+hp%6:18+hp%7; pledge={cur:v,prev:Math.max(0,Math.round((v+((hp>>2)%3-1)*(gr.grade==="Good"?.5:1))*10)/10)}; }
   /* exchange feed: the latest results already out */
-  const ev=eventsFor(e).filter(x=>x.cat==="E"&&!x.up).sort((a,b)=>b.ms-a.ms)[0];
+  const ev=eventsFor(e).filter(x=>x.cat==="R"&&!x.up).sort((a,b)=>b.ms-a.ms)[0];
   const hiIdx=T.indexOf(PH);
   const Trep=T.map((v,j)=>(oq>=j&&oq<=j+3)?v+e.oo:v);
   return FDC[e.s]={na:false,T,Trep,hiV:PH,hiIdx,Q,TTM,Y,shares,R,CF,BS:[BS25,BS26],SH:{cur,prev,pledge},feed:ev,oq};
@@ -5183,7 +5190,7 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
 /* stock_more: Sector, Governance, Events and filings, Screener tabs for the stock page.
    Everything is computed from the sample data (U, E, EM, RANKED, chartData, eventsFor). Nothing is hard-coded to one stock. */
 (function(){
-  const mo={e:null,sr:253,sc:null,gf:"all",ek:{E:1,D:1,S:1,N:1,V:1},bound:false,perf:{tab:"sector",win:"5D"},cur:null};
+  const mo={e:null,sr:253,sc:null,gf:"all",ek:{R:1,D:1,S:1,B:1,F:1,V:1},bound:false,perf:{tab:"sector",win:"5D"},cur:null};
   const MONF=["January","February","March","April","May","June","July","August","September","October","November","December"];
   const RNG={63:"3 months",126:"6 months",253:"1 year"};
   const below=x=>x.below<=0.05?"At high":x.below.toFixed(1)+"%";
@@ -5371,7 +5378,7 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
   }
 
   /* ---------------- EVENTS ---------------- */
-  const KINDS=[["E","Results"],["D","Dividends"],["S","Splits and bonus"],["N","Filings"],["V","Verdict changes"]];
+  const KINDS=[["R","Results"],["D","Dividends"],["S","Splits"],["B","Bonus"],["F","Filings"],["V","Verdict changes"]];
   function evHtml(){
     return `<div class="mo" id="mo-events"><div class="sect">
       <header><h2>Events and filings${tip("mo_timeline")}</h2><span class="hint">Newest first, grouped by month. Sample values.</span></header>
@@ -5390,7 +5397,7 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
     const groups=[]; list.forEach(v=>{ const d=new Date(v.ms), key=d.getUTCFullYear()*12+d.getUTCMonth(); let gr=groups[groups.length-1]; if(!gr||gr.key!==key){ gr={key,label:MONF[d.getUTCMonth()]+" "+d.getUTCFullYear(),items:[]}; groups.push(gr);} gr.items.push(v); });
     h=groups.map(gr=>`<h3 class="mo-mh">${gr.label}<span>${gr.items.length} ${gr.items.length===1?"event":"events"}</span></h3><ul class="mo-evs">`+gr.items.map(v=>{
       const idx=eventsFor(e).indexOf(v);
-      return `<li class="mo-ev-row"><span class="mo-ev-d">${dMs(v.ms)}</span><span class="evtag${v.k==="V"?" vk":""}" style="background:${EVC[v.k]}" title="${EVN[v.k]}">${v.k}<span class="sr">${EVN[v.k]}</span></span><div class="mo-ev-t"><b>${esc(v.title)}${v.up?'<span class="mo-up">Upcoming</span>':""}</b><span>${esc(v.sub)}</span></div><button type="button" class="btn" data-mo-show="${idx}" ${v.up?'disabled title="Upcoming events are not on the chart yet."':""} aria-label="Show ${esc(v.title)} on chart">Show on chart</button></li>`;
+      return `<li class="mo-ev-row"><span class="mo-ev-d">${dMs(v.ms)}</span><span class="evtag${v.k==="V"?" vk":""}" style="background:${EVC[v.k]}" title="${EVN[v.k]}">${v.k}<span class="sr">${EVN[v.k]}</span></span><div class="mo-ev-t"><b>${esc(v.title)}${v.up?'<span class="mo-up">Upcoming</span>':""}</b>${v.ft?`<span class="mute">${esc(v.ft)}, ${esc(v.imp)} importance.</span>`:""}<span>${esc(v.sub)}</span></div><button type="button" class="btn" data-mo-show="${idx}" ${v.up?'disabled title="Upcoming events are not on the chart yet."':""} aria-label="Show ${esc(v.title)} on chart">Show on chart</button></li>`;
     }).join("")+`</ul>`).join("");
     host.innerHTML=h;
   }
@@ -5981,8 +5988,8 @@ function renderDeals(){
 }
 function renderCA(){
   const e=XS.e; if(!e) return; const m=XS.ca;
-  const L=eventsFor(e).filter(ev=>ev.cat==="D"||ev.cat==="S"||ev.cat==="O").filter(ev=>m==="all"||ev.cat===m);
-  const kind={D:"Dividend",S:"Bonus or split",O:"Meeting"};
+  const L=eventsFor(e).filter(ev=>ev.cat==="D"||ev.cat==="S"||ev.cat==="B"||ev.cat==="O").filter(ev=>m==="all"||ev.cat===m);
+  const kind={D:"Dividend",S:"Split",B:"Bonus",O:"Meeting"};
   let k=0, today=false, html=L.map(ev=>{
     let pre=""; if(!today&&ev.up){ today=true; pre=`<div class="tli today" aria-label="Today, 30 Sep 2026"><span class="dot2"></span><span class="tdy"><span>Today</span></span></div>`; }
     const pos=k++%2?"dn":"up";
