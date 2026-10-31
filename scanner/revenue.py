@@ -299,7 +299,7 @@ def confluence_flag(guidance: Guidance, trend: Optional[str],
 
     if positive and uptrend:
         flag.level = FLAG_GREEN
-        flag.reasons = [detail, "price above 50 EMA and 200 SMA"]
+        flag.reasons = [detail, "price above 50 EMA and 200 DMA"]
     elif negative and broken:
         flag.level = FLAG_RED
         flag.reasons = [detail, "price below both averages"]

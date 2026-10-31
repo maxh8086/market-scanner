@@ -131,7 +131,7 @@ def summary_rows(df: pd.DataFrame, as_of: str) -> list[tuple]:
 
     # By trend
     if "trend" in df.columns and not df.empty:
-        rows.append(("By Trend (50 EMA / 200 SMA)", ""))
+        rows.append(("By Trend (50 EMA / 200 DMA)", ""))
         for label, count in df["trend"].value_counts().items():
             rows.append((f"  {label}", int(count)))
         rows.append(("", ""))
@@ -150,7 +150,7 @@ def summary_rows(df: pd.DataFrame, as_of: str) -> list[tuple]:
         ("expansion_signal", "Expansion signal"),
         ("recent_ipo", "Recent IPO"),
         ("above_ema50", "Above 50 EMA"),
-        ("above_sma200", "Above 200 SMA"),
+        ("above_sma200", "Above 200 DMA"),
     ]
     for col, label in signals:
         if col in df.columns and not df.empty:

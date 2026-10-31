@@ -285,13 +285,13 @@ def _compute_summary(portfolio_df: pd.DataFrame, ref_df: Optional[pd.DataFrame] 
     if not momentum.empty:
         flags.append(f"Momentum play: {len(momentum)} holding(s) in NEW_ATH_TODAY or 0-5% ({momentum['weight_pct'].sum():.1f}% of portfolio)")
 
-    # Flag 2: holdings below 200 SMA (trend broken)
+    # Flag 2: holdings below 200 DMA (trend broken)
     below_sma = portfolio_df[
         (portfolio_df["above_sma200"] == False) &
         (portfolio_df["in_scan"] == "YES")
     ]
     if not below_sma.empty:
-        flags.append(f"Trend broken: {len(below_sma)} holding(s) below 200 SMA ({below_sma['weight_pct'].sum():.1f}% of portfolio)")
+        flags.append(f"Trend broken: {len(below_sma)} holding(s) below 200 DMA ({below_sma['weight_pct'].sum():.1f}% of portfolio)")
 
     # Flag 3: single position > 15% (concentration)
     concentrated = portfolio_df[portfolio_df["weight_pct"] > 15]

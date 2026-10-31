@@ -66,7 +66,7 @@ class TestClassifyTrend(unittest.TestCase):
         self.assertEqual(ind.classify_trend(80, 90, 100), ind.TREND_BELOW_BOTH)
 
     def test_missing_sma_is_unknown_not_bearish(self):
-        # A 190-day-old listing has no honest 200-SMA; calling it BELOW_BOTH
+        # A 190-day-old listing has no honest 200 DMA; calling it BELOW_BOTH
         # would invent a bearish signal out of missing data.
         self.assertEqual(ind.classify_trend(100, 90, None), ind.TREND_UNKNOWN)
 
@@ -90,7 +90,7 @@ class TestComputeTrend(unittest.TestCase):
         self.assertEqual(out["trend"], ind.TREND_BELOW_BOTH)
 
     def test_recent_ipo_yields_nulls_not_false(self):
-        # 190 candles: EMA50 is computable, SMA200 is not.
+        # 190 candles: EMA50 is computable, 200 DMA is not.
         out = ind.compute_trend([100.0] * 190, 120.0)
         self.assertIsNotNone(out["ema50"])
         self.assertIsNone(out["sma200"])

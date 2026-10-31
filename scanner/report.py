@@ -119,7 +119,7 @@ def write_outputs(
 
         if not df.empty and "trend" in df.columns:
             summary_rows.append(("", ""))
-            summary_rows.append(("By trend (50 EMA / 200 SMA)", ""))
+            summary_rows.append(("By trend (50 EMA / 200 DMA)", ""))
             for label, count in df["trend"].value_counts().items():
                 summary_rows.append((f"  {label}", int(count)))
 
@@ -155,7 +155,7 @@ def print_summary(df: pd.DataFrame, as_of: str, intraday: bool, max_dist: float 
         return
 
     if "trend" in df.columns:
-        trend_table = Table(title="Trend (50 EMA / 200 SMA)")
+        trend_table = Table(title="Trend (50 EMA / 200 DMA)")
         trend_table.add_column("Trend")
         trend_table.add_column("Count", justify="right")
         for label, count in df["trend"].value_counts().items():

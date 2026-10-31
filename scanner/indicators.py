@@ -54,7 +54,7 @@ def classify_trend(
     """Label a price against its two moving averages.
 
     Returns TREND_UNKNOWN when either average is missing: a stock listed 190
-    days ago has no honest 200-day average, and reporting BELOW_BOTH for it
+    days ago has no honest 200 DMA, and reporting BELOW_BOTH for it
     would be a fabricated bearish signal rather than missing data.
     """
     if ema_value is None or sma_value is None:

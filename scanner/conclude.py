@@ -327,9 +327,9 @@ def scorecard(packet: Mapping[str, Any]) -> tuple[str, int, list[str]]:
 # Guards
 # --------------------------------------------------------------------------
 
-# A window length ("200-day EMA", "52-week high", "3-step band") names an indicator,
+# A window length ("200 DMA", "52-week high", "3-step band") names an indicator,
 # it is not a claim about the stock, so it is not treated as a figure to verify.
-_NUMBER = re.compile(r"(?<![\w.])-?\d[\d,]*(?:\.\d+)?(?![\d,]*\s?-?\s?(?:day|week|month|year|step)s?\b)")
+_NUMBER = re.compile(r"(?<![\w.])-?\d[\d,]*(?:\.\d+)?(?![\d,]*\s?-?\s?(?:(?:day|week|month|year|step)s?|(?i:dma))\b)")
 
 
 def _numbers(text: str) -> list[float]:
