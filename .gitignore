@@ -15,14 +15,13 @@ venv/
 output_backup_*/
 .codebase-memory/
 
-# Ruflo local secrets and runtime data
 .env.local
 .env.*.local
-.claude-flow/data/
-.claude-flow/logs/
-.claude-flow/sessions/
 node_modules
 
 # Cloned on first start; each has its own repo.
 /infra/
 /app/
+
+# Local tooling state (not project source)
+.claude/

@@ -256,6 +256,31 @@ class TestRateLimiterThreadSafety(unittest.TestCase):
         # Some blocking occurred (not all 9 fit in burst)
         self.assertGreater(len(sleep_calls), 0)
 
+    def test_sleep_runs_outside_lock_and_reserves_slot(self):
+        """wait() sleeps with the limiter lock released; the reserved slot still counts."""
+        now = [0.0]
+        seen_locked = []
+        sleeps = []
+
+        limiter = None
+
+        def fake_sleep(duration):
+            seen_locked.append(limiter._lock.locked())
+            sleeps.append(duration)
+
+        limiter = _RateLimiter(
+            windows=[(10, 2)], time_func=lambda: now[0], sleep_func=fake_sleep
+        )
+        limiter.wait()
+        limiter.wait()  # window full: no sleep yet
+        self.assertEqual(sleeps, [])
+        limiter.wait()  # must wait until the first request leaves the 10 s window
+        self.assertEqual(sleeps, [10.0])
+        self.assertEqual(seen_locked, [False])
+        limiter.wait()  # the reserved slot at t=10 keeps the window full
+        self.assertEqual(sleeps, [10.0, 10.0])
+        self.assertEqual(limiter.stats.requests_made, 4)
+
 
 class TestUpstoxClientInit(unittest.TestCase):
     """Tests for UpstoxClient initialization."""
@@ -380,6 +405,26 @@ class TestUpstoxClient429Handling(unittest.TestCase):
 
         self.assertEqual(len(sleep_calls), 1)
         self.assertEqual(sleep_calls[0], 2.0)
+
+    def test_retry_after_parses_http_date(self):
+        """Retry-After as an HTTP-date is converted to seconds from now, not a crash."""
+        from email.utils import format_datetime
+        from datetime import datetime, timedelta, timezone
+        from scanner.upstox import _parse_retry_after
+
+        future = datetime.now(timezone.utc) + timedelta(seconds=30)
+        delay = _parse_retry_after(format_datetime(future, usegmt=True))
+        self.assertIsNotNone(delay)
+        self.assertGreater(delay, 25.0)
+        self.assertLessEqual(delay, 30.0)
+
+    def test_retry_after_past_date_and_garbage(self):
+        from scanner.upstox import _parse_retry_after
+
+        self.assertEqual(_parse_retry_after("Wed, 21 Oct 2015 07:28:00 GMT"), 0.0)
+        self.assertIsNone(_parse_retry_after("soon"))
+        self.assertIsNone(_parse_retry_after(None))
+        self.assertIsNone(_parse_retry_after(""))
 
     @patch.dict("os.environ", {"UPSTOX_ANALYTICS_ACCESS_TOKEN": "test-token"})
     @patch("scanner.upstox.requests.Session.get")
