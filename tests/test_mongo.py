@@ -22,9 +22,9 @@ def _mongo_available() -> bool:
     try:
         client = MongoClient("mongodb://127.0.0.1:27017", serverSelectionTimeoutMS=2000)
         client.admin.command("ping")
-        probe = client["test_ath_scanner_probe"]
+        probe = client["test_market_scanner_probe"]
         probe.t.insert_one({"x": 1})
-        client.drop_database("test_ath_scanner_probe")
+        client.drop_database("test_market_scanner_probe")
         return True
     except Exception:
         return False
@@ -43,13 +43,13 @@ class MongoDBBackendTests(unittest.TestCase):
     def setUpClass(cls):
         if SKIP_MONGO:
             raise unittest.SkipTest("MongoDB not reachable")
-        cls.db = mongo.open_db(uri="mongodb://127.0.0.1:27017", db_name="test_ath_scanner_mongo")
+        cls.db = mongo.open_db(uri="mongodb://127.0.0.1:27017", db_name="test_market_scanner_mongo")
 
     @classmethod
     def tearDownClass(cls):
         # Drop the test database
         if hasattr(cls, 'db') and cls.db:
-            cls.db.client.drop_database("test_ath_scanner_mongo")
+            cls.db.client.drop_database("test_market_scanner_mongo")
             cls.db.close()
 
     def setUp(self):

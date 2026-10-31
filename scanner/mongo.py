@@ -10,8 +10,12 @@ created idempotently at open_db(). Every document carries expires_at for retenti
 from __future__ import annotations
 
 import os
+import re
+import subprocess
+import time
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
+from urllib.parse import quote
 
 from pymongo import MongoClient, errors
 from pymongo.collection import Collection
@@ -28,6 +32,15 @@ def _expiry(base) -> str:
     return retention.expires_at(base, retention.load())
 
 
+def _create_index(collection, keys, **kwargs):
+    """Create an index. Ignore only 'index already exists with a different spec' (codes 85, 86)."""
+    try:
+        collection.create_index(keys, **kwargs)
+    except errors.OperationFailure as exc:
+        if exc.code not in (85, 86):
+            raise
+
+
 class MongoDB:
     """Handle object for Mongo backend, matching TinyDB's interface where needed."""
 
@@ -39,55 +52,44 @@ class MongoDB:
     def _ensure_indexes(self) -> None:
         """Create unique indexes idempotently."""
         # filings: unique on seq_id
-        try:
-            self.db.filings.create_index(
-                "seq_id", unique=True, background=True, name="seq_id_unique"
-            )
-        except (errors.DuplicateKeyError, errors.OperationFailure):
-            pass
+        _create_index(
+            self.db.filings, "seq_id", unique=True, background=True, name="seq_id_unique"
+        )
 
         # extractions: unique on (seq_id, kind, prompt_version, model)
         # where prompt_version and model are in the key if they exist
-        try:
-            self.db.extractions.create_index(
-                [("seq_id", 1), ("kind", 1), ("prompt_version", 1), ("model", 1)],
-                unique=True,
-                background=True,
-                name="extraction_unique",
-            )
-        except (errors.DuplicateKeyError, errors.OperationFailure):
-            pass
+        _create_index(
+            self.db.extractions,
+            [("seq_id", 1), ("kind", 1), ("prompt_version", 1), ("model", 1)],
+            unique=True,
+            background=True,
+            name="extraction_unique",
+        )
 
         # conclusions: unique on (symbol, as_of); additionally record packet_hash
-        try:
-            self.db.conclusions.create_index(
-                [("symbol", 1), ("as_of", 1)],
-                unique=True,
-                background=True,
-                name="conclusion_unique",
-            )
-        except (errors.DuplicateKeyError, errors.OperationFailure):
-            pass
+        _create_index(
+            self.db.conclusions,
+            [("symbol", 1), ("as_of", 1)],
+            unique=True,
+            background=True,
+            name="conclusion_unique",
+        )
 
         # fundamentals: unique on (symbol, as_of) where as_of is fetch date
-        try:
-            self.db.fundamentals.create_index(
-                [("symbol", 1), ("as_of", 1)],
-                unique=True,
-                background=True,
-                name="fundamentals_unique",
-            )
-        except (errors.DuplicateKeyError, errors.OperationFailure):
-            pass
+        _create_index(
+            self.db.fundamentals,
+            [("symbol", 1), ("as_of", 1)],
+            unique=True,
+            background=True,
+            name="fundamentals_unique",
+        )
 
         # Indexes on expires_at for retention purges
         for collection_name in ["filings", "extractions", "conclusions", "fundamentals"]:
-            try:
-                self.db[collection_name].create_index(
-                    "expires_at", background=True, name=f"{collection_name}_expiry"
-                )
-            except (errors.DuplicateKeyError, errors.OperationFailure):
-                pass
+            _create_index(
+                self.db[collection_name],
+                "expires_at", background=True, name=f"{collection_name}_expiry"
+            )
 
     def close(self) -> None:
         self.client.close()
@@ -97,29 +99,94 @@ class MongoDB:
         return self.db[name]
 
 
-def open_db(uri: Optional[str] = None, db_name: Optional[str] = None) -> MongoDB:
-    """Open (creating if needed) the MongoDB document store."""
-    uri = uri or os.environ.get(
-        "MONGO_URI", "mongodb://localhost:27017"
+SCANNER_CONTAINER = "market-scanner-mongo"
+
+
+def _heal_scanner_container() -> bool:
+    """Start this project's Mongo container if Docker reports it stopped. True if started."""
+    try:
+        state = subprocess.run(
+            ["docker", "inspect", "-f", "{{.State.Running}}", SCANNER_CONTAINER],
+            capture_output=True, text=True, timeout=15,
+        )
+        if state.returncode != 0 or state.stdout.strip() == "true":
+            return False
+        started = subprocess.run(
+            ["docker", "start", SCANNER_CONTAINER], capture_output=True, text=True, timeout=60,
+        )
+        return started.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _ping(client: MongoClient, wait_seconds: float) -> None:
+    """Ping until the server answers or wait_seconds passes; raise the last error."""
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            client.admin.command("ping")
+            return
+        except Exception:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(1)
+
+
+def _redact(uri: str) -> str:
+    """Hide the password in a Mongo URI before it reaches an error message or log."""
+    return re.sub(r"(://[^:/@]+:)[^@]*@", r"\1****@", uri)
+
+
+def _uri_from_env(db_name: str) -> str:
+    """Build the URI from SCANNER_MONGO_* parts. Only these names are read.
+
+    The generic MONGO_* names are deliberately ignored: the infra's env files set them
+    to another project's database. User and password are percent-encoded, so characters
+    such as '@', ':' or '/' in the password are safe.
+    """
+    user = os.environ.get("SCANNER_MONGO_USER")
+    password = os.environ.get("SCANNER_MONGO_PASSWORD")
+    if not user or not password:
+        raise RuntimeError("SCANNER_MONGO_USER and SCANNER_MONGO_PASSWORD must be set in .env")
+    host = os.environ.get("SCANNER_MONGO_HOST", "127.0.0.1:27018")
+    auth_source = os.environ.get("SCANNER_MONGO_AUTH_SOURCE", db_name)
+    return (
+        f"mongodb://{quote(user, safe='')}:{quote(password, safe='')}@{host}"
+        f"/?authSource={quote(auth_source, safe='')}"
     )
-    db_name = db_name or os.environ.get("MONGO_DB", "ath_scanner")
+
+
+def open_db(uri: Optional[str] = None, db_name: Optional[str] = None) -> MongoDB:
+    """Open (creating if needed) the scanner's MongoDB store.
+
+    The URI comes from the SCANNER_MONGO_* parts unless one is passed in. If the
+    project's Mongo container is stopped, it is started and the ping retried.
+    """
+    db_name = db_name or os.environ.get("SCANNER_MONGO_DB", "market_scanner")
+    uri = uri or _uri_from_env(db_name)
 
     # Localize hostnames when INFRA_LOCAL is set
     uri = infra.localize(uri)
 
-    client = MongoClient(uri)
-    # Test connection
+    client = MongoClient(uri, serverSelectionTimeoutMS=5000)
     try:
-        client.admin.command("ping")
-    except Exception as e:
-        client.close()
-        raise RuntimeError(f"Cannot connect to MongoDB at {uri}: {e}")
+        _ping(client, wait_seconds=0)
+    except Exception as first_error:
+        if not _heal_scanner_container():
+            client.close()
+            raise RuntimeError(f"Cannot connect to MongoDB at {_redact(uri)}: {first_error}")
+        try:
+            _ping(client, wait_seconds=30)
+        except Exception as e:
+            client.close()
+            raise RuntimeError(
+                f"Started {SCANNER_CONTAINER} but cannot connect at {_redact(uri)}: {e}")
 
     return MongoDB(client, db_name)
 
 
 def db() -> MongoDB:
-    """Open the MongoDB document store using MONGO_URI and MONGO_DB env vars.
+    """Open the scanner's MongoDB store from the SCANNER_MONGO_* variables.
 
     This is the primary contract function for the MongoDB backend.
     """
