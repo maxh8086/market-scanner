@@ -57,6 +57,8 @@ nav.main{display:flex;gap:2px;margin-left:8px}
 nav.main a{color:var(--muted);padding:0 12px;min-height:44px;display:flex;align-items:center;border-radius:8px;font-weight:500;text-decoration:none!important;transition:background .2s,color .2s}
 nav.main a:hover{background:var(--tint);color:var(--ink)}
 nav.main a[aria-current=page]{color:var(--accent);background:var(--accent-soft)}
+.nav-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;margin-left:6px;border-radius:999px;font:600 12px var(--sans);font-variant-numeric:tabular-nums;background:var(--loss-soft);color:var(--loss);border:1px solid color-mix(in srgb,var(--loss) 30%,transparent)}
+.nav-count[hidden]{display:none}
 .top .spacer{flex:1}
 .stamp{color:var(--faint);font-size:13px;white-space:nowrap}
 .brand,nav.main a,#theme{white-space:nowrap;flex:none}
@@ -669,6 +671,32 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
 #s-stocks .sortb{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--faint)}
 #s-stocks .sortb:hover,#s-stocks .sortb.on{color:var(--accent)}
 #s-stocks .sortb svg{width:12px;height:12px}
+/* saved filters, column chooser and sortable headers (Stocks list) */
+#s-stocks .tbar2{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+#s-stocks .sf-grp{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-width:0}
+#s-stocks .sf-h{font-size:13px;font-weight:500;color:var(--muted)}
+#s-stocks .tbar2 select{min-height:44px;max-width:240px;min-width:0;padding:0 10px;border:1px solid var(--line-strong);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:14px}
+#s-stocks .tbar2 .btn{min-height:44px;font-size:14px;padding:0 14px}
+#s-stocks .tbar2 .btn:disabled,#s-stocks .tbar2 select:disabled{opacity:.5;cursor:not-allowed}
+#s-stocks #cols-btn{margin-left:auto}
+#s-stocks .sf-form{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+#s-stocks .sf-form[hidden],#s-stocks .colp[hidden]{display:none}
+#s-stocks .sf-form label{font-size:13px;color:var(--muted)}
+#s-stocks .sf-form input{min-height:44px;flex:1 1 200px;max-width:300px;min-width:0;padding:0 12px;border:1px solid var(--line-strong);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:14px}
+#s-stocks .sf-msg{flex:1 1 100%;margin:0;font-size:13px;color:var(--muted);min-height:1.2em}
+#s-stocks .colp{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--tint)}
+#s-stocks .colp fieldset{border:0;margin:0;padding:0;min-width:0;flex:1 1 auto}
+#s-stocks .colp legend{font-size:13px;color:var(--muted);padding:0;margin-bottom:4px}
+#s-stocks .colp-list{display:flex;flex-wrap:wrap;gap:4px 16px}
+#s-stocks .colp-i{display:inline-flex;align-items:center;gap:8px;min-height:44px;font-size:14px;color:var(--ink)}
+#s-stocks .colp-i:has(input:disabled){color:var(--faint)}
+#s-stocks .colp-i input{width:18px;height:18px;margin:0;accent-color:var(--accent)}
+#s-stocks .sorth{display:inline-flex;align-items:center;gap:4px;padding:2px 0;margin:0;border:0;background:none;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;white-space:nowrap;cursor:pointer;border-radius:4px}
+#s-stocks .sorth:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#s-stocks .sorth.on{color:var(--accent)}
+#s-stocks .sorth svg{width:12px;height:12px;flex:none}
+#s-stocks .srk{display:inline-block;font-size:10px;font-weight:600;line-height:1;letter-spacing:.04em;text-transform:uppercase;padding:2px 4px;border:1px solid currentColor;border-radius:4px}
+
 #s-stocks td .sym{font-size:14px;letter-spacing:0}
 #s-stocks td .held{margin-left:8px;display:inline-block;vertical-align:1px}
 #s-stocks td .nm{max-width:190px;overflow:hidden;text-overflow:ellipsis;line-height:1.35}
@@ -735,6 +763,15 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
   #s-stocks .sz-btn .sz-t{display:none}
   #s-stocks td.sz{padding-right:6px}
   #s-stocks .tfoot{padding:12px}
+}
+
+@media (max-width:767px){
+  #s-stocks .tbar2{padding:12px}
+  #s-stocks .sf-grp{flex:1 1 100%}
+  #s-stocks .sf-grp .btn{flex:1 1 calc(50% - 5px);justify-content:center}
+  #s-stocks .sf-grp select{flex:1 1 100%;max-width:none}
+  #s-stocks #cols-btn{margin-left:0;flex:1 1 100%;justify-content:center}
+  #s-stocks .sorth{min-height:44px}
 }
 
 /* ==== src/stock.css ==== */
@@ -890,7 +927,7 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
 #s-stock .tli.today .stem{display:none}
 
 @media (max-width:767px){
-  #s-stock .ws-head{position:static;padding:12px;margin-bottom:12px}
+  #s-stock .ws-head{position:sticky;top:var(--top-h,0px);padding:12px;margin-bottom:12px}
   #s-stock .ws-head[data-stuck=true]{box-shadow:var(--shadow);border-color:var(--line)}
   #s-stock .ws-id{flex-basis:100%}
   #s-stock .ws-act{margin-left:0;flex-basis:100%}
@@ -900,7 +937,7 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
   #s-stock .ws-kpis .kpi .v,#s-stock .ws-kpis .kpi .d{white-space:normal}
   #s-stock .ws-cap{max-width:none;text-align:left;margin-left:0}
   #s-stock .xt-tabs{position:static;top:auto;margin-left:-4px;margin-right:-4px}
-  #s-stock .tabpane{scroll-margin-top:12px}
+  #s-stock .tabpane{scroll-margin-top:calc(var(--top-h,0px) + var(--ws-h,0px) + 12px)}
   #s-stock .tv{padding:12px 12px 14px}
   #s-stock .chiplab{min-width:0;flex-basis:100%}
   #s-stock .tvhead .tvpx{margin-left:0;flex-basis:100%}
@@ -909,6 +946,7 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
   #s-stock .gauge{width:100%}
   #s-stock .evline .d{min-width:0;flex-basis:100%}
 }
+@media (max-width:640px){#s-stock .ws-head{padding:8px 12px;margin-bottom:8px}#s-stock .ws-row{flex-wrap:nowrap;gap:8px}#s-stock .ws-id{flex:1 1 auto;min-width:0}#s-stock .ws-id .eyebrow,#s-stock .ws-px,#s-stock .ws-row2,#s-stock .ws-act,#s-stock #st-score,#s-stock #st-held{display:none}#s-stock .ws-head h1{font-size:17px;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}#s-stock .ws-vd{flex:none}}
 #s-stock th.sigh{text-transform:none;vertical-align:middle;background:transparent;font-size:14px;font-weight:500;letter-spacing:0;color:var(--ink);text-align:left;height:52px;padding:0 12px;border-bottom:1px solid var(--line)}
 #s-stock tbody tr:last-child th.sigh{border-bottom:0}
 #s-stock .tli.today{width:84px}
@@ -1211,51 +1249,10 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
 
 /* ==== src/review.css ==== */
 /* review: scoped under #s-review. Tokens only. */
-#s-review{--rv-top:96px}
-#s-review .rv-note{margin:0 0 14px;max-width:75ch}
-#s-review .rv-h3{margin:0 0 8px;font-size:14px}
-#s-review .two{gap:20px}
 #s-review .sect>header h2{font-size:16px}
 
-/* sticky summary */
-#s-review .rv-sum{position:sticky;top:var(--rv-top);z-index:10;display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap;margin:0 0 16px;padding:10px 14px;background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
-#s-review .rv-sum-main{display:flex;align-items:baseline;gap:4px 14px;flex-wrap:wrap;min-width:0}
-#s-review .rv-sum-n{font-size:15px;font-variant-numeric:tabular-nums}
-#s-review .rv-sum-n b{font-size:20px;font-weight:600;color:var(--accent)}
-#s-review .rv-sum-sub{font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
-#s-review .rv-bar{flex:1 1 140px;height:8px;border-radius:999px;background:var(--tint);border:1px solid var(--line);overflow:hidden;min-width:100px}
-#s-review .rv-bar i{display:block;height:100%;width:0;background:var(--accent);border-radius:999px;transition:width .25s ease}
-#s-review .rv-sum .btn{margin-left:auto}
-#s-review .rv-sum.all .rv-bar i{background:var(--gain)}
-#s-review .rv-sum.all .rv-sum-n b{color:var(--gain)}
 
-/* decision cards */
-#s-review .rv-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:stretch}
-#s-review .rv-card{display:flex;flex-direction:column;gap:10px;min-width:0;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);transition:border-color .15s,box-shadow .15s}
-#s-review .rv-card:hover{border-color:var(--line-strong)}
-#s-review .rv-card.is-on{border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
-#s-review .rv-top{display:flex;align-items:flex-start;gap:12px;min-width:0}
-#s-review .rv-no{flex:none;min-width:32px;height:32px;padding:0 8px;border-radius:999px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font:600 13px var(--sans);font-variant-numeric:tabular-nums;transition:background .15s,color .15s}
-#s-review .rv-card.is-on .rv-no{background:var(--accent);color:var(--accent-ink)}
-#s-review .rv-card h3{margin:4px 0 0;font-size:15px;line-height:1.35;font-weight:600;min-width:0;overflow-wrap:anywhere}
-#s-review .rv-what{margin:0;color:var(--muted);font-size:14px;line-height:1.55}
-#s-review .rv-rec{margin:0;padding:10px 12px 10px 14px;background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:4px 10px 10px 4px;color:var(--ink);font-size:14px;line-height:1.5}
-#s-review .rv-rec b{display:block;margin-bottom:2px;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
 
-/* approve toggle: the whole row is the tap target, the real checkbox sits invisibly on top */
-#s-review .rv-tog{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:auto;min-height:48px;padding:6px 14px;border:1px solid var(--line);border-radius:12px;background:var(--tint);color:var(--ink);font-size:14px;font-weight:500;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;transition:background .15s,border-color .15s}
-#s-review .rv-tog:hover{border-color:var(--line-strong)}
-#s-review .rv-tog input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
-#s-review .rv-tog .st::before{content:"Not approved"}
-#s-review .rv-tog input:checked~.st::before{content:"Approved"}
-#s-review .rv-tog .st{color:var(--faint);font-size:12px;font-weight:500;margin-left:auto;margin-right:4px}
-#s-review .rv-trk{flex:none;position:relative;width:48px;height:28px;border-radius:999px;background:var(--line-strong);transition:background .18s}
-#s-review .rv-trk::after{content:"";position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;background:var(--surface);box-shadow:var(--shadow);border:1px solid var(--line);transition:transform .18s}
-#s-review .rv-tog input:checked~.rv-trk{background:var(--accent)}
-#s-review .rv-tog input:checked~.rv-trk::after{transform:translateX(20px);background:var(--accent-ink)}
-#s-review .rv-tog input:checked~.st{color:var(--accent);font-weight:600}
-#s-review .rv-tog input:focus-visible~.rv-trk{outline:2px solid var(--accent);outline-offset:3px}
-#s-review .rv-card.is-on .rv-tog{background:var(--accent-soft);border-color:var(--accent)}
 
 /* decided and notes: fact lists */
 #s-review .rv-facts{list-style:none;margin:0;padding:0;max-width:90ch}
@@ -1283,19 +1280,9 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
 #s-review .rv-scroll:not(:has(.rv-gl)) td:nth-child(2){color:var(--faint);white-space:normal;min-width:110px;font-weight:400}
 #s-review .rv-gl td:nth-child(3),#s-review .rv-gl td:nth-child(4){min-width:220px}
 
-@media (max-width:1023px){
-  #s-review .rv-list{grid-template-columns:minmax(0,1fr)}
-}
 @media (max-width:767px){
   #s-review .sect{padding:14px}
-  #s-review .rv-card{padding:14px}
-  #s-review .rv-sum{padding:8px 12px;gap:8px 12px}
-  #s-review .rv-bar{order:3;flex-basis:100%}
-  #s-review .rv-sum .btn{padding:0 10px}
   #s-review .rv-scroll{max-height:min(60vh,420px)}
-}
-@media (prefers-reduced-motion:reduce){
-  #s-review .rv-bar i,#s-review .rv-trk,#s-review .rv-trk::after{transition:none}
 }
 
 /* ==== src/stock_tools.css ==== */
@@ -1759,7 +1746,6 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
 #s-stock .mo .mo-empty{padding:16px;border:1px dashed var(--line-strong);border-radius:12px;background:var(--tint);color:var(--muted);font-size:14px;line-height:1.5}
 #s-stock .mo .mo-empty b{color:var(--ink);font-weight:600}
 #s-stock .mo .mo-empty .btn{margin-top:10px}
-#s-stock .mo .mo-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:16px;align-items:start}
 #s-stock .mo .mo-bar{display:flex;gap:10px 14px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 #s-stock .mo .mo-lbl{font-size:12px;color:var(--faint);letter-spacing:.04em}
 #s-stock .mo .mo-link{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;border:0;background:transparent;color:var(--accent);font:500 13px var(--sans);text-decoration:underline;text-underline-offset:3px;cursor:pointer;white-space:nowrap}
@@ -1789,22 +1775,42 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
 #s-stock .mo .mo-cells i.up{background:var(--faint)}
 #s-stock .mo .mo-cap{font-size:13px;color:var(--muted);line-height:1.5;margin:0 0 6px}
 
-/* heat strip */
-#s-stock .mo .mo-heat{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:8px}
-#s-stock .mo .mo-tile{position:relative;display:flex;flex-direction:column;gap:2px;padding:9px 11px;border-radius:12px;border:1px solid var(--line);background:var(--tint);min-width:0}
-#s-stock .mo .mo-tile.up{background:var(--gain-soft);border-color:color-mix(in srgb,var(--gain) 30%,transparent)}
-#s-stock .mo .mo-tile.down{background:var(--loss-soft);border-color:color-mix(in srgb,var(--loss) 30%,transparent)}
-#s-stock .mo .mo-tile.na{background:transparent;border:1px dashed var(--faint)}
-#s-stock .mo .mo-tile.me{box-shadow:0 0 0 2px var(--accent)}
-#s-stock .mo .mo-tn{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#s-stock .mo .mo-tv{display:inline-flex;align-items:center;gap:5px;font:600 16px var(--sans);font-variant-numeric:tabular-nums}
-#s-stock .mo .mo-tile.up .mo-tv{color:var(--gain)}
-#s-stock .mo .mo-tile.down .mo-tv{color:var(--loss)}
-#s-stock .mo .mo-tile.na .mo-tv{color:var(--muted);font-size:13px;font-weight:500}
-#s-stock .mo .mo-tv svg{width:13px;height:13px;flex:none}
-#s-stock .mo .mo-tv svg.mo-u{transform:rotate(-90deg)}
-#s-stock .mo .mo-tv svg.mo-d{transform:rotate(90deg)}
-#s-stock .mo .mo-me{font-size:11px;font-weight:600;color:var(--accent)}
+/* sector and industry performance chart */
+#s-stock .mo .pf-tabs,#s-stock .mo .pf-win{max-width:100%}
+#s-stock .mo .pf-tabs button,#s-stock .mo .pf-win button{min-height:44px}
+#s-stock .mo .pf-h{display:flex;align-items:center;gap:6px;margin:0 0 8px;font:600 14px/1.3 var(--sans);color:var(--ink)}
+#s-stock .mo .pf-h svg{width:14px;height:14px;flex:none}
+#s-stock .mo .pf-h svg.mo-u{transform:rotate(-90deg);color:var(--gain)}
+#s-stock .mo .pf-h svg.mo-d{transform:rotate(90deg);color:var(--loss)}
+#s-stock .mo .pf-grp{margin:0 0 14px;min-width:0}
+#s-stock .mo .pf-list{list-style:none;margin:0;padding:0}
+#s-stock .mo .pf-it{position:relative;min-width:0;display:grid;grid-template-columns:minmax(0,8rem) minmax(0,1fr);align-items:center;gap:4px 12px;padding:6px 2px;border-radius:10px}
+#s-stock .mo .pf-it:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#s-stock .mo .pf-track{position:relative;display:block;height:26px;min-width:0}
+#s-stock .mo .pf-bar{position:absolute;top:4px;bottom:4px;left:0;width:calc(var(--p) * .7%);border-radius:4px;background:var(--gain)}
+#s-stock .mo .pf-dn .pf-bar{background:var(--loss)}
+#s-stock .mo .pf-it.me .pf-bar{outline:2px solid var(--accent);outline-offset:2px}
+#s-stock .mo .pf-val{position:absolute;top:0;bottom:0;left:calc(var(--p) * .7% + 8px);display:flex;align-items:center;font:600 13px var(--sans);font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink)}
+#s-stock .mo .pf-up .pf-val{color:var(--gain)}
+#s-stock .mo .pf-dn .pf-val{color:var(--loss)}
+#s-stock .mo .pf-nm{font-size:14px;line-height:1.3;color:var(--ink);overflow-wrap:break-word;hyphens:auto}
+#s-stock .mo .pf-tag{grid-column:1 / -1;font-size:12px;font-weight:600;color:var(--accent)}
+@media (min-width:640px){
+  /* vertical columns: bars grow up from the zero line for gains and down for losses */
+  #s-stock .mo .pf-list{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px 10px}
+  #s-stock .mo .pf-it{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:0}
+  #s-stock .mo .pf-track{height:114px}
+  #s-stock .mo .pf-up .pf-track{border-bottom:1px solid var(--line-strong)}
+  #s-stock .mo .pf-dn .pf-track{border-top:1px solid var(--line-strong)}
+  #s-stock .mo .pf-bar{top:auto;bottom:auto;left:22%;right:22%;width:auto;height:var(--h)}
+  #s-stock .mo .pf-up .pf-bar{top:auto;bottom:0}
+  #s-stock .mo .pf-dn .pf-bar{top:0;bottom:auto}
+  #s-stock .mo .pf-val{top:auto;bottom:auto;left:0;right:0;display:block;text-align:center}
+  #s-stock .mo .pf-up .pf-val{bottom:calc(var(--h) + 4px)}
+  #s-stock .mo .pf-dn .pf-val{top:calc(var(--h) + 4px)}
+  #s-stock .mo .pf-nm{min-height:2.6em;text-align:center}
+  #s-stock .mo .pf-tag{text-align:center}
+}
 
 /* shared table bits */
 #s-stock .mo .tbl-wrap{margin-top:4px}
@@ -1878,9 +1884,6 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
 #s-stock .mo .mo-count{margin:0 0 8px;font-size:14px;color:var(--muted)}
 #s-stock .mo .mo-count b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
 
-@media (max-width:860px){
-  #s-stock .mo .mo-two{grid-template-columns:minmax(0,1fr)}
-}
 @media (max-width:700px){
   #s-stock .mo .seg{flex-wrap:wrap;width:100%}
   #s-stock .mo .seg button{flex:1 1 auto;padding:0 10px}
@@ -2015,6 +2018,22 @@ tbody tr:hover td{background:var(--tint)}
 .readout,.chartwrap text,.vd,.evline .d,.chip i,.strip .v,.kv,.gv .no{font-variant-numeric:tabular-nums;font-feature-settings:"tnum","cv11"}
 .readout{font-size:12.5px;gap:4px 14px;letter-spacing:0}
 .readout b{font-weight:600}
+/* phone stock actions: a slim handle on the right edge opens a pane that holds #st-act (stock page, max 640px) */
+#st-handle,#st-pane{display:none}
+@media (max-width:640px){
+#st-handle{position:fixed;right:0;top:50%;z-index:18;width:44px;min-height:112px;margin:0;padding:12px 0;align-items:center;justify-content:center;border:1px solid var(--line-strong);border-right:0;border-radius:12px 0 0 12px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow);font:600 13px/1 var(--sans);letter-spacing:.04em;writing-mode:vertical-rl;transform:translateY(-50%) rotate(180deg);cursor:pointer;transition:right .22s cubic-bezier(.22,1,.36,1)}
+body.st-page #st-handle{display:flex}
+#st-handle[aria-expanded=true]{right:min(86vw,320px)}
+#st-handle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#st-pane{display:flex;flex-direction:column;position:fixed;top:var(--top-h,0px);bottom:0;right:0;z-index:18;width:min(86vw,320px);background:var(--surface);color:var(--ink);border-left:1px solid var(--line-strong);box-shadow:var(--shadow-pop);visibility:hidden;transform:translateX(100%);transition:transform .22s cubic-bezier(.22,1,.36,1),visibility .22s}
+#st-pane.on{visibility:visible;transform:none}
+#st-pane:focus{outline:none}
+.st-pane-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px 10px 16px;border-bottom:1px solid var(--line);flex:none}
+.st-pane-body{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:16px}
+#st-pane .ws-act{display:flex;flex-direction:column;gap:10px;margin:0}
+#st-pane .ws-act .btn{width:100%;justify-content:center;white-space:normal}
+@media (prefers-reduced-motion:reduce){#st-handle,#st-pane{transition:none}}
+}
 </style>
 </head>
 <body>
@@ -2043,7 +2062,7 @@ tbody tr:hover td{background:var(--tint)}
     <a class="brand" href="index.html" aria-label="ATH Scanner, home"><i><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18l6-7 4 4 6-9"/></svg></i>ATH Scanner</a>
     <nav class="main" id="nav" aria-label="Primary">
       <a href="#/stocks" data-nav="stocks">Stocks</a>
-      <a href="#/holdings" data-nav="holdings">Review Holding</a>
+      <a href="#/holdings" data-nav="holdings">Review Holding<span class="nav-count" id="nav-exit" role="img" aria-label="" hidden>0</span></a>
       <a href="#/review" data-nav="review">For review</a>
       <a href="index.html" data-nav="home">Home</a>
     </nav>
@@ -2075,15 +2094,15 @@ tbody tr:hover td{background:var(--tint)}
 
   <section class="card la" id="la" aria-labelledby="la-t">
     <div class="la-top">
-      <h2 id="la-t">Last assessment results<button type="button" class="info" data-tip="st_last_assess" aria-label="About Last assessment results">i</button></h2>
+      <h2 id="la-t"><span class="tipl" data-tip="st_last_assess" tabindex="0">Last assessment results</span></h2>
       <span class="la-run">Run <a href="index.html" id="la-run">30 Sep 2026</a></span>
     </div>
     <p class="la-meta" id="la-meta"></p>
     <ul class="la-list">
-      <li data-tone="gain"><b>Buy<button type="button" class="info" data-tip="verdict_buy" aria-label="About Buy">i</button></b><span>3 of 3 and governance passed</span></li>
-      <li data-tone="hold"><b>Hold<button type="button" class="info" data-tip="verdict_hold" aria-label="About Hold">i</button></b><span>2 of 3, or buy blocked</span></li>
-      <li data-tone="loss"><b>Exit<button type="button" class="info" data-tip="verdict_exit" aria-label="About Exit">i</button></b><span>1 of 3 or fewer, or below the 200-day EMA and behind the Nifty 500</span></li>
-      <li data-tone="loss"><b>Rejected<button type="button" class="info" data-tip="verdict_reject" aria-label="About Rejected">i</button></b><span>A Bad governance grade</span></li>
+      <li data-tone="gain"><b><span class="tipl" data-tip="verdict_buy" tabindex="0">Buy</span></b><span>3 of 3 and governance passed</span></li>
+      <li data-tone="hold"><b><span class="tipl" data-tip="verdict_hold" tabindex="0">Hold</span></b><span>2 of 3, or buy blocked</span></li>
+      <li data-tone="loss"><b><span class="tipl" data-tip="verdict_exit" tabindex="0">Exit</span></b><span>1 of 3 or fewer, or below the 200 DMA and behind the Nifty 500</span></li>
+      <li data-tone="loss"><b><span class="tipl" data-tip="verdict_reject" tabindex="0">Rejected</span></b><span>A Bad governance grade</span></li>
     </ul>
     <p class="la-hold" id="la-hold"><svg aria-hidden="true"><use href="#i-warn"/></svg><span id="la-hold-txt"></span> <a href="#/holdings">Review Holding<svg aria-hidden="true"><use href="#i-arrow"/></svg></a></p>
   </section>
@@ -2094,13 +2113,35 @@ tbody tr:hover td{background:var(--tint)}
         <button type="button" class="vchip" data-tone="all" aria-pressed="true" data-v="all">All<span class="n" data-c="all">0</span></button><button type="button" class="vchip" data-tone="gain" aria-pressed="false" data-v="BUY">Buy<span class="n" data-c="BUY">0</span></button><button type="button" class="vchip" data-tone="hold" aria-pressed="false" data-v="HOLD">Hold<span class="n" data-c="HOLD">0</span></button><button type="button" class="vchip" data-tone="loss" aria-pressed="false" data-v="EXIT">Exit<span class="n" data-c="EXIT">0</span></button><button type="button" class="vchip" data-tone="loss" aria-pressed="false" data-v="REJECT">Rejected<span class="n" data-c="REJECT">0</span></button>
       </div>
       <div class="search"><svg><use href="#i-search"/></svg><input id="q" type="search" placeholder="Search symbol or company" aria-label="Search symbol or company" aria-keyshortcuts="/ Control+K Meta+K" autocomplete="off"><span class="kbd" aria-hidden="true">/</span></div>
-      <div class="selwrap"><label for="f-score">Score </label><button type="button" class="info" data-tip="score" aria-label="About Score">i</button>
+      <div class="selwrap"><label for="f-score"><span class="tipl" data-tip="score" tabindex="0">Score</span> </label>
         <select id="f-score"><option value="all">Any</option><option value="3">3 of 3</option><option value="2">2 of 3</option><option value="low">0 or 1 of 3</option></select></div>
-      <div class="selwrap"><label for="f-index">Indices </label><button type="button" class="info" data-tip="st_indices" aria-label="About Indices">i</button><select id="f-index"></select></div>
-      <div class="selwrap"><label for="f-sector">Sector </label><button type="button" class="info" data-tip="strat_sector" aria-label="About Sector">i</button><select id="f-sector"></select></div>
+      <div class="selwrap"><label for="f-index"><span class="tipl" data-tip="st_indices" tabindex="0">Indices</span> </label><select id="f-index"></select></div>
+      <div class="selwrap"><label for="f-sector"><span class="tipl" data-tip="strat_sector" tabindex="0">Sector</span> </label><select id="f-sector"></select></div>
       <button type="button" class="btn" id="f-held" aria-pressed="false">Holdings only</button>
     </div>
 
+    <div class="tbar2">
+      <div class="sf-grp" role="group" aria-labelledby="sf-h">
+        <span class="sf-h" id="sf-h">Saved filters</span>
+        <button type="button" class="btn" id="sf-new" aria-expanded="false" aria-controls="sf-form">Save current filters</button>
+        <label for="sf-list" class="sr">Saved filter</label>
+        <select id="sf-list"></select>
+        <button type="button" class="btn" id="sf-apply">Apply</button>
+        <button type="button" class="btn" id="sf-del">Delete</button>
+      </div>
+      <form class="sf-form" id="sf-form" hidden>
+        <label for="sf-name">Name for this filter</label>
+        <input id="sf-name" type="text" maxlength="40" autocomplete="off">
+        <button type="submit" class="btn primary">Save filter</button>
+        <button type="button" class="btn" id="sf-cancel">Cancel</button>
+      </form>
+      <button type="button" class="btn" id="cols-btn" aria-expanded="false" aria-controls="cols-panel">Columns</button>
+      <div class="colp" id="cols-panel" hidden>
+        <fieldset><legend>Show columns</legend><div class="colp-list" id="cols-list"></div></fieldset>
+        <button type="button" class="btn" id="cols-reset">Reset to default</button>
+      </div>
+      <p class="sf-msg" id="sf-msg" role="status" aria-live="polite"></p>
+    </div>
     <div class="tbl-wrap"><table>
       <caption class="sr" id="cap-s">Stocks ordered by verdict, then score, then 52-week return. Select a row to open the stock.</caption>
       <thead><tr id="thead-s"></tr></thead>
@@ -2137,7 +2178,7 @@ tbody tr:hover td{background:var(--tint)}
       <button type="button" class="ct-btn ct-px" id="ct-type" aria-haspopup="menu" aria-expanded="false" title="Chart type" aria-label="Chart type"><span class="ct-ti" id="ct-type-i"></span><span class="ct-lab" id="ct-type-l">Candles</span><span class="ct-cv" aria-hidden="true"></span></button>
       <button type="button" class="ct-btn ct-px" id="ct-ind" aria-haspopup="dialog" title="Indicators. Press I" aria-label="Indicators"><span class="ct-ii" aria-hidden="true"></span><span class="ct-lab">Indicators</span></button>
       <i class="ct-sep" aria-hidden="true"></i>
-      <div class="ct-cmp" role="group" aria-label="Compare"><span class="ct-cl">Compare <button type="button" class="info" data-tip="chart_compare" aria-label="About Compare">i</button></span>
+      <div class="ct-cmp" role="group" aria-label="Compare"><span class="ct-cl"><span class="tipl" data-tip="chart_compare" tabindex="0">Compare</span> </span>
         <div class="seg"><button type="button" id="ch-cn" aria-pressed="false" title="Compare with the Nifty 500, both rebased to 100">Nifty 500</button><button type="button" id="ch-cs" aria-pressed="false" title="Compare with this stock's sector index, both rebased to 100">Sector index</button></div></div>
       <i class="ct-sep" aria-hidden="true"></i>
       <button type="button" class="ct-btn ct-icon ct-px" id="ct-tpl" aria-haspopup="menu" aria-expanded="false" title="Indicator templates" aria-label="Indicator templates"></button>
@@ -2162,7 +2203,7 @@ tbody tr:hover td{background:var(--tint)}
     <div class="sr" id="ch-live" role="status" aria-live="polite"></div>
     <div class="legend" id="ch-legend"></div>
     <div class="chiprow" style="margin-top:12px">
-      <span class="chiplab">Events on the chart <button type="button" class="info" data-tip="events" aria-label="About Events on the chart">i</button></span>
+      <span class="chiplab"><span class="tipl" data-tip="events" tabindex="0">Events on the chart</span> </span>
       <div class="chips" role="group" aria-label="Events on the chart" id="ev-chips">
         <button type="button" class="chip" data-ev="E" aria-pressed="true"><i style="background:#4F46E5">E</i>Results</button>
         <button type="button" class="chip" data-ev="D" aria-pressed="true"><i style="background:#B45309">D</i>Dividends</button>
@@ -2173,17 +2214,17 @@ tbody tr:hover td{background:var(--tint)}
     </div>
     <div class="evdetail" id="ev-detail"></div>
     <p class="chart-cap" id="ch-alt"></p>
-    <p class="chart-cap" id="ct-help">Chart tools: scroll to zoom, drag to pan, double-click to reset, right-click for more. Heikin Ashi<button type="button" class="info" data-tip="ct_heikin" aria-label="About Heikin Ashi">i</button> and hollow candles<button type="button" class="info" data-tip="ct_hollow" aria-label="About Hollow candles">i</button> are in the chart type menu. The % scale<button type="button" class="info" data-tip="ct_pct_scale" aria-label="About % scale">i</button> shows change from the first visible bar. Auto scale<button type="button" class="info" data-tip="ct_auto_scale" aria-label="About Auto scale">i</button> refits the price axis as you move. Alerts<button type="button" class="info" data-tip="ct_alert" aria-label="About Alerts">i</button> message you on WhatsApp and never place an order.</p>
+    <p class="chart-cap" id="ct-help">Chart tools: scroll to zoom, drag to pan, double-click to reset, right-click for more. <span class="tipl" data-tip="ct_heikin" tabindex="0">Heikin Ashi</span> and <span class="tipl" data-tip="ct_hollow" tabindex="0">hollow candles</span> are in the chart type menu. The <span class="tipl" data-tip="ct_pct_scale" tabindex="0">% scale</span> shows change from the first visible bar. <span class="tipl" data-tip="ct_auto_scale" tabindex="0">Auto scale</span> refits the price axis as you move. <span class="tipl" data-tip="ct_alert" tabindex="0">Alerts</span> message you on WhatsApp and never place an order.</p>
     <p class="chart-cap">Sample prices. The product draws this chart with KLineChart from our own database, themed to match the site. Moving averages are always the daily ones, so the 200 DMA means 200 days on every timeframe.</p>
   </section>
 
   <section class="card tech" id="st-tech" aria-labelledby="tech-h" hidden>
-    <header><h2 id="tech-h">Technical read <button type="button" class="info" data-tip="tech_read" aria-label="About Technical read">i</button></h2><span class="hint">Indicators on daily prices. Context only. It does not change the score or the verdict.</span></header>
+    <header><h2 id="tech-h"><span class="tipl" data-tip="tech_read" tabindex="0">Technical read</span> </h2><span class="hint">Indicators on daily prices. Context only. It does not change the score or the verdict.</span></header>
     <div class="meter">
       <div id="tech-gauge" class="gauge"></div>
       <div class="tiles" id="tech-tiles"></div>
     </div>
-    <h3 class="sig-h">Technical signals <button type="button" class="info" data-tip="tech_signals" aria-label="About Technical signals">i</button></h3>
+    <h3 class="sig-h"><span class="tipl" data-tip="tech_signals" tabindex="0">Technical signals</span> </h3>
     <div class="tbl-wrap"><table><caption class="sr">The eight signals behind the technical read.</caption><thead><tr><th scope="col">Signal</th><th scope="col">Leans</th><th scope="col">Why</th></tr></thead><tbody id="tech-sig-body"></tbody></table></div>
   </section>
 
@@ -2206,7 +2247,7 @@ tbody tr:hover td{background:var(--tint)}
           <div class="rows" id="st-fil"></div>
         </div>
         <div class="panel">
-          <header><h2>Analyst stance (context) <button type="button" class="info" data-tip="analyst_stance" aria-label="About Analyst stance">i</button></h2></header>
+          <header><h2><span class="tipl" data-tip="analyst_stance" tabindex="0">Analyst stance (context)</span> </h2></header>
           <div class="stance" id="st-stance"></div>
           <p class="note">Shown for context only. It does not change the score or the verdict.</p>
         </div>
@@ -2216,7 +2257,7 @@ tbody tr:hover td{background:var(--tint)}
 
   <div class="tabpane" role="tabpanel" id="p-peers" aria-labelledby="xt-p-peers" hidden>
     <div class="sect">
-      <header><h2>Peer comparison <button type="button" class="info" data-tip="peers" aria-label="About Peer comparison">i</button></h2><span class="hint">Same sector index first, then the closest by 52-week return. Sample values.</span></header>
+      <header><h2><span class="tipl" data-tip="peers" tabindex="0">Peer comparison</span> </h2><span class="hint">Same sector index first, then the closest by 52-week return. Sample values.</span></header>
       <div class="bar"><div class="seg" id="pe-mode" role="group" aria-label="Peer view"><button type="button" data-v="val" aria-pressed="true">Valuation</button><button type="button" data-v="str" aria-pressed="false">Strategy score</button><button type="button" data-v="perf" aria-pressed="false">Performance</button></div></div>
       <div class="tbl-wrap"><table><caption class="sr">Peers of the selected stock.</caption><thead><tr id="thead-pe"></tr></thead><tbody id="tb-pe"></tbody></table></div>
     </div>
@@ -2224,7 +2265,7 @@ tbody tr:hover td{background:var(--tint)}
 
   <div class="tabpane" role="tabpanel" id="p-vol" aria-labelledby="xt-p-vol" hidden>
     <div class="sect">
-      <header><h2>Volume and delivery <button type="button" class="info" data-tip="volume_table" aria-label="About Volume and delivery">i</button></h2><span class="hint">Shares traded, and the part taken for delivery. Sample values.</span></header>
+      <header><h2><span class="tipl" data-tip="volume_table" tabindex="0">Volume and delivery</span> </h2><span class="hint">Shares traded, and the part taken for delivery. Sample values.</span></header>
       <div class="tiles" id="vo-tiles"></div>
       <div class="bar">
         <div class="seg" id="vo-ex" role="group" aria-label="Exchange"><button type="button" data-v="NSE" aria-pressed="true">NSE</button><button type="button" data-v="BSE" aria-pressed="false">BSE</button><button type="button" data-v="Both" aria-pressed="false">Both</button></div>
@@ -2236,7 +2277,7 @@ tbody tr:hover td{background:var(--tint)}
 
   <div class="tabpane" role="tabpanel" id="p-deals" aria-labelledby="xt-p-deals" hidden>
     <div class="sect">
-      <header><h2>Stock deals <button type="button" class="info" data-tip="deals" aria-label="About Stock deals">i</button></h2><span class="hint">Large trades reported by the exchanges, and insider trades. Invented sample rows.</span></header>
+      <header><h2><span class="tipl" data-tip="deals" tabindex="0">Stock deals</span> </h2><span class="hint">Large trades reported by the exchanges, and insider trades. Invented sample rows.</span></header>
       <div class="bar"><div class="seg" id="dl-mode" role="group" aria-label="Kind of deal"><button type="button" data-v="bulk" aria-pressed="true">Bulk</button><button type="button" data-v="block" aria-pressed="false">Block</button><button type="button" data-v="insider" aria-pressed="false">Insider</button></div></div>
       <p class="note dl-line" id="dl-line"></p>
       <div class="tbl-wrap"><table><caption class="sr">Deals in the selected stock.</caption><thead><tr id="thead-dl"></tr></thead><tbody id="tb-dl"></tbody></table></div>
@@ -2245,7 +2286,7 @@ tbody tr:hover td{background:var(--tint)}
 
   <div class="tabpane" role="tabpanel" id="p-ca" aria-labelledby="xt-p-ca" hidden>
     <div class="sect">
-      <header><h2>Corporate actions <button type="button" class="info" data-tip="corp_action" aria-label="About Corporate actions">i</button></h2><span class="hint">Past and upcoming. The timeline scrolls sideways. Upcoming actions have a dashed outline.</span></header>
+      <header><h2><span class="tipl" data-tip="corp_action" tabindex="0">Corporate actions</span> </h2><span class="hint">Past and upcoming. The timeline scrolls sideways. Upcoming actions have a dashed outline.</span></header>
       <div class="bar"><div class="seg" id="ca-mode" role="group" aria-label="Kind of action"><button type="button" data-v="all" aria-pressed="true">All</button><button type="button" data-v="D" aria-pressed="false">Dividend</button><button type="button" data-v="S" aria-pressed="false">Bonus and split</button><button type="button" data-v="O" aria-pressed="false">Other</button></div></div>
       <div class="tl" id="tl" tabindex="0" role="region" aria-label="Corporate actions timeline, scrolls sideways"></div>
     </div>
@@ -2262,7 +2303,7 @@ tbody tr:hover td{background:var(--tint)}
   <div class="head">
     <div>
       <div class="eyebrow">Your holdings</div>
-      <h1 id="hd-h1">Review Holding <button type="button" class="info" data-tip="hold_review" aria-label="About Review Holding">i</button></h1>
+      <h1 id="hd-h1"><span class="tipl" data-tip="hold_review" tabindex="0">Review Holding</span> </h1>
       <p class="sub">You manage the positions. The system screens the universe, then tests what you hold against the exit rules and your risk limits. It never places orders.</p>
     </div>
   </div>
@@ -2270,7 +2311,7 @@ tbody tr:hover td{background:var(--tint)}
   <div class="card hd-rv" id="hd-rv">
     <div class="rv-row">
       <div class="rv-txt">
-        <div class="rv-k">Last reviewed <button type="button" class="info" data-tip="hold_last_reviewed" aria-label="About Last reviewed">i</button></div>
+        <div class="rv-k"><span class="tipl" data-tip="hold_last_reviewed" tabindex="0">Last reviewed</span> </div>
         <div class="rv-v" id="hd-rv-when" role="status">Not reviewed yet</div>
         <p class="note" id="hd-rv-note"></p>
       </div>
@@ -2293,10 +2334,10 @@ tbody tr:hover td{background:var(--tint)}
     <div role="tabpanel" id="hd-p-totals" aria-labelledby="hd-tab-totals" hidden class="hd-panel">
       <p class="note">Two numbers are all position sizing needs. Type them here and carry them over.</p>
       <div class="form-grid">
-        <div class="field" id="hd-f-inv"><div class="lab"><label for="hd-inv">Investment Value</label><button type="button" class="info" data-tip="investment_value" aria-label="About Investment Value">i</button></div>
+        <div class="field" id="hd-f-inv"><div class="lab"><label for="hd-inv"><span class="tipl" data-tip="investment_value" tabindex="0">Investment Value</span></label></div>
           <div class="pre"><span>&#8377;</span><input id="hd-inv" class="mono" inputmode="decimal" autocomplete="off" placeholder="20,00,000" aria-describedby="hd-h-inv hd-e-inv"></div>
           <small id="hd-h-inv" aria-live="polite">What you paid in total for your holdings.</small><span class="err" id="hd-e-inv"><svg><use href="#i-x"/></svg><span>Enter a number above zero.</span></span></div>
-        <div class="field" id="hd-f-nav"><div class="lab"><label for="hd-nav">Net Asset Value</label><button type="button" class="info" data-tip="nav" aria-label="About Net Asset Value">i</button></div>
+        <div class="field" id="hd-f-nav"><div class="lab"><label for="hd-nav"><span class="tipl" data-tip="nav" tabindex="0">Net Asset Value</span></label></div>
           <div class="pre"><span>&#8377;</span><input id="hd-nav" class="mono" inputmode="decimal" autocomplete="off" placeholder="60,00,000" aria-describedby="hd-h-nav hd-e-nav"></div>
           <small id="hd-h-nav" aria-live="polite">What your holdings are worth today, cash left out.</small><span class="err" id="hd-e-nav"><svg><use href="#i-x"/></svg><span>Enter a number above zero.</span></span></div>
       </div>
@@ -2335,7 +2376,7 @@ tbody tr:hover td{background:var(--tint)}
     <div class="card hd-rules" id="hd-rules"></div>
 
     <div class="hd-sh"><h2>Risk by holding</h2>
-      <div class="field fall"><div class="lab"><label for="hd-fall">Assumed fall for funds and ETFs (%)</label><button type="button" class="info" data-tip="assumed_fall" aria-label="About Assumed fall for funds and ETFs">i</button></div>
+      <div class="field fall"><div class="lab"><label for="hd-fall"><span class="tipl" data-tip="assumed_fall" tabindex="0">Assumed fall for funds and ETFs (%)</span></label></div>
         <input id="hd-fall" class="mono" type="number" min="1" max="60" step="1" value="10" inputmode="decimal"></div>
     </div>
     <div class="tbl-wrap"><table>
@@ -2413,19 +2454,19 @@ tbody tr:hover td{background:var(--tint)}
       <fieldset class="grp">
         <legend><span class="gn" aria-hidden="true">1</span>Your portfolio</legend>
         <div class="form-grid">
-          <div class="field" id="fd-inv"><div class="lab"><label for="c-inv">Investment Value</label><button type="button" class="info" data-tip="investment_value" aria-label="About Investment Value">i</button></div>
+          <div class="field" id="fd-inv"><div class="lab"><label for="c-inv"><span class="tipl" data-tip="investment_value" tabindex="0">Investment Value</span></label></div>
             <div class="pre"><span>&#8377;</span><input id="c-inv" class="mono" inputmode="decimal" autocomplete="off" aria-describedby="h-inv e-inv"></div>
             <small id="h-inv"></small><span class="err" id="e-inv"><svg aria-hidden="true"><use href="#i-x"/></svg><span></span></span></div>
-          <div class="field" id="fd-pl"><div class="lab"><label for="c-pl">Notional profit or loss</label><button type="button" class="info" data-tip="notional_pnl" aria-label="About Notional profit or loss">i</button></div>
+          <div class="field" id="fd-pl"><div class="lab"><label for="c-pl"><span class="tipl" data-tip="notional_pnl" tabindex="0">Notional profit or loss</span></label></div>
             <div class="pre"><span>&#8377;</span><input id="c-pl" class="mono" inputmode="decimal" autocomplete="off" aria-describedby="h-pl e-pl"></div>
             <small id="h-pl">Type a minus sign for a loss.</small><span class="err" id="e-pl"><svg aria-hidden="true"><use href="#i-x"/></svg><span></span></span></div>
-          <div class="field full" id="fd-nav"><div class="lab"><label for="c-nav">Net Asset Value</label><button type="button" class="info" data-tip="nav" aria-label="About Net Asset Value">i</button></div>
+          <div class="field full" id="fd-nav"><div class="lab"><label for="c-nav"><span class="tipl" data-tip="nav" tabindex="0">Net Asset Value</span></label></div>
             <div class="pre"><span>&#8377;</span><input id="c-nav" class="mono" inputmode="decimal" autocomplete="off" aria-describedby="h-nav e-nav"></div>
             <small id="h-nav">Investment Value plus profit or loss. Type here to work back to the profit or loss.</small><span class="err" id="e-nav"><svg aria-hidden="true"><use href="#i-x"/></svg><span></span></span></div>
-          <div class="field" id="fd-cash"><div class="lab"><label for="c-cash">Cash available</label><button type="button" class="info" data-tip="cash_available" aria-label="About Cash available">i</button><span class="opt">optional</span></div>
+          <div class="field" id="fd-cash"><div class="lab"><label for="c-cash"><span class="tipl" data-tip="cash_available" tabindex="0">Cash available</span></label><span class="opt">optional</span></div>
             <div class="pre"><span>&#8377;</span><input id="c-cash" class="mono" inputmode="decimal" autocomplete="off" aria-describedby="h-cash e-cash"></div>
             <small id="h-cash">Leave blank if unlimited.</small><span class="err" id="e-cash"><svg aria-hidden="true"><use href="#i-x"/></svg><span></span></span></div>
-          <div class="field" id="fd-count"><div class="lab"><label for="c-count">Stocks you hold</label><button type="button" class="info" data-tip="holdings_count" aria-label="About Stocks you hold">i</button><span class="opt">optional</span></div>
+          <div class="field" id="fd-count"><div class="lab"><label for="c-count"><span class="tipl" data-tip="holdings_count" tabindex="0">Stocks you hold</span></label><span class="opt">optional</span></div>
             <input id="c-count" class="mono" inputmode="numeric" autocomplete="off" aria-describedby="h-count e-count"><small id="h-count">The rule assumes at most 15.</small><span class="err" id="e-count"><svg aria-hidden="true"><use href="#i-x"/></svg><span></span></span></div>
         </div>
       </fieldset>
@@ -2439,12 +2480,12 @@ tbody tr:hover td{background:var(--tint)}
             <div class="chips" id="c-chips" role="group" aria-label="Buy candidates"></div></div>
           <div class="field" id="fd-buy"><div class="lab"><label for="c-buy">Planned buy price</label></div>
             <div class="pre"><span>&#8377;</span><input id="c-buy" class="mono" inputmode="decimal" autocomplete="off" aria-describedby="e-buy"></div><span class="err" id="e-buy"><svg aria-hidden="true"><use href="#i-x"/></svg><span></span></span></div>
-          <div class="field" id="fd-exit"><div class="lab"><label for="c-exit">Exit price</label><button type="button" class="info" data-tip="exit_price" aria-label="About Exit price">i</button></div>
+          <div class="field" id="fd-exit"><div class="lab"><label for="c-exit"><span class="tipl" data-tip="exit_price" tabindex="0">Exit price</span></label></div>
             <div class="pre"><span>&#8377;</span><input id="c-exit" class="mono" inputmode="decimal" autocomplete="off" aria-describedby="h-exit e-exit"></div>
             <small id="h-exit">Decide this before buying. You can overwrite any proposal.</small><span class="err" id="e-exit"><svg aria-hidden="true"><use href="#i-x"/></svg><span></span></span></div>
-          <div class="field" id="fd-held"><div class="lab"><label for="c-held">Quantity already held</label><button type="button" class="info" data-tip="sizing_held_qty" aria-label="About Quantity already held">i</button><span class="opt">optional</span></div>
+          <div class="field" id="fd-held"><div class="lab"><label for="c-held"><span class="tipl" data-tip="sizing_held_qty" tabindex="0">Quantity already held</span></label><span class="opt">optional</span></div>
             <input id="c-held" class="mono" inputmode="numeric" autocomplete="off" aria-describedby="e-held"><span class="err" id="e-held"><svg aria-hidden="true"><use href="#i-x"/></svg><span></span></span></div>
-          <div class="field" id="fd-avg"><div class="lab"><label for="c-avg">Average cost</label><button type="button" class="info" data-tip="average_cost" aria-label="About Average cost">i</button><span class="opt">optional</span></div>
+          <div class="field" id="fd-avg"><div class="lab"><label for="c-avg"><span class="tipl" data-tip="average_cost" tabindex="0">Average cost</span></label><span class="opt">optional</span></div>
             <div class="pre"><span>&#8377;</span><input id="c-avg" class="mono" inputmode="decimal" autocomplete="off" aria-describedby="e-avg"></div><span class="err" id="e-avg"><svg aria-hidden="true"><use href="#i-x"/></svg><span></span></span></div>
         </div>
         <p class="proposal" id="c-prop" role="status"></p>
@@ -2453,11 +2494,11 @@ tbody tr:hover td{background:var(--tint)}
       <fieldset class="grp">
         <legend><span class="gn" aria-hidden="true">3</span>Rules for this sizing</legend>
         <div class="form-grid">
-          <div class="field" id="fd-risk"><div class="lab"><label for="c-risk">Risk per position</label><button type="button" class="info" data-tip="risk_per_position" aria-label="About Risk per position">i</button></div>
+          <div class="field" id="fd-risk"><div class="lab"><label for="c-risk"><span class="tipl" data-tip="risk_per_position" tabindex="0">Risk per position</span></label></div>
             <div class="pre suf"><input id="c-risk" class="mono" inputmode="decimal" autocomplete="off" aria-describedby="h-risk e-risk"><span>%</span></div><small id="h-risk">Default 1.2, an 18% drawdown limit over 15 stocks.</small><span class="err" id="e-risk"><svg aria-hidden="true"><use href="#i-x"/></svg><span></span></span></div>
-          <div class="field" id="fd-cap"><div class="lab"><label for="c-cap">Largest allocation</label><button type="button" class="info" data-tip="allocation_cap" aria-label="About Largest allocation">i</button></div>
+          <div class="field" id="fd-cap"><div class="lab"><label for="c-cap"><span class="tipl" data-tip="allocation_cap" tabindex="0">Largest allocation</span></label></div>
             <div class="pre suf"><input id="c-cap" class="mono" inputmode="decimal" autocomplete="off" aria-describedby="h-cap e-cap"><span>%</span></div><small id="h-cap">As a share of Net Asset Value.</small><span class="err" id="e-cap"><svg aria-hidden="true"><use href="#i-x"/></svg><span></span></span></div>
-          <div class="field full"><div class="lab"><span class="lbtxt" id="lb-base">Size against</span><button type="button" class="info" data-tip="size_against" aria-label="About Size against">i</button></div>
+          <div class="field full"><div class="lab"><span class="lbtxt" id="lb-base"><span class="tipl" data-tip="size_against" tabindex="0">Size against</span></span></div>
             <div class="seg tabs" role="tablist" aria-labelledby="lb-base" id="c-base">
               <button type="button" role="tab" id="tab-nav" aria-selected="true" aria-controls="c-out" data-v="nav" tabindex="0">Net Asset Value</button>
               <button type="button" role="tab" id="tab-inv" aria-selected="false" aria-controls="c-out" data-v="investment" tabindex="-1">Investment Value</button>
@@ -2487,67 +2528,15 @@ tbody tr:hover td{background:var(--tint)}
   <div class="head">
     <div>
       <div class="eyebrow">For review</div>
-      <h1>Decisions to approve before any code is written</h1>
-      <p class="sub">Each item has a recommended default. Ticking a box here is only a reading aid; nothing is saved.</p>
+      <h1>Review and open items</h1>
+      <p class="sub">Review closed on 1 Nov 2026. The text of the 17 decisions and 5 proposals is kept in docs/wireframe-review-2026-11-01.md, and open work is tracked in handoff.md.</p>
     </div>
-  </div>
-
-  <div class="rv-sum" role="status" aria-live="polite" id="rv-sum">
-    <div class="rv-sum-main">
-      <span class="rv-sum-n"><b id="rv-n">0</b> of <b id="rv-t">17</b> approved</span>
-      <span class="rv-sum-sub" id="rv-p">Proposals: 0 of 5</span>
-    </div>
-    <div class="rv-bar" aria-hidden="true"><i id="rv-fill"></i></div>
-    <button type="button" class="btn ghost" id="rv-clear">Clear ticks</button>
   </div>
 
   <div class="stack">
-    <div class="sect" id="rv-decisions">
-      <header><h2>Design decisions for approval</h2><span class="hint" id="dec-count">17 items</span></header>
-      <ol class="rv-list" id="dec"></ol>
-    </div>
-
-    <div class="sect">
-      <header><h2>Decided by you</h2><span class="hint">Recorded, not open</span></header>
-      <ul class="rv-facts chk">
-        <li>The calculator sizes against Net Asset Value. Investment Value is the secondary tab. Net Asset Value is Investment Value plus notional profit, or minus notional loss.</li>
-        <li>No sin-business filter anywhere. The sin filter is dropped.</li>
-        <li>No positions board and no portfolio management. You manage your own positions. The system gives entry and exit signals, and a sizing calculator only.</li>
-        <li>Scope is the universe. Holdings are checked against the exit rules after the table is built, and are not stored beyond the session.</li>
-        <li>Fundamentals are labelled "Company financials" and index data is labelled "Exchange index data". The third-party fundamentals connector is removed. Index data comes from the price-data feed already in use.</li>
-        <li>No order placement and no buy or sell buttons.</li>
-        <li>The strategy drives scoring and ranking. The old analyst stance stays as a context column only.</li>
-        <li>The WhatsApp bot is the next phase.</li>
-      </ul>
-    </div>
-
-    <div class="sect">
-      <header><h2>Calculator function contract</h2><span class="hint">One pure function, ready to port to Python</span></header>
-      <p class="note rv-note"><code>sizePosition(input)</code> returns <code>output</code>. It touches no page state, no clock and no network, so the same arithmetic can be ported one to one and reused by the future API.</p>
-      <div class="two">
-        <div><h3 class="rv-h3">Input fields</h3><div class="tbl-wrap rv-scroll"><table class="gl"><thead><tr><th>Field</th><th>Type</th><th>Meaning</th></tr></thead><tbody id="ct-in"></tbody></table></div></div>
-        <div><h3 class="rv-h3">Output fields</h3><div class="tbl-wrap rv-scroll"><table class="gl"><thead><tr><th>Field</th><th>Type</th><th>Meaning</th></tr></thead><tbody id="ct-out"></tbody></table></div></div>
-      </div>
-    </div>
-
-    <div class="sect">
-      <header><h2>UI implementation notes</h2><span class="hint">For the build, not for approval</span></header>
-      <ul class="rv-facts bul">
-        <li>Chart library: TradingView Lightweight Charts. Open source, runs in the browser, and is fed by our own API. No external data fetch from the browser.</li>
-        <li>Chart features drawn in this wireframe: candlesticks on a white background, a 50 EMA and a 200 DMA on every timeframe, Daily as the default with Weekly and Monthly, RSI 14, a volume histogram with delivery, crosshair with a date and price readout, an all-time-high price line, Nifty 500 and sector index comparison rebased to 100, range buttons and a linear or log scale.</li>
-        <li>Events on the chart: results, dividends, splits and bonus, filings and verdict changes, each shown on its date.</li>
-        <li>Architecture: a Node.js app on top of the Python analytics API. The Node app holds no rules; the verdict, score and sizing come from the API.</li>
-        <li>Styling: the wireframe uses hand-written CSS that mirrors Tailwind tokens, so it stays one offline file. The real build uses Tailwind.</li>
-        <li>Holdings import is upload first: an Excel or CSV file with a column mapper that is saved per header layout. Totals only is always available. Broker login is a next phase.</li>
-        <li>Keyboard: arrow keys move the chart crosshair; Enter opens a focused table row; Escape closes an open tooltip; the segmented controls and the base tabs use arrow keys.</li>
-        <li>Tooltips: a glossary tooltip opens when you hover or focus the label text, which has a dotted underline. There are no (i) buttons. On touch screens a tap opens it.</li>
-        <li>Tooltip text comes from the glossary endpoint, which reads the same glossary as the Excel header comments, so the two cannot drift apart.</li>
-      </ul>
-    </div>
-
-    <div class="sect">
-      <header><h2>Proposals for approval: interaction touches</h2><span class="hint">Not drawn in detail. Say yes or no to each.</span></header>
-      <ol class="rv-list prop" id="prop"></ol>
+    <div class="sect" id="rv-closed">
+      <header><h2>Review closed 1 Nov 2026</h2></header>
+      <p class="note">All 17 design decisions and all 5 proposals were approved as recommended on 1 Nov 2026. The text is kept in docs/wireframe-review-2026-11-01.md, the changes are listed in CHANGELOG.md, and open work is tracked in handoff.md.</p>
     </div>
 
     <div class="sect">
@@ -2576,6 +2565,11 @@ tbody tr:hover td{background:var(--tint)}
 <footer class="disc"><div class="wrap">Signals from the stated rules, not investment advice.</div></footer>
 
 <div id="pop" role="tooltip" hidden></div>
+<button type="button" class="st-handle" id="st-handle" aria-expanded="false" aria-controls="st-pane">Actions</button>
+<div class="st-pane" id="st-pane" role="dialog" aria-label="Stock actions" aria-modal="false" tabindex="-1">
+  <div class="st-pane-hd"><b>Actions</b><button type="button" class="btn" id="st-pane-x">Close</button></div>
+  <div class="st-pane-body" id="st-pane-body"></div>
+</div>
 <div class="toast" id="toast" role="status"></div>
 
 <script>
@@ -2678,7 +2672,7 @@ const ic=(n,c="")=>`<svg class="${c}" aria-hidden="true"><use href="#i-${n}"/></
 /* ---------------- glossary (label, meaning, derivation) ---------------- */
 const G={
  universe:["Universe","The stocks the strategy looks at: India's 750 largest companies by market value.","Ranked by market capitalisation from exchange data. Refreshed at each weekly review."],
- verdict:["Verdict","The single call for a stock: BUY, HOLD, EXIT or REJECT. For a stock you do not own, HOLD and EXIT both mean it is not a buy.","REJECT if any governance point is Bad. Otherwise from the score: 3 of 3 is BUY (only when the required governance points are assessed), 2 of 3 is HOLD, 0 or 1 is EXIT. Below the 200-day exponential moving average while behind the Nifty 500 is also EXIT."],
+ verdict:["Verdict","The single call for a stock: BUY, HOLD, EXIT or REJECT. For a stock you do not own, HOLD and EXIT both mean it is not a buy.","REJECT if any governance point is Bad. Otherwise from the score: 3 of 3 is BUY (only when the required governance points are assessed), 2 of 3 is HOLD, 0 or 1 is EXIT. Below the 200 DMA while behind the Nifty 500 is also EXIT."],
  verdict_buy:["Buy","All three momentum rules are met and governance passed, so new money may go in.","Score 3 of 3, no Bad governance grade, and governance points 4, 5 and 18 assessed."],
  verdict_hold:["Hold","Keep it if you own it, but add nothing. If you do not own it, it is not a buy.","Score 2 of 3. Also shown for 3 of 3 when a required governance point is not assessed, with the reason."],
  verdict_reject:["Rejected","Governance failed, so the stock is out however strong its price is.","At least one of the 18 governance points is graded Bad."],
@@ -2701,13 +2695,13 @@ const G={
  data_window:["Data window","The stretch of history the profit and price checks can see.","About 13 quarters of quarterly profit and 12 years of yearly profit. Highs are highs within this window."],
  exchange_index:["Exchange index data","Index levels published by the exchange, used for the Nifty 500 and sector comparisons.","Daily index closes stored in our own database."],
  one_offs:["One-off items","Profit that will not repeat, such as a property sale or the sale of a stake.","Exceptional items reported by the company are subtracted from profit after tax before the high is tested."],
- ema200:["200-day EMA","A smoothed average of the last 200 closing prices that gives more weight to recent days.","Exponential moving average with a 200-day span on closing prices."],
- exit_rule_ema:["Moving-average exit","A hard exit when the price is below its 200-day exponential moving average and the stock is behind the Nifty 500.","Both must be true: latest close under the 200-day exponential moving average, and 52-week return under the Nifty 500 return."],
- exit_trigger:["Exit trigger","A rule that says to exit a holding, in plain words.","Score of 1 of 3 or lower, or below the 200-day exponential moving average while behind the Nifty 500."],
+ ema200:["200 DMA","The simple average of the last 200 daily closing prices. It is the long-term trend line, and the exit line is worked out from it.","Simple moving average of the last 200 daily closes: their sum divided by 200. It stays 200 days on weekly and monthly charts."],
+ exit_rule_ema:["Moving-average exit","A hard exit when the price is below its 200 DMA and the stock is behind the Nifty 500.","Both must be true: latest close under the 200 DMA, and 52-week return under the Nifty 500 return."],
+ exit_trigger:["Exit trigger","A rule that says to exit a holding, in plain words.","Score of 1 of 3 or lower, or below the 200 DMA while behind the Nifty 500."],
  analyst_stance:["Analyst stance (context)","The older six-pillar read of the company: Constructive, Mixed or Cautious.","From the earlier scorecard on filings and financials. It is context and no longer drives ranking."],
  trade_risk:["Trade risk","The share of the price you would lose if the stock fell to your exit.","(Buy price minus exit price) divided by buy price."],
  risk_per_position:["Risk per position","The most you are willing to lose on one stock, as a share of the chosen base.","18% total loss budget divided by 15 stocks is 1.2%."],
- exit_price:["Exit price","The price you set before buying, to sell at if the stock falls to it. Position sizing uses it.","Suggested value: the lower of the 200-day exponential moving average and 80% of the buy price. The suggestion stays between 5% and 30% below the buy price. A price you type replaces it."],
+ exit_price:["Exit price","The price you set before buying, to sell at if the stock falls to it. Position sizing uses it.","Suggested value: the lower of the 200 DMA and 80% of the buy price. The suggestion stays between 5% and 30% below the buy price. A price you type replaces it."],
  alloc:["Allocation","How much of the base goes into this stock.","Risk per position divided by the percentage fall from buy price to exit. Buy at 100 with exit at 80 is a 20% fall, so 1.2% / 20% = 6%."],
  allocation_cap:["Largest allocation","A ceiling on any one position, as a share of Net Asset Value.","Default 15%. A very tight exit would otherwise ask for a huge position."],
  investment_value:["Investment Value","The total cost of what is invested in your portfolio today.","Sum of quantity times average cost over your holdings. You type it."],
@@ -2721,18 +2715,18 @@ const G={
  add_hold_trim:["Add, Hold or Trim","What the target size means for shares you already own.","Target quantity minus quantity held. Never advises adding when the price is below your average cost."],
  rank_chg:["Rank Change","Places moved since the previous scan of this index (the run date is shown). Up means a better rank. New means it was not ranked in the previous scan. A stock can move only because others moved. A rank change never changes the verdict.","Rank in the previous completed scan of the same index minus rank in this scan. Scans run on market days only, so the previous scan is not always the previous calendar day."],
  held:["You hold","Marks stocks that are in the holdings you loaded this session.","Matches symbols from your holdings. Not stored after the session."],
- not_in_universe:["Not in universe","The stock is not in the top 750, so only what can be computed is tested.","Price, 200-day exponential moving average and 52-week return can be computed; profit history, sector index and governance may not be."],
+ not_in_universe:["Not in universe","The stock is not in the top 750, so only what can be computed is tested.","Price, 200 DMA and 52-week return can be computed; profit history, sector index and governance may not be."],
  change_entry:["Change since entry","How much the price has moved since your average cost.","(Last price minus average price) divided by average price."],
  exit_watch:["Exit watch","Holdings currently triggering an exit rule.","Count of loaded holdings with at least one exit trigger."]
 };
-const tip=k=>`<button type="button" class="info" data-tip="${k}" aria-label="About ${esc(G[k][0])}">i</button>`;
+const tip=k=>`<span class="tipm" data-tip="${k}"></span>`;
 
 
 /* ==== src/gloss_strategy.js ==== */
 /* extra glossary keys for the Stocks list: Object.assign(G,{key:[label,meaning,derivation]}) */
 Object.assign(G,{
  rules3:["Momentum rules","The three tests a stock must pass to be a buy: price at its all-time high, profit at its high, and a 52-week return ahead of both the Nifty 500 and its sector index.","Each test is scored met, not met or not assessed. Not assessed never counts as met. Three of three is a buy, two of three is a hold, and one or none is an exit."],
- verdict_exit:["Exit","Sell if you own it. If you do not own it, it is not a buy.","Score of 1 of 3 or lower, or the price is below the 200-day exponential moving average while the stock is behind the Nifty 500."],
+ verdict_exit:["Exit","Sell if you own it. If you do not own it, it is not a buy.","Score of 1 of 3 or lower, or the price is below the 200 DMA while the stock is behind the Nifty 500."],
  strat_sector:["Sector","The industry group a company belongs to. Use it to narrow the list.","Each company is mapped to one sector, which is also the index it is compared with."],
  st_indices:["Indices","Pick the index whose stocks you want to see. Rank and Rank Change are worked out inside the chosen index. Nifty All Cap covers almost every stock.","The scan runs once, on Nifty All Cap. Each stock is tagged with every index it belongs to, and this list is filtered by that tag. One stock is one row."],
  st_last_assess:["Last assessment results","What the latest scan found, in one place: when it ran, how many stocks it covered and what each verdict means.","The same counts are on the filter chips above the list. Select a chip to show only those stocks."],
@@ -2746,8 +2740,8 @@ Object.assign(G,{
  rsi14:["RSI 14","A 0 to 100 gauge of how fast the price has been rising or falling over the last 14 periods. Above 70 is often called stretched, below 30 washed out.","Relative Strength Index, 14 periods, Wilder smoothing of average gains against average losses."],
  ema50:["50 EMA","A smoothed average of the last 50 closing prices that gives more weight to recent days. It shows the medium-term trend.","Exponential moving average with a 50-day span on daily closing prices. On weekly and monthly charts it is still the daily line."],
  dma200:["200 DMA","The plain average of the last 200 daily closing prices. A long-term trend line that many investors watch.","Simple moving average over 200 trading days. It stays 200 days on weekly and monthly charts."],
- exit_line:["Exit line","The 200-day exponential moving average, drawn on the chart. Exit prices are in Exit price and Exit line on the holdings page.","The 200-day exponential moving average of daily closes. The position sizing page turns it into a proposed exit price."],
- cross50_200:["50 EMA against 200 DMA","Whether the medium-term average sits above or below the long-term one. Above means the trend has been rising lately.","50-day exponential moving average divided by 200-day simple average, minus 1, in percent."],
+ exit_line:["Exit line","The 200 DMA, drawn on the chart. Exit prices are in Exit price and Exit line on the holdings page.","The 200 DMA of daily closes. The position sizing page turns it into a proposed exit price."],
+ cross50_200:["50 EMA against 200 DMA","Whether the medium-term average sits above or below the long-term one. Above means the trend has been rising lately.","50 EMA divided by 200 DMA, minus 1, in percent."],
  range52:["52-week range","Where today's close sits between the lowest low and the highest high of the last 52 weeks. 0% is the low, 100% is the high.","(Close minus 52-week low) divided by (52-week high minus 52-week low). Uses the daily high and low."],
  vol_avg:["Volume against 20-day average","Today's traded shares compared with the usual daily amount. Above 1.5 times means unusually heavy trading.","Latest day's volume divided by the average volume of the last 20 trading days."],
  delivery_pct:["Delivery","The part of the day's traded shares that were taken into a demat account to be held, rather than bought and sold again the same day. A high share suggests buyers who intend to hold.","Delivered quantity divided by total traded quantity, from the exchange's daily delivery data. The darker part of each volume bar is the delivered share."],
@@ -2784,9 +2778,9 @@ Object.assign(G,{
  risk_budget_total:["Open risk budget","The most total open risk the portfolio should carry: 18% of Net Asset Value.","The strategy's 18% limit on total open risk."],
  not_scored:["Not scored","The strategy does not score mutual funds and ETFs, so they get no verdict. They still count for allocation and risk.","No governance check or momentum rules are run on them."],
  assumed_fall:["Assumed fall for funds and ETFs","Funds and ETFs have no exit line. This is the fall in price you assume so their open risk can be counted.","Open risk = value times the assumed fall. Default 10%. Change it to test other cases."],
- hold_review:["Review Holding","Tests each stock you hold against the exit rules and your risk limits. Run it again whenever you want a fresh look.","Each holding gets the same checks as the universe: score, the 200-day exponential moving average exit rule, open risk and weight. Funds and ETFs count for risk but are not scored."],
+ hold_review:["Review Holding","Tests each stock you hold against the exit rules and your risk limits. Run it again whenever you want a fresh look.","Each holding gets the same checks as the universe: score, the 200 DMA exit rule, open risk and weight. Funds and ETFs count for risk but are not scored."],
  hold_last_reviewed:["Last reviewed","When the assessment of your holdings was last run in this browser, and the data date it used.","The stamp is kept in this browser only. Position sizing needs it, because open risk and room in the portfolio depend on the assessed holdings."],
- hold_exit_line:["Exit line","The price at which a holding you own would be sold. Review Holding works it out from the last price, not the buy price.","Stocks: the lower of the 200-day exponential moving average and 80% of the last price, kept between 5% and 30% below the last price. Funds and ETFs: no exit line (see Assumed fall for funds and ETFs)."]
+ hold_exit_line:["Exit line","The price at which a holding you own would be sold. Review Holding works it out from the last price, not the buy price.","Stocks: the lower of the 200 DMA and 80% of the last price, kept between 5% and 30% below the last price. Funds and ETFs: no exit line (see Assumed fall for funds and ETFs)."]
 });
 
 /* ==== src/gloss_sizing.js ==== */
@@ -2906,7 +2900,8 @@ Object.assign(G,{
  mo_sector_chart:["Sector index against Nifty 500","Two lines that start at 100 on the first day shown. The gap at the right edge tells you whether the stock's sector is beating the broad market.","Each daily close divided by the first close in the range, times 100. Exchange index data. Use 3M, 6M or 1Y to change the range."],
  mo_rebased:["Rebased to 100","Every line is reset to 100 on the first day, so lines for indexes of very different size can be compared by how far they moved.","Close on each day divided by the close on the first day shown, times 100. 120 means up 20% since the first day."],
  mo_sector_rank:["Rank in sector","Where this stock stands among the scanned stocks that share its sector index, by 52-week return. Rank 1 is the best.","Stocks mapped to the same sector index, ordered by 52-week return, highest first. Only stocks in the scan universe are counted."],
- mo_heat:["Sector heat strip","One small tile for every sector index, coloured by its 3-month return. Green with an up arrow is rising, red with a down arrow is falling. A dashed tile means the index data is missing.","Latest close of the index divided by its close 63 trading days earlier, minus 1. Exchange index data."],
+ mo_perf:["Sector and industry performance","How far each group of stocks moved over the chosen window. The five best groups come first and the five weakest come after them.","For each stock, today's close divided by its close at the start of the window, minus 1. The group figure is the middle value (median) of those returns across the scanned stocks in the group, so one outlier cannot move it. The windows are 1 trading day, 5, 21, 63, 126, 253, 756 and 1,260 trading days. Sample values in this wireframe."],
+ perf_members:["Stocks in the group","How many scanned stocks the group figure is based on.","Count of stocks in the scan universe mapped to the group. A group with only a few stocks says little."],
  mo_leaders:["Sector leaders","The scanned stocks in the same sector index as this one, best 52-week return first, with the same verdict, score and distance from the high as the Stocks list.","Stocks mapped to the same sector index, ordered by 52-week return. Click a row to open that stock."],
  mo_gov_table:["The 18 governance points","Every point the strategy checks, with its grade, the evidence behind the grade, and where the evidence came from. One Bad grade rejects the stock. Not assessed points are never counted as a pass.","Each point is graded Good, Neutral or Bad from filings and company financials. A point with no evidence on file is Not assessed."],
  mo_gov_blocker:["What blocks a buy","The one governance reason a buy is not allowed today, in words. It says so plainly when governance is not the reason.","A Bad grade on any point rejects the stock. Otherwise a buy waits until the required points (4, 5 and 18) are assessed."],
@@ -2929,7 +2924,7 @@ Object.assign(G,{
  ai_position:["Your position","What you hold in this stock from the holdings you loaded, with the exit checks that apply to it.","Quantity, average cost and last price come from your holdings file. Exit line and open risk use the same rules as the Review Holding page."],
  ai_value:["Current value","What your shares in this stock are worth at the last close.","Quantity times last close."],
  ai_gain:["Gain or loss","The rupee gain or loss on the shares you hold, against what you paid.","Current value minus quantity times average cost. The percent is that gain divided by the cost."],
- ai_exit_checks:["Exit checks","The three checks that decide whether to keep holding: the score, the 200-day exponential moving average and the 52-week return against the Nifty 500.","The score check triggers at 1 of 3 or lower. The moving-average exit triggers when the price is below the 200-day exponential moving average and the stock is also behind the Nifty 500. Each is shown as Clear or Triggered."],
+ ai_exit_checks:["Exit checks","The three checks that decide whether to keep holding: the score, the 200 DMA and the 52-week return against the Nifty 500.","The score check triggers at 1 of 3 or lower. The moving-average exit triggers when the price is below the 200 DMA and the stock is also behind the Nifty 500. Each is shown as Clear or Triggered."],
 });
 
 const GLOSS_KEYS=Object.keys(G);
@@ -2958,6 +2953,39 @@ const OUT={s:"AVANTIFEED",n:"Avanti Feeds",sec:"Aquaculture",idx:null,px:612.4,a
 const ALL=[...U,OUT];
 const SEC=[...new Set(U.map(x=>x.sec))].sort();
 const MC={SBIN:820000,"M&M":392000,TITAN:351000,HAL:301000,SIEMENS:131000,CGPOWER:116000,POLYCAB:110000,PERSISTENT:96000,BSE:78000,DIXON:74000,KAYNES:48000,ASTRAL:41000,NBPOLY:9000};
+/* Sample values for the Sector and industry performance chart. Invented, not market data. r = median return of the group's scanned stocks, in percent, for each window. */
+const PERF={
+ sector:[
+  {n:"Capital Markets",k:24,r:{"1D":0.6,"5D":2.1,"1M":3.8,"3M":6.2,"6M":9.5,"1Y":14.8,"3Y":38.1,"5Y":92.4}},
+  {n:"Capital Goods",k:38,r:{"1D":0.9,"5D":3.4,"1M":5.1,"3M":8.6,"6M":12.7,"1Y":19.3,"3Y":44.6,"5Y":118.0}},
+  {n:"Defence",k:9,r:{"1D":1.2,"5D":4.6,"1M":7.9,"3M":13.2,"6M":21.4,"1Y":31.8,"3Y":88.5,"5Y":176.0}},
+  {n:"Consumer Durables",k:21,r:{"1D":-0.4,"5D":-1.8,"1M":-2.9,"3M":-4.1,"6M":-1.2,"1Y":3.6,"3Y":22.9,"5Y":61.3}},
+  {n:"IT",k:34,r:{"1D":-0.9,"5D":-2.6,"1M":-6.3,"3M":-9.8,"6M":-12.4,"1Y":-15.1,"3Y":-6.2,"5Y":27.7}},
+  {n:"Banks",k:28,r:{"1D":0.3,"5D":1.1,"1M":2.4,"3M":4.9,"6M":6.1,"1Y":10.2,"3Y":35.4,"5Y":84.6}},
+  {n:"Auto",k:17,r:{"1D":-0.7,"5D":-4.6,"1M":-6.8,"3M":-8.4,"6M":-3.9,"1Y":4.7,"3Y":19.2,"5Y":58.3}},
+  {n:"Commodities",k:7,r:{"1D":1.6,"5D":6.9,"1M":10.7,"3M":15.4,"6M":18.2,"1Y":26.5,"3Y":41.0,"5Y":49.8}},
+  {n:"Chemicals",k:19,r:{"1D":-0.2,"5D":2.9,"1M":4.4,"3M":7.3,"6M":11.6,"1Y":16.9,"3Y":47.2,"5Y":103.5}},
+  {n:"Healthcare",k:15,r:{"1D":0.5,"5D":-1.4,"1M":-3.5,"3M":-2.2,"6M":5.4,"1Y":9.8,"3Y":13.6,"5Y":39.7}},
+  {n:"Telecom",k:6,r:{"1D":2.7,"5D":8.4,"1M":12.1,"3M":16.5,"6M":19.8,"1Y":30.3,"3Y":52.8,"5Y":71.2}},
+  {n:"Retailing",k:11,r:{"1D":-1.9,"5D":-2.2,"1M":-5.7,"3M":-7.1,"6M":-9.4,"1Y":-3.2,"3Y":8.6,"5Y":24.1}}
+ ],
+ industry:[
+  {n:"Electronic components",k:22,r:{"1D":1.4,"5D":4.2,"1M":6.1,"3M":9.8,"6M":14.2,"1Y":21.5,"3Y":58.6,"5Y":133.0}},
+  {n:"Aerospace and defence",k:12,r:{"1D":0.8,"5D":3.1,"1M":4.4,"3M":7.1,"6M":10.9,"1Y":16.6,"3Y":47.0,"5Y":97.8}},
+  {n:"Electrical equipment",k:26,r:{"1D":0.2,"5D":1.9,"1M":3.3,"3M":5.6,"6M":8.0,"1Y":12.4,"3Y":36.9,"5Y":85.2}},
+  {n:"Consumer durables",k:18,r:{"1D":-0.6,"5D":-2.4,"1M":-3.7,"3M":-5.0,"6M":-2.1,"1Y":2.9,"3Y":19.4,"5Y":52.1}},
+  {n:"IT services",k:30,r:{"1D":-0.9,"5D":-3.1,"1M":-7.4,"3M":-11.2,"6M":-14.6,"1Y":-17.8,"3Y":-9.5,"5Y":22.3}},
+  {n:"Banks",k:25,r:{"1D":0.4,"5D":1.3,"1M":2.2,"3M":3.9,"6M":5.2,"1Y":9.6,"3Y":31.8,"5Y":79.4}},
+  {n:"Automobiles",k:16,r:{"1D":-0.5,"5D":-4.9,"1M":-6.2,"3M":-7.8,"6M":-4.4,"1Y":3.8,"3Y":18.6,"5Y":55.7}},
+  {n:"Cables",k:9,r:{"1D":2.2,"5D":6.4,"1M":9.3,"3M":14.7,"6M":17.9,"1Y":25.0,"3Y":60.1,"5Y":142.6}},
+  {n:"Jewellery",k:5,r:{"1D":-1.1,"5D":-3.8,"1M":-5.9,"3M":-8.6,"6M":-12.9,"1Y":-6.7,"3Y":14.0,"5Y":36.5}},
+  {n:"Capital goods",k:21,r:{"1D":1.0,"5D":3.9,"1M":5.5,"3M":8.2,"6M":11.1,"1Y":17.4,"3Y":42.3,"5Y":101.6}},
+  {n:"Plastic products",k:8,r:{"1D":-1.6,"5D":-1.8,"1M":-2.5,"3M":-4.2,"6M":-6.7,"1Y":-1.4,"3Y":12.5,"5Y":29.4}},
+  {n:"Chemicals",k:14,r:{"1D":0.1,"5D":5.7,"1M":7.6,"3M":11.9,"6M":15.3,"1Y":20.8,"3Y":45.5,"5Y":88.9}},
+  {n:"Capital markets",k:3,r:{"1D":0.6,"5D":2.8,"1M":4.1,"3M":6.9,"6M":9.2,"1Y":13.5,"3Y":33.6,"5Y":70.2}},
+  {n:"Telecommunication services",k:4,r:{"1D":2.5,"5D":7.1,"1M":10.8,"3M":13.9,"6M":15.7,"1Y":24.1,"3Y":39.2,"5Y":64.8}}
+ ]
+};
 (function(){const o=[...U].sort((a,b)=>MC[b.s]-MC[a.s]); U.forEach(x=>{x.mc=MC[x.s]; const i=o.indexOf(x); x.ixs=["allcap"].concat(i<10?["nifty50"]:i<11?["next50"]:["small100"]);});})();
 
 /* ---------------- governance model ---------------- */
@@ -3016,10 +3044,10 @@ function evalS(s){
   if(g.worst==="Bad") v="REJECT"; else if(emaTrig||score<=1) v="EXIT"; else if(score===3&&g.coreMissing.length===0) v="BUY"; else {v="HOLD"; blocked=score===3;}
   const trig=[];
   if(score<=1&&!s.out) trig.push("Score "+score+" of 3"+(na?" ("+na+" not assessed)":""));
-  if(emaTrig) trig.push("Below 200 EMA and behind Nifty 500");
+  if(emaTrig) trig.push("Below the 200 DMA and behind Nifty 500");
   let reason;
   if(v==="REJECT") reason="Bad grade on "+g.bad.map(b=>b.pt.toLowerCase()).join(", ");
-  else if(v==="EXIT") reason=emaTrig?"Below 200 EMA and behind Nifty 500":"Score "+score+" of 3"+(c1?"":", "+below.toFixed(1)+"% below high");
+  else if(v==="EXIT") reason=emaTrig?"Below the 200 DMA and behind Nifty 500":"Score "+score+" of 3"+(c1?"":", "+below.toFixed(1)+"% below high");
   else if(v==="BUY") reason="All three rules met";
   else if(blocked) reason="3 of 3, but buy blocked: "+g.coreMissing.map(b=>b.pt.toLowerCase()).join(", ")+" not assessed";
   else { const m=[]; if(!c1)m.push("Price "+below.toFixed(1)+"% below its high"); if(c2===0)m.push("Profit off its high"); if(c3===0)m.push("Behind an index"); if(c3===null)m.push("Sector index data missing"); reason=m.join("; "); }
@@ -3033,7 +3061,7 @@ const FLAGGED=HELD.filter(e=>e.trig.length);
 const BUYS=RANKED.filter(e=>e.v==="BUY");
 
 function propExit(px,ema){const raw=Math.min(ema,px*0.8),lo=px*0.70,hi=px*0.95,v=Math.min(hi,Math.max(lo,raw));
-  return {exit:Math.round(v*10)/10,rule:raw===ema&&ema<px*0.8?"the 200-day EMA":"80% of the buy price (20% below)",ema};}
+  return {exit:Math.round(v*10)/10,rule:raw===ema&&ema<px*0.8?"the 200 DMA":"80% of the buy price (20% below)",ema};}
 
 /* ---------------- indices, scan runs and rank (the Stocks list) ----------------
    `idx` on a stock is its SECTOR index name (used by the stock page). `ixs` is the list of indices it belongs to.
@@ -3065,9 +3093,9 @@ const rankFor=(sym,ix,run)=>ranksOf(ix||"allcap",run||RUNS[0])[sym]||null;
 /* ==== src/tooltip.js ==== */
 /* ---------------- glossary popover ----------------
    Any element with data-tip="key" opens the popover on hover, focus, tap, Enter or Space.
-   Pages keep writing tip("key") (an (i) button). decorateTips() replaces each button with a dotted
-   underline on the label text in front of it, so no (i) icons are shown. If there is no label text
-   in front of the button, the button is kept as the trigger. */
+   Pages write tip("key"), which emits an empty marker span.tipm. decorateTips() moves the label text in
+   front of the marker into a span.tipl (dotted underline, focusable), so the label itself is the trigger.
+   A marker with no label text in front of it (or next to a button, link or svg) becomes a small (i) button. */
 const pop=$("#pop"); let popBtn=null, pinned=false;
 function showTip(b){
   const g=G[b.dataset.tip]; if(!g) return;
@@ -3095,17 +3123,25 @@ document.addEventListener("keydown",e=>{
 function toggleTip(b){ if(pinned&&popBtn===b){hideTip(true);} else {pinned=false; hideTip(true); showTip(b); pinned=true;} }
 addEventListener("scroll",()=>hideTip(true),{passive:true}); addEventListener("resize",()=>hideTip(true));
 
+function tipIcon(m){
+  const k=m.dataset.tip;
+  if(m.closest("button,a,summary")){ m.remove(); return; }
+  const b=document.createElement("button"); b.type="button"; b.className="info"; b.dataset.tip=k;
+  b.setAttribute("aria-label","About "+G[k][0]); b.textContent="i"; m.replaceWith(b);
+}
 function decorateTips(root){
-  (root||document).querySelectorAll("button.info[data-tip]").forEach(btn=>{
-    let n=btn.previousSibling;
+  (root||document).querySelectorAll("span.tipm[data-tip]").forEach(m=>{
+    const k=m.dataset.tip;
+    if(!G[k]){ m.remove(); return; }
+    let n=m.previousSibling;
     while(n&&n.nodeType===3&&!n.textContent.trim()) n=n.previousSibling;
-    if(!n||(n.nodeType===1&&(n.matches("button,.info,.tipl,svg")||n.querySelector("button,.tipl")))) return;
-    const span=document.createElement("span"); span.className="tipl"; span.dataset.tip=btn.dataset.tip; span.tabIndex=0;
+    if(!n||(n.nodeType===1&&(n.matches("button,a,summary,.info,.tipl,svg")||n.querySelector("button,a,summary,.tipl")))){ tipIcon(m); return; }
+    const span=document.createElement("span"); span.className="tipl"; span.dataset.tip=k; span.tabIndex=0;
     if(n.nodeType===3){
       const txt=n.textContent, lead=txt.match(/^\s*/)[0], trail=txt.match(/\s*$/)[0];
       span.textContent=txt.trim(); n.textContent=lead; n.after(span); if(trail) span.after(document.createTextNode(trail));
     } else { n.before(span); span.appendChild(n); }
-    btn.remove();
+    m.remove();
   });
 }
 (function(){
@@ -3129,7 +3165,7 @@ function decorateTips(root){
     const name=["Price at all-time high","Profit at its high","Ahead of both indexes"][i], k=["crit_ath","crit_pat","crit_alpha"][i], v=e.c[i];
     let d;
     if(i===0) d=(e.below<=0.05?"At its high":e.below.toFixed(1)+"% below its high")+". Needs to be within 2%.";
-    else if(i===1) d=e.pat?`Adjusted TTM profit ${IN(e.pat[0])} cr against a high of ${IN(e.pat[1])} cr.`:"Not assessed: no profit history in the data window.";
+    else if(i===1) d=e.pat?`Adjusted last twelve months profit ${IN(e.pat[0])} cr against a high of ${IN(e.pat[1])} cr.`:"Not assessed: no profit history in the data window.";
     else d=e.secR==null||e.out?"Not assessed: no sector index data.":`52 weeks ${pct(e.r)} against Nifty 500 ${pct(NIFTY.r)} and sector ${pct(e.secR)}.`;
     const st=v===1?"pass":v===0?"fail":"na", lab=v===1?"Met":v===0?"Not met":"Not assessed", ico=v===1?"check":v===0?"x":"minus";
     return `<li class="pk-rule ${st}"><span class="pk-ic" aria-hidden="true">${ic(ico)}</span><div><b>${name}${tip(k)}</b><span class="pk-st">${lab}</span><p>${esc(d)}</p></div></li>`;
@@ -3195,20 +3231,18 @@ function decorateTips(root){
 const THS=[
  ["stock","Stock",null,"",1],
  ["verdict","Bucket","verdict","",1],
- ["score","Stance score","score","",-1],
- ["run","Run date","run","",-1]];
+ ["score","Stance score","score","",1],
+ ["run","Run date","run","",1]];
 const sortNone=`<svg class="srt" aria-hidden="true"><use href="#i-sort"/></svg>`;
 function headS(){
-  const prev=runShort(prevRun(frun));
-  $("#thead-s").innerHTML=THS.map(t=>{
-    const lab=t[1]+(t[2]?tip(t[2]):""), hint=t[0]==="chg"?`<span class="thh">vs ${prev}</span>`:"";
-    const on=t[0]&&sk===t[0];
-    return `<th class="${t[3]}" scope="col"${t[0]?` data-sort="${t[0]}" aria-sort="${on?(sd>0?"ascending":"descending"):"none"}"`:""}><span class="thw"><span class="thc"><span class="thl">${lab}</span>${t[0]?`<button type="button" class="sortb${on?" on":""}" data-sort="${t[0]}" aria-label="Sort by ${esc(t[1])}${on?(sd>0?", ascending":", descending"):""}">${on?`<svg class="srt" aria-hidden="true"><use href="#i-sort"/></svg>`:sortNone}</button>`:""}</span>${hint}</span></th>`;}).join("");
+  $("#thead-s").innerHTML=visTH().map(t=>{
+    const on=sk===t[0];
+    return `<th class="${t[3]}" scope="col" aria-sort="${on?(srank&&t[0]==="verdict"?"other":(sd>0?"ascending":"descending")):"none"}"><span class="thw"><span class="thc"><button type="button" class="sorth${on?" on":""}" data-sort="${t[0]}">${esc(t[1])}${on?(srank&&t[0]==="verdict"?`<span class="srk" aria-hidden="true">rank</span><span class="sr">Sorted by verdict rank</span>`:arrowSvg(sd>0)):sortNone}</button>${t[2]?tip(t[2]):""}</span></span></th>`;}).join("");
 }
 $("#f-index").innerHTML=INDICES.map(x=>`<option value="${x.k}">${esc(x.n)}</option>`).join("");
 $("#f-sector").innerHTML=`<option value="all">All sectors</option>`+SEC.map(s=>`<option>${esc(s)}</option>`).join("");
 /* filter state. fix is the chosen index, frun the run date (both live in the URL query and localStorage), sk/sd the sort */
-let fv="all",fsc="all",fsec="all",fheld=false,fq="",fix="allcap",frun=RUNS[0],hasRun=false,sk="",sd=1;
+let fv="all",fsc="all",fsec="all",fheld=false,fq="",fix="allcap",frun=RUNS[0],hasRun=false,sk="",sd=1,srank=false;
 function govCell(e){const g=e.g; if(!g.assessed) return `<span class="gp na">${ic("minus")}Not assessed</span>`;
   const w=g.worst; return `<span class="gp ${w==="Bad"?"bad":w==="Neutral"?"neutral":"good"}"><i class="dot"></i>Worst: ${w}</span><span class="sub2">${g.assessed} of 18 assessed</span>`;}
 function scoreCell(e){return `<span class="mono" style="font-weight:600">${e.score}/3</span>${e.na?`<span class="sub2">${e.na} not assessed</span>`:""}`;}
@@ -3222,11 +3256,12 @@ function chgChip(r){
   return `<span class="rk-chg flat">Same</span>`;
 }
 function rowS(e,R){
-  return `<tr class="link" tabindex="0" data-go="#/stock/${encodeURIComponent(e.s)}" aria-label="${esc(e.s)}, ${e.v}, stance score ${e.score}. Press Enter to open the stock.">
-  <td class="stk"><a class="sym mono" href="#/stock/${encodeURIComponent(e.s)}">${esc(e.s)}</a>${e.held?'<span class="held">You hold</span>':""}<div class="nm" title="${esc(e.n)}, ${esc(e.sec)}">${esc(e.n)}<span class="sub2">${esc(e.sec)}</span></div></td>
-  <td><span class="vd ${e.v}">${e.v}</span></td>
-  <td class="num mono">${e.score}</td>
-  <td class="num mono">${frun}</td></tr>`;}
+  const c={
+    stock:`<td class="stk"><a class="sym mono" href="#/stock/${encodeURIComponent(e.s)}">${esc(e.s)}</a>${e.held?'<span class="held">You hold</span>':""}<div class="nm" title="${esc(e.n)}, ${esc(e.sec)}">${esc(e.n)}<span class="sub2">${esc(e.sec)}</span></div></td>`,
+    verdict:`<td><span class="vd ${e.v}">${e.v}</span></td>`,
+    score:`<td class="num mono">${e.score}</td>`,
+    run:`<td class="num mono">${frun}</td>`};
+  return `<tr class="link" tabindex="0" data-go="#/stock/${encodeURIComponent(e.s)}" aria-label="${esc(e.s)}, ${e.v}, stance score ${e.score}. Press Enter to open the stock.">${vcols.map(k=>c[k]).join("")}</tr>`;}
 /* one predicate for every filter; skipV leaves the verdict out so the chip counts can reflect the other filters */
 function passS(e,skipV){return inIndex(e,fix)&&(skipV||fv==="all"||e.v===fv)&&(fsc==="all"||(fsc==="3"?e.score===3:fsc==="2"?e.score===2:e.score<=1))&&(fsec==="all"||e.sec===fsec)&&(!fheld||e.held)&&(!fq||(e.s+" "+e.n).toLowerCase().includes(fq));}
 /* sort keys; null sorts last in either direction */
@@ -3234,7 +3269,7 @@ const GOV_ORD={Bad:0,Neutral:1,Good:2};
 function sortVal(e,R,k){
   switch(k){
    case "stock": return e.s;
-   case "verdict": return ORD[e.v];
+   case "verdict": return srank?ORD[e.v]:e.v;
    case "score": return e.score;
    case "run": return frun;}
   return null;}
@@ -3261,8 +3296,9 @@ function renderS(){
   $("#la-hold-txt").textContent=nf?`${nf} ${nf===1?"holding triggers":"holdings trigger"} an exit rule.`:"No holdings trigger an exit rule.";
   $("#la-hold").dataset.tone=nf?"warn":"ok";
   headS();
-  $("#cap-s").textContent=`${ix.n}, run of ${runLong(frun)}. ${sk?"Sorted by "+((THS.find(t=>t[0]===sk)||[])[1]||"")+", "+(sd>0?"ascending":"descending")+".":"Ordered by verdict, then score, then 52-week return."} Select a row to open the stock.`;
-  $("#tb-s").innerHTML=rows.length?rows.map(e=>rowS(e,R)).join(""):`<tr class="none"><td colspan="${THS.length}"><div class="emp">${ic("search")}<b>No stocks match these filters</b><p>Try a different search, or clear the filters to see every stock in ${esc(ix.n)}.</p><button type="button" class="btn" id="clr">Clear filters</button></div></td></tr>`;
+  const sortTxt=!sk?"":srank?"Sorted by verdict rank: BUY, HOLD, EXIT, REJECT.":"Sorted by "+((THS.find(t=>t[0]===sk)||[])[1]||"")+(sk==="verdict"?(sd>0?", A to Z.":", Z to A."):(sd>0?", ascending.":", descending."));
+  $("#cap-s").textContent=`${ix.n}, run of ${runLong(frun)}. ${sortTxt||"Ordered by verdict, then score, then 52-week return."} Select a row to open the stock.`;
+  $("#tb-s").innerHTML=rows.length?rows.map(e=>rowS(e,R)).join(""):`<tr class="none"><td colspan="${visTH().length}"><div class="emp">${ic("search")}<b>No stocks match these filters</b><p>Try a different search, or clear the filters to see every stock in ${esc(ix.n)}.</p><button type="button" class="btn" id="clr">Clear filters</button></div></td></tr>`;
   $("#count-s").textContent=`Showing ${rows.length} of ${IN(ix.size)} (sample rows)`;
   const c=$("#clr"); if(c) c.onclick=()=>{resetS();renderS();$("#q").focus();};
 }
@@ -3286,16 +3322,107 @@ $("#f-sector").onchange=e=>{fsec=e.target.value;renderS()};
 $("#f-held").onclick=e=>{fheld=!fheld;e.currentTarget.setAttribute("aria-pressed",fheld);renderS()};
 $("#q").oninput=e=>{fq=e.target.value.trim().toLowerCase();renderS()};
 $("#q").addEventListener("keydown",e=>{if(e.key==="Escape"){if(e.target.value){e.target.value="";fq="";renderS();}else e.target.blur();}});
-/* sort: none, then the first direction, then the other, then back to the default order */
+/* sort. Bucket: A to Z, then Z to A, then verdict rank (BUY, HOLD, EXIT, REJECT), then the default order. Other columns: ascending, descending, default. */
 function sortBy(k){
-  const first=(THS.find(t=>t[0]===k)||[])[4]||1;
-  if(sk!==k){sk=k;sd=1;} else if(sd===1){sd=-1;} else {sk="";sd=1;}
-  renderS(); const b=$(`#thead-s .sortb[data-sort="${k}"]`); if(b) b.focus({preventScroll:true});
+  if(sk!==k){sk=k;sd=1;srank=false;}
+  else if(k==="verdict"&&!srank&&sd===-1){srank=true;sd=1;}
+  else if(sd===1&&!srank){sd=-1;}
+  else {sk="";sd=1;srank=false;}
+  renderS(); const b=$(`#thead-s .sorth[data-sort="${k}"]`); if(b) b.focus({preventScroll:true});
 }
 $("#thead-s").addEventListener("click",e=>{
   if(e.target.closest("[data-tip]")) return;
-  const th=e.target.closest("th[data-sort]"); if(th) sortBy(th.dataset.sort);
+  const b=e.target.closest("button.sorth"); if(b) sortBy(b.dataset.sort);
 });
+/* column chooser. Stock is always shown; at least two columns stay visible. Choice saved in ath.wf.stockCols */
+const COLS_KEY="ath.wf.stockCols", SF_KEY="ath.wf.savedFilters", SF_MAX=10, NA_MSG="Saving is not available in this browser";
+const ALLCOLS=THS.map(t=>t[0]);
+function loadCols(){
+  try{const a=JSON.parse(localStorage.getItem(COLS_KEY)||"null");
+    if(Array.isArray(a)){const k=ALLCOLS.filter(c=>c==="stock"||a.includes(c)); if(k.length>=2) return k;}
+  }catch(e){}
+  return ALLCOLS.slice();
+}
+let vcols=loadCols();
+const visTH=()=>THS.filter(t=>vcols.includes(t[0]));
+function sfMsg(t){$("#sf-msg").textContent=t;}
+function saveCols(){try{localStorage.setItem(COLS_KEY,JSON.stringify(vcols));return true;}catch(e){return false;}}
+function syncCols(){
+  $$("#cols-list input").forEach(i=>{const k=i.dataset.col, on=vcols.includes(k); i.checked=on; i.disabled=k==="stock"||(on&&vcols.length<=2);});
+}
+function toggleCol(k,on){
+  if(k==="stock") return;
+  if(on) vcols=ALLCOLS.filter(c=>c===k||vcols.includes(c));
+  else if(vcols.length>2){vcols=vcols.filter(c=>c!==k); if(sk===k){sk="";sd=1;srank=false;}}
+  const ok=saveCols(); renderS(); syncCols(); if(!ok) sfMsg(NA_MSG);
+}
+function resetCols(){
+  vcols=ALLCOLS.slice(); let ok=true;
+  try{localStorage.removeItem(COLS_KEY);}catch(e){ok=false;}
+  renderS(); syncCols(); sfMsg(ok?"Columns reset to default.":NA_MSG);
+}
+/* saved filters. Stored in ath.wf.savedFilters as JSON; sfRead returns null when browser storage is blocked */
+function sfRead(){
+  let raw; try{raw=localStorage.getItem(SF_KEY);}catch(e){return null;}
+  try{const a=JSON.parse(raw||"[]"); return Array.isArray(a)?a.filter(x=>x&&typeof x.name==="string"):[];}catch(e){return [];}
+}
+function sfWrite(list){try{localStorage.setItem(SF_KEY,JSON.stringify(list));return true;}catch(e){return false;}}
+function sfRender(){
+  const list=sfRead()||[], sel=$("#sf-list");
+  sel.innerHTML=list.length?list.map(f=>`<option value="${esc(f.name)}">${esc(f.name)}</option>`).join(""):`<option value="">No saved filters</option>`;
+  sel.disabled=!list.length; $("#sf-apply").disabled=!list.length; $("#sf-del").disabled=!list.length;
+}
+function sfOpenForm(open){
+  $("#sf-form").hidden=!open; $("#sf-new").setAttribute("aria-expanded",String(open));
+  if(open){$("#sf-name").value=""; $("#sf-name").focus();}
+}
+function sfSave(raw){
+  const name=String(raw).trim().replace(/\s+/g," ").slice(0,40);
+  if(!name){sfMsg("Enter a name for this filter."); $("#sf-name").focus(); return;}
+  const list=sfRead();
+  if(list===null){sfMsg(NA_MSG); return;}
+  const entry={name, v:fv, score:fsc, sector:fsec, held:fheld, index:fix, q:$("#q").value};
+  const i=list.findIndex(f=>f.name===name);
+  if(i<0&&list.length>=SF_MAX){sfMsg(`You can save up to ${SF_MAX} filters. Delete one to save another.`); return;}
+  if(i>=0) list[i]=entry; else list.push(entry);
+  if(!sfWrite(list)){sfMsg(NA_MSG); return;}
+  sfOpenForm(false); sfRender(); $("#sf-list").value=name; sfMsg(`Saved "${name}".`);
+  $("#sf-new").focus();
+}
+function sfApply(){
+  const name=$("#sf-list").value, list=sfRead();
+  if(list===null){sfMsg(NA_MSG); return;}
+  const f=list.find(x=>x.name===name);
+  if(!f){sfMsg("Choose a saved filter to apply."); return;}
+  fv=$$("#f-verdict button").some(b=>b.dataset.v===f.v)?f.v:"all";
+  fsc=["all","3","2","low"].includes(f.score)?f.score:"all";
+  fsec=(f.sector==="all"||SEC.includes(f.sector))?f.sector:"all";
+  fheld=!!f.held; fq=String(f.q||"").trim().toLowerCase();
+  $("#q").value=String(f.q||""); $("#f-score").value=fsc; $("#f-sector").value=fsec;
+  $("#f-held").setAttribute("aria-pressed",String(fheld));
+  const k=INDICES.some(x=>x.k===f.index)?f.index:fix;
+  if(k!==fix) setIndex(k); else renderS();
+  sfMsg(`Applied "${name}".`);
+}
+function sfDelete(){
+  const name=$("#sf-list").value, list=sfRead();
+  if(list===null){sfMsg(NA_MSG); return;}
+  const next=list.filter(f=>f.name!==name);
+  if(next.length===list.length){sfMsg("Choose a saved filter to delete."); return;}
+  if(!sfWrite(next)){sfMsg(NA_MSG); return;}
+  sfRender(); sfMsg(`Deleted "${name}".`);
+}
+$("#cols-list").innerHTML=THS.map(t=>`<label class="colp-i"><input type="checkbox" data-col="${t[0]}"> ${esc(t[1])}</label>`).join("");
+$("#cols-list").addEventListener("change",e=>{const k=e.target.dataset&&e.target.dataset.col; if(k) toggleCol(k,e.target.checked);});
+$("#cols-btn").onclick=()=>{const p=$("#cols-panel"), open=p.hidden; p.hidden=!open; $("#cols-btn").setAttribute("aria-expanded",String(open));};
+$("#cols-reset").onclick=resetCols;
+$("#sf-new").onclick=()=>sfOpenForm($("#sf-form").hidden);
+$("#sf-form").addEventListener("submit",e=>{e.preventDefault(); sfSave($("#sf-name").value);});
+$("#sf-cancel").onclick=()=>{sfOpenForm(false); $("#sf-new").focus();};
+$("#sf-apply").onclick=sfApply;
+$("#sf-del").onclick=sfDelete;
+sfRender(); syncCols();
+if(sfRead()===null) sfMsg(NA_MSG);
 /* Size opens the sizing calculator for that stock in a new tab and must not open the row */
 $("#tb-s").addEventListener("click",e=>{
   const b=e.target.closest(".sz-btn"); if(!b) return;
@@ -3362,7 +3489,7 @@ function chartData(e){
   for(let i=0;i<N;i++){const op=i?c[i-1]*(1+(r()-.5)*.008):c[0]; const hi=Math.min(Math.max(op,c[i])*(1+r()*.009),e.ath), lo=Math.min(op,c[i])*(1-r()*.009);
     o.push(Math.min(op,e.ath)); h.push(hi); l.push(lo); v.push(Math.round((0.6+r())*1.4e6*(1+Math.abs(c[i]/op-1)*25))); del.push(.34+r()*.3+(c[i]>=op?.06:0)); if(hi>h[mi]) mi=i;}
   if(h[mi]<e.ath) h[mi]=e.ath;
-  const ema=[]; let m=c[0]; const a=2/201; for(let i=0;i<N;i++){m=i?a*c[i]+(1-a)*m:c[0]; ema.push(m);} const f=e.ema/ema[N-1]; for(let i=0;i<N;i++) ema[i]*=f;
+  const ema=smaOf(c,200); const f=e.ema/ema[N-1]; for(let i=0;i<N;i++) ema[i]*=f;
   const ema50=emaOf(c,50), ema20=emaOf(c,20), sma100=smaOf(c,100); let dma200=smaOf(c,200); const f2=e.ema*1.01/dma200[N-1]; dma200=dma200.map(x=>x*f2);
   const rsi=rsiOf(c,14);
   const nifty=series(seed^0x51,[[0,7400],[N-757,13100+r()*900],[N-253,19200/(1+NIFTY.r/100)*1.0],[N-1,19200]],.03,.015,.003);
@@ -3443,7 +3570,7 @@ const TYN={candle:"Candles",hollow:"Hollow candles",ha:"Heikin Ashi",bars:"Bars"
 const IND=[
   {k:"e50",name:"50 EMA",live:1,tabs:["Trend"],col:"#D9730D",w:1.8,opt:"cw",desc:"Exponential average of the last 50 closes. Always the daily one."},
   {k:"d200",name:"200 DMA",live:1,tabs:["Trend"],col:"#1D4ED8",w:1.8,opt:"cw",desc:"Simple average of the last 200 closes. Always the daily one."},
-  {k:"exit",name:"Exit line",live:1,tabs:["Trend"],col:"#BE123C",w:1.6,opt:"cw",desc:"The 200-day EMA the strategy uses as its exit line."},
+  {k:"exit",name:"Exit line",live:1,tabs:["Trend"],col:"#BE123C",w:1.6,opt:"cw",desc:"The 200 DMA the strategy uses as its exit line."},
   {k:"ath",name:"All-time high",live:1,tabs:["Trend"],col:"#0E7490",w:1.2,opt:"cw",desc:"A level line at the highest price on record."},
   {k:"vol",name:"Volume",live:1,tabs:["Volume"],col:"#94A3B8",w:1,opt:"",desc:"Shares traded each bar. The darker part is the delivery share."},
   {k:"rsi",name:"RSI 14",live:1,tabs:["Technicals"],col:"#7C3AED",w:1.6,opt:"cw",desc:"Relative strength index. Above 70 is stretched, below 30 is washed out."},
@@ -3459,7 +3586,7 @@ const IND=[
   {k:"cmf",name:"Chaikin Money Flow",tabs:["Volume"],desc:"Buying or selling pressure over 20 days, from volume and close position."},
   {k:"cci",name:"Commodity Channel Index",tabs:["Technicals"],desc:"How far price sits from its average, in units of typical spread."},
   {k:"ichi",name:"Ichimoku Cloud",tabs:["Trend"],desc:"Five lines and a shaded cloud that mark trend, support and resistance."},
-  {k:"kc",name:"Keltner Channels",tabs:["Trend"],desc:"An EMA with bands set by the average true range."},
+  {k:"kc",name:"Keltner Channels",tabs:["Trend"],desc:"An exponential moving average with bands set by the average true range."},
   {k:"mfi",name:"Money Flow Index",tabs:["Volume"],desc:"A volume-weighted RSI."},
   {k:"ribbon",name:"Moving Average Ribbon",tabs:["Trend"],desc:"Several averages drawn together. A fanning ribbon means a strong trend."},
   {k:"obv",name:"On-Balance Volume",tabs:["Volume"],desc:"Adds volume on up days and subtracts it on down days."},
@@ -4865,7 +4992,7 @@ function growthChips(F,per){
 }
 function ttmWords(e,F){
   const met=e.c[1], pill=met===1?`<span class="gp good">${ic("check")}Met</span>`:met===0?`<span class="gp bad">${ic("x")}Not met</span>`:`<span class="gp na">${ic("minus")}Not assessed</span>`;
-  return `${pill} Adjusted TTM profit after tax <b>${IN(e.pat[0])} cr</b> against a high of <b>${IN(e.pat[1])} cr</b> within the data window${e.oo?`, after taking out <b>${IN(e.oo)} cr</b> of one-off items`:", no one-off items to remove"}.`;
+  return `${pill} Adjusted last twelve months profit after tax <b>${IN(e.pat[0])} cr</b> against a high of <b>${IN(e.pat[1])} cr</b> within the data window${e.oo?`, after taking out <b>${IN(e.oo)} cr</b> of one-off items`:", no one-off items to remove"}.`;
 }
 function niceStep(x){const p=Math.pow(10,Math.floor(Math.log10(x))); for(const m of [1,2,2.5,5,10]) if(m*p>=x) return m*p; return 10*p;}
 function drawTTM(){
@@ -4890,10 +5017,10 @@ function drawTTM(){
 }
 function tilesHTML(F){
   const R=F.R, t=(k,key,v,d)=>`<div class="tile"><div class="k">${k}${key?tip(key):""}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
-  return t("ROE","fd_roe",f1(R.roe)+"%","Adjusted TTM profit on net worth")+t("ROCE","fd_roce",f1(R.roce)+"%","Profit before tax and interest on capital")+
+  return t("ROE","fd_roe",f1(R.roe)+"%","Adjusted last twelve months profit on net worth")+t("ROCE","fd_roce",f1(R.roce)+"%","Profit before tax and interest on capital")+
    t("Debt to equity","fd_de",R.de.toFixed(2),R.de<.5?"Low borrowing":R.de<1?"Moderate borrowing":"Owes more than it owns")+
    t("Interest cover","fd_icr",R.icr==null?"No interest":R.icr.toFixed(1)+"x",R.icr==null?"No borrowing cost":R.icr<2?"Thin cover":"Times earnings cover interest")+
-   t("P/E","pe",R.pe.toFixed(1),"Price on reported TTM EPS")+t("P/B","pb",R.pb.toFixed(1),"Price on book value")+t("Dividend yield","div_yield",R.dy.toFixed(1)+"%","Yearly dividend on today's price");
+   t("P/E","pe",R.pe.toFixed(1),"Price on reported last twelve months EPS")+t("P/B","pb",R.pb.toFixed(1),"Price on book value")+t("Dividend yield","div_yield",R.dy.toFixed(1)+"%","Yearly dividend on today's price");
 }
 function cfTable(F){
   const C=F.CF, row=(l,k,f,cl)=>`<tr class="${cl||""}"><th scope="row" class="fd-rl">${l}${k?tip(k):""}</th>${C.map(c=>`<td class="r num">${f(c)}</td>`).join("")}</tr>`;
@@ -4964,9 +5091,9 @@ function techOf(e){
   if(TC[e.s]) return TC[e.s];
   const d=chartData(e), i=N-1, c=d.c[i];
   const sma=n=>n===100?d.sma100[i]:n===200?d.dma200[i]:smaOf(d.c,n)[i];
-  const ema=n=>n===20?d.ema20[i]:n===50?d.ema50[i]:n===200?d.ema[i]:emaOf(d.c,n)[i];
+  const ema=n=>n===20?d.ema20[i]:n===50?d.ema50[i]:emaOf(d.c,n)[i];
   const vm=v=>{const x=c/v-1; return x>.0025?1:x<-.0025?-1:0;};
-  const mas=[]; [10,20,50,100,200].forEach(n=>mas.push({k:"SMA",n,v:sma(n),vote:vm(sma(n))})); [10,20,50,100,200].forEach(n=>mas.push({k:"EMA",n,v:ema(n),vote:vm(ema(n))}));
+  const mas=[]; [10,20,50,100,200].forEach(n=>mas.push({k:"SMA",n,v:sma(n),vote:vm(sma(n))})); [10,20,50,100].forEach(n=>mas.push({k:"EMA",n,v:ema(n),vote:vm(ema(n))}));
   const m12=emaOf(d.c,12), m26=emaOf(d.c,26), macd=m12.map((v,k)=>v-m26[k]), sig=emaOf(macd,9);
   const hh=n=>Math.max(...d.h.slice(i-n+1,i+1)), ll=n=>Math.min(...d.l.slice(i-n+1,i+1));
   const rawK=t=>{const a=Math.max(...d.h.slice(t-13,t+1)), b=Math.min(...d.l.slice(t-13,t+1)); return (d.c[t]-b)/(a-b)*100;};
@@ -5056,7 +5183,7 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
 /* stock_more: Sector, Governance, Events and filings, Screener tabs for the stock page.
    Everything is computed from the sample data (U, E, EM, RANKED, chartData, eventsFor). Nothing is hard-coded to one stock. */
 (function(){
-  const mo={e:null,sr:253,sc:null,gf:"all",ek:{E:1,D:1,S:1,N:1,V:1},bound:false,heat:{},cur:null};
+  const mo={e:null,sr:253,sc:null,gf:"all",ek:{E:1,D:1,S:1,N:1,V:1},bound:false,perf:{tab:"sector",win:"5D"},cur:null};
   const MONF=["January","February","March","April","May","June","July","August","September","October","November","December"];
   const RNG={63:"3 months",126:"6 months",253:"1 year"};
   const below=x=>x.below<=0.05?"At high":x.below.toFixed(1)+"%";
@@ -5068,7 +5195,6 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
   const sectorIdx=()=>[...new Set(U.map(x=>x.idx).filter(Boolean))];
   const peersIn=idx=>idx?RANKED.filter(x=>x.idx===idx).sort((a,b)=>b.r-a.r):[];
   const SECRANK={}; (function(){ sectorIdx().forEach(ix=>peersIn(ix).forEach((x,k)=>{SECRANK[x.s]=k+1;})); })();
-  const ret3m=sec=>sec?(sec[N-1]/sec[N-1-63]-1)*100:null;
 
   /* ---------------- shared row builders ---------------- */
   function stockCell(x,e,qv){
@@ -5092,10 +5218,17 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
         <div class="mo-bar"><div class="seg" id="mo-sc-range" role="group" aria-label="Sector chart range"><button type="button" data-v="63" aria-pressed="false">3M</button><button type="button" data-v="126" aria-pressed="false">6M</button><button type="button" data-v="253" aria-pressed="true">1Y</button></div><span class="mo-lbl">Rebased to 100${tip("mo_rebased")}</span></div>
         <div id="mo-sc-body"></div>
       </div>
-      <div class="mo-two">
-        <div class="sect"><header><h2>Rank in sector${tip("mo_sector_rank")}</h2></header><div id="mo-rank"></div></div>
-        <div class="sect"><header><h2>Sector heat strip${tip("mo_heat")}</h2><span class="hint">3-month return of each sector index. Exchange index data.</span></header><div id="mo-heat"></div></div>
+      <div class="sect" id="mo-pf-sect">
+        <header><h2>Sector and industry performance${tip("mo_perf")}</h2><span class="hint">Sample values. Median return of the scanned stocks in each group.</span></header>
+        <div class="mo-bar">
+          <div class="seg tabs pf-tabs" id="mo-pf-tabs" role="tablist" aria-label="Group type"><button type="button" role="tab" id="mo-pf-t-sector" data-v="sector" aria-selected="true" aria-controls="mo-pf-panel" tabindex="0">Sector</button><button type="button" role="tab" id="mo-pf-t-industry" data-v="industry" aria-selected="false" aria-controls="mo-pf-panel" tabindex="-1">Industry</button></div>
+          <div class="seg pf-win" id="mo-pf-win" role="group" aria-label="Performance window"><button type="button" data-v="1D" aria-pressed="false">1D</button><button type="button" data-v="5D" aria-pressed="true">5D</button><button type="button" data-v="1M" aria-pressed="false">1M</button><button type="button" data-v="3M" aria-pressed="false">3M</button><button type="button" data-v="6M" aria-pressed="false">6M</button><button type="button" data-v="1Y" aria-pressed="false">1Y</button><button type="button" data-v="3Y" aria-pressed="false">3Y</button><button type="button" data-v="5Y" aria-pressed="false">5Y</button></div>
+        </div>
+        <div id="mo-pf-panel" role="tabpanel" aria-labelledby="mo-pf-t-sector"><div id="mo-pf-body"></div></div>
+        <p class="mo-cap">Based on the stocks in our scan. Hover or focus a bar to see how many.${tip("perf_members")}</p>
+        <p class="sr" id="mo-pf-live" aria-live="polite"></p>
       </div>
+      <div class="sect"><header><h2>Rank in sector${tip("mo_sector_rank")}</h2></header><div id="mo-rank"></div></div>
       <div class="sect"><header><h2>Sector leaders${tip("mo_leaders")}</h2><span class="hint" id="mo-ld-h"></span></header><div id="mo-leaders"></div></div>
     </div>`;
   }
@@ -5108,7 +5241,7 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
     const d=secChartData(e);
     if(!d){
       const why=e.out?`<b>${esc(e.s)} is outside the scanned universe</b>, so it has no sector index mapping.`:e.idx?`<b>Exchange index data is missing for the ${esc(e.idx)}</b>, so ${esc(e.s)} has no sector chart.`:`<b>${esc(e.s)} is not mapped to a sector index.</b>`;
-      box.innerHTML=`<div class="mo-empty">${why} Nothing is estimated or filled in. The rank, heat strip and leaders below show what exists.</div>`; return;
+      box.innerHTML=`<div class="mo-empty">${why} Nothing is estimated or filled in. The rank, performance chart and leaders below show what exists.</div>`; return;
     }
     const n=mo.sr, s0=N-n, sA=d.sec[N-1]/d.sec[s0]*100-100, nA=d.nifty[N-1]/d.nifty[s0]*100-100, gap=sA-nA;
     box.innerHTML=`<div class="mo-chart" id="mo-sc-chart" tabindex="0" role="img" aria-label="Line chart of the ${esc(e.idx)} against Nifty 500 over ${RNG[n]}, both rebased to 100. ${esc(e.idx)} ${sgn(sA)} percent, Nifty 500 ${sgn(nA)} percent. Use the left and right arrow keys to read values."></div>
@@ -5153,18 +5286,42 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
       <p class="mo-cap">Ranked by 52-week return among the scanned stocks in the ${esc(e.idx)}. Rank 1 is the best.${n===1?" It is the only one in the sample, so the rank says little.":""}</p>
       <p class="mo-cap">${idxLine}</p>`;
   }
-  function heatBox(e){
-    const box=document.getElementById("mo-heat"); if(!box) return;
-    const own=secChartData(e), tiles=sectorIdx().map(ix=>{
-      let r;
-      if(own&&ix===e.idx) r=ret3m(own.sec);
-      else { if(!(ix in mo.heat)){ const rep=U.find(x=>x.idx===ix&&x.secR!=null); const dd=rep?chartData(EM[rep.s]):null; mo.heat[ix]=dd&&dd.sec?ret3m(dd.sec):null; } r=mo.heat[ix]; }
-      return {ix,r,me:ix===e.idx};
-    }).sort((a,b)=>(a.r==null)-(b.r==null)||(b.r||0)-(a.r||0));
-    box.innerHTML=`<ul class="mo-heat" aria-label="Sector indexes by 3-month return">`+tiles.map(t=>{
-      const k=t.r==null?"na":t.r>=0?"up":"down", val=t.r==null?`${ic("minus")}No data`:`${ic("arrow",t.r>=0?"mo-u":"mo-d")}${sgn(t.r)}%`;
-      return `<li class="mo-tile ${k}${t.me?" me":""}" ${t.me?'aria-current="true"':""}><span class="mo-tn">${esc(idxName(t.ix))}</span><span class="mo-tv">${val}<span class="sr">${t.r==null?"":t.r>=0?", rising":", falling"}</span></span>${t.me?'<span class="mo-me">This stock\'s sector</span>':""}</li>`;
-    }).join("")+`</ul>`+(e.idx?"":`<p class="mo-cap" style="margin-top:10px">${esc(e.s)} is not mapped to a sector index, so no tile is marked.</p>`);
+  /* ---------------- SECTOR AND INDUSTRY PERFORMANCE ---------------- */
+  const PFB=90, PFLBL={sector:"Sector",industry:"Industry"};
+  function pfGroups(tab,win){
+    const all=PERF[tab].map(x=>({n:x.n,k:x.k,v:x.r[win]}));
+    const desc=[...all].sort((a,b)=>b.v-a.v), h=Math.min(5,Math.floor(all.length/2));
+    return {all, up:desc.slice(0,h), dn:[...desc].reverse().slice(0,h).reverse()}; /* losers: lowest return last */
+  }
+  function pfOwn(e,tab){
+    if(!e||e.out) return null;
+    return tab==="sector"?(e.idx?idxName(e.idx):null):(e.sec||null);
+  }
+  function pfItem(x,max,me,tab,win){
+    const abs=Math.abs(x.v), h=max?abs/max*PFB:0, p=max?abs/max*100:0, dir=x.v>=0?"up":"down";
+    const lab=`${x.n}: ${pct(x.v)} over ${win}, based on ${x.k} stocks${me?`, this stock's ${PFLBL[tab].toLowerCase()}`:""}`;
+    return `<li class="pf-it ${dir}${me?" me":""}" tabindex="0" role="img" aria-label="${esc(lab)}" title="${esc(lab)}"${me?' aria-current="true"':""} style="--h:${h.toFixed(1)}px;--p:${p.toFixed(1)}">`
+      +`<span class="pf-track" aria-hidden="true"><i class="pf-bar"></i><span class="pf-val">${pct(x.v)}</span></span>`
+      +`<span class="pf-nm" aria-hidden="true">${esc(x.n)}</span>`
+      +(me?`<span class="pf-tag" aria-hidden="true">This stock's ${PFLBL[tab].toLowerCase()}</span>`:"")
+      +`</li>`;
+  }
+  function pfTabSync(){
+    document.querySelectorAll("#mo-pf-tabs [role=tab]").forEach(b=>{ const on=b.dataset.v===mo.perf.tab; b.setAttribute("aria-selected",String(on)); b.tabIndex=on?0:-1; });
+    const p=document.getElementById("mo-pf-panel"); if(p) p.setAttribute("aria-labelledby","mo-pf-t-"+mo.perf.tab);
+  }
+  function pfBody(e,announce){
+    const box=document.getElementById("mo-pf-body"); if(!box||!e) return;
+    const tab=mo.perf.tab, win=mo.perf.win, g=pfGroups(tab,win);
+    const own=pfOwn(e,tab), ownItem=own?g.all.find(x=>x.n===own):null;
+    const shown=[...g.up,...g.dn], max=Math.max(0,...shown.map(x=>Math.abs(x.v)));
+    const ownShown=!!ownItem&&shown.some(x=>x.n===own);
+    const grp=(list,dir,head)=>`<section class="pf-grp pf-${dir}" aria-labelledby="mo-pf-h-${dir}"><h3 class="pf-h" id="mo-pf-h-${dir}">${ic("arrow",dir==="up"?"mo-u":"mo-d")}${head}</h3><ul class="pf-list">${list.map(x=>pfItem(x,max,ownShown&&x.n===own,tab,win)).join("")}</ul></section>`;
+    let cap="";
+    if(!ownItem) cap=`<p class="mo-cap">${esc(e.s)} is not mapped to ${tab==="sector"?"a sector index":"an industry"}, so no bar is marked.</p>`;
+    else if(!ownShown){ const rk=[...g.all].sort((a,b)=>b.v-a.v).findIndex(x=>x.n===own)+1; cap=`<p class="mo-cap">${esc(own)} is ranked ${rk} of ${g.all.length} over ${win}: ${pct(ownItem.v)}.</p>`; }
+    box.innerHTML=`<div class="pf-chart">${grp(g.up,"up","Top performing")}${grp(g.dn,"dn","Under performing")}</div>${cap}`;
+    if(announce){ const lv=document.getElementById("mo-pf-live"), top=g.up[0], low=g.dn[g.dn.length-1]; if(lv&&top&&low) lv.textContent=`${PFLBL[tab]} performance over ${win}: top ${top.n} ${pct(top.v)}, lowest ${low.n} ${pct(low.v)}.`; }
   }
   function leadersBox(e){
     const box=document.getElementById("mo-leaders"), h=document.getElementById("mo-ld-h"); if(!box) return;
@@ -5173,7 +5330,7 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
     if(h) h.textContent=`Scanned stocks in the ${e.idx}, best 52-week return first.`;
     box.innerHTML=`<div class="tbl-wrap"><table><caption class="sr">Stocks in the same sector index as ${esc(e.s)}, best 52-week return first.</caption><thead><tr>${stockHead(true)}</tr></thead><tbody>${P.map((x,k)=>stockRow(x,e,{rank:k+1})).join("")}</tbody></table></div>`;
   }
-  function secRender(e){ secBody(e); rankBox(e); heatBox(e); leadersBox(e); segSync("#mo-sc-range",String(mo.sr)); }
+  function secRender(e){ secBody(e); rankBox(e); pfBody(e,false); leadersBox(e); segSync("#mo-sc-range",String(mo.sr)); segSync("#mo-pf-win",mo.perf.win); pfTabSync(); }
 
   /* ---------------- GOVERNANCE ---------------- */
   const GR={"Good":["good","check"],"Neutral":["neutral","minus"],"Bad":["bad","x"],"Not assessed":["na","warn"]};
@@ -5336,6 +5493,15 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
     if(mo.bound) return; mo.bound=true;
     const $id=id=>document.getElementById(id);
     $id("mo-sc-range").addEventListener("click",ev=>{ const b=ev.target.closest("button[data-v]"); if(!b) return; mo.sr=+b.dataset.v; mo.cur=null; segSync("#mo-sc-range",b.dataset.v); secBody(mo.e); });
+    const pfTabs=$id("mo-pf-tabs");
+    pfTabs.addEventListener("click",ev=>{ const b=ev.target.closest("button[data-v]"); if(!b) return; mo.perf.tab=b.dataset.v; pfTabSync(); pfBody(mo.e,true); });
+    pfTabs.addEventListener("keydown",ev=>{
+      const k=ev.key; if(k!=="ArrowLeft"&&k!=="ArrowRight"&&k!=="Home"&&k!=="End") return; ev.preventDefault();
+      const order=["sector","industry"], i0=order.indexOf(mo.perf.tab);
+      const i=k==="Home"?0:k==="End"?1:(i0+(k==="ArrowRight"?1:-1)+2)%2;
+      mo.perf.tab=order[i]; pfTabSync(); pfBody(mo.e,true); document.getElementById("mo-pf-t-"+order[i]).focus();
+    });
+    $id("mo-pf-win").addEventListener("click",ev=>{ const b=ev.target.closest("button[data-v]"); if(!b) return; mo.perf.win=b.dataset.v; segSync("#mo-pf-win",mo.perf.win); pfBody(mo.e,true); });
     const chartHost=$id("mo-sc-body");
     const hit=ev=>{ const c=ev.target.closest&&ev.target.closest("#mo-sc-chart"), G2=c&&c._g; if(!G2) return; const r=c.querySelector("svg").getBoundingClientRect(); if(!r.width) return; const xx=(ev.clientX-r.left)/r.width*G2.W; secCross(Math.round((xx-G2.PL)/G2.pw*(G2.n-1))); };
     chartHost.addEventListener("pointermove",hit); chartHost.addEventListener("pointerdown",hit);
@@ -5422,7 +5588,7 @@ function phRender(e){
   const pr=hv.kind==="stock"?propExit(hv.px,e.ema):null;
   const kv=`<div class="kv ph-kv"><span>Exit line${tip("hold_exit_line")}</span><span>${INR2(hv.exit)}</span><span>Distance to exit${tip("distance_exit")}</span><span>${phSign(dist,x=>x.toFixed(1)+"%")}</span></div>`;
   const rule=hv.kind==="stock"
-    ?`Open risk is quantity times the gap between the last close and the exit line. The exit line is ${pr.rule} (EMA ${INR2(e.ema)}), kept within 5% to 30% below the price.`
+    ?`Open risk is quantity times the gap between the last close and the exit line. The exit line is ${pr.rule} (200 DMA ${INR2(e.ema)}), kept within 5% to 30% below the price.`
     :`Funds and ETFs have no exit line, so open risk uses an assumed fall of ${HD.fall}%.`;
   const fall=`<p class="note ph-note">${rule} <b>Assumed fall for funds and ETFs${tip("assumed_fall")}</b> is ${HD.fall}%. Stocks use their exit line.</p>`;
   /* exit checks: same logic and wording as Strategy check, phase 4 */
@@ -5431,10 +5597,10 @@ function phRender(e){
   const out=!!e.out;
   const checks=
     tri("Score now","score",out?`<span class="gp na">${ic("minus")}Not scored</span>`:e.score<=1?trg:clear,out?"Outside the scan universe, so there is no score.":`${e.score} of 3${e.na?`, ${e.na} not assessed`:""}. Exit at 1 or lower.`)+
-    tri("200-day EMA","ema200",e.emaBelow?`<span class="gp flag">${ic("warn")}Below it</span>`:clear,`Close <b>${IN2(e.px)}</b> against EMA <b>${IN2(e.ema)}</b>: ${e.emaBelow?"below":"above"}.`)+
+    tri("200 DMA","ema200",e.emaBelow?`<span class="gp flag">${ic("warn")}Below it</span>`:clear,`Close <b>${IN2(e.px)}</b> against the 200 DMA <b>${IN2(e.ema)}</b>: ${e.emaBelow?"below":"above"}.`)+
     tri("52-week alpha vs Nifty 500","alpha_n",e.behind?`<span class="gp flag">${ic("warn")}Behind</span>`:clear,`Stock <b>${pct(e.r)}</b> against Nifty 500 <b>${pct(NIFTY.r)}</b>: <b>${pp(e.aN)}</b>.`);
   const anyTrig=(!out&&e.score<=1)||e.emaTrig;
-  const sumLine=`<div class="ph-sum2">${e.emaTrig?trg:clear}<span><b>Moving-average exit${tip("exit_rule_ema")}</b>. Needs both: below the 200-day EMA and behind the Nifty 500.${e.emaTrig?" Both are true.":" At most one is true."}</span></div>`;
+  const sumLine=`<div class="ph-sum2">${e.emaTrig?trg:clear}<span><b>Moving-average exit${tip("exit_rule_ema")}</b>. Needs both: below the 200 DMA and behind the Nifty 500.${e.emaTrig?" Both are true.":" At most one is true."}</span></div>`;
   const alert=anyTrig?`<div class="alert loss" role="status">${ic("warn")}<div class="txt"><b>An exit check is triggered.</b> The system says to exit this holding if you own it.</div></div>`:"";
   root.innerHTML=head+alert+`<div class="tiles ph-tiles">${tiles}</div>${kv}${fall}
     <h3 class="ph-h3">Exit checks${tip("ai_exit_checks")}</h3>${checks}${sumLine}
@@ -5475,7 +5641,7 @@ function aiOrder(e){
   return {h:`<p><b>I cannot place orders.</b> This page gives signals and a sizing calculator only. Orders are placed at your broker.</p>${e.out?"":`<p><a href="#/sizing/${encodeURIComponent(e.s)}">Open the sizing calculator for ${esc(e.s)}</a> to work out a size and an exit price.</p>`}`,src:[]};
 }
 function aiUnknown(e){
-  return {h:`<p><b>I can only answer from the scanner data.</b> I do not have an answer to that. I can answer these:</p><ul>${AI_CAN.map(x=>`<li>${x}</li>`).join("")}</ul><p>You can also ask about the three momentum rules, the 200-day EMA or your position.</p>`,src:[]};
+  return {h:`<p><b>I can only answer from the scanner data.</b> I do not have an answer to that. I can answer these:</p><ul>${AI_CAN.map(x=>`<li>${x}</li>`).join("")}</ul><p>You can also ask about the three momentum rules, the 200 DMA or your position.</p>`,src:[]};
 }
 function aiWhy(e){
   const row=aiCite(`Stocks list, row ${e.s}`,"p-check"), g=e.g;
@@ -5491,7 +5657,7 @@ function aiWhy(e){
     lead=`<p><b>BUY.</b> All three momentum rules are met (${e.score} of 3) and governance passed: ${g.assessed} of 18 points assessed, no Bad grade, and the required points are assessed.</p><ul>${st}</ul>`;
   } else if(e.v==="EXIT"){
     lead=e.emaTrig
-      ?`<p><b>EXIT.</b> The moving-average exit is triggered. The close ${IN2(e.px)} is below the 200-day EMA ${IN2(e.ema)}, and the 52-week return ${pct(e.r)} is behind the Nifty 500 at ${pct(NIFTY.r)}. Exit if you own it. It is not a buy.</p><ul>${st}</ul>`
+      ?`<p><b>EXIT.</b> The moving-average exit is triggered. The close ${IN2(e.px)} is below the 200 DMA ${IN2(e.ema)}, and the 52-week return ${pct(e.r)} is behind the Nifty 500 at ${pct(NIFTY.r)}. Exit if you own it. It is not a buy.</p><ul>${st}</ul>`
       :`<p><b>EXIT.</b> The score is ${e.score} of 3${e.na?`, with ${e.na} not assessed`:""}. A score of 1 or lower means exit if you own it. It is not a buy.</p><ul>${st}</ul>`;
     src.push(aiCite("Exit checks, phase 4","p-check"));
   } else if(e.blocked){
@@ -5558,7 +5724,7 @@ function aiPeers(e){
   return {h:`<p>${esc(e.s)} returned <b>${pct(e.r)}</b> over 52 weeks against a peer median of <b>${pct(med)}</b>. ${ahead===0?"It is ahead of all of its peers.":`${ahead} of ${P.length} peers did better.`} ${note}</p><ul>${li}</ul>`,src};
 }
 function aiEma(e){
-  return {h:`<p>The close is <b>${IN2(e.px)}</b> and the 200-day EMA is <b>${IN2(e.ema)}</b>, so the price is <b>${e.emaBelow?"below":"above"}</b> it. The stock is <b>${e.behind?"behind":"ahead of"}</b> the Nifty 500 (${pct(e.r)} against ${pct(NIFTY.r)}). The moving-average exit needs both to be bad: it is <b>${e.emaTrig?"triggered":"clear"}</b>.</p>`,src:[aiCite("Exit checks, phase 4","p-check"),aiCite("Technicals","p-tech","p-check")]};
+  return {h:`<p>The close is <b>${IN2(e.px)}</b> and the 200 DMA is <b>${IN2(e.ema)}</b>, so the price is <b>${e.emaBelow?"below":"above"}</b> it. The stock is <b>${e.behind?"behind":"ahead of"}</b> the Nifty 500 (${pct(e.r)} against ${pct(NIFTY.r)}). The moving-average exit needs both to be bad: it is <b>${e.emaTrig?"triggered":"clear"}</b>.</p>`,src:[aiCite("Exit checks, phase 4","p-check"),aiCite("Technicals","p-tech","p-check")]};
 }
 function aiRules(e){
   if(e.out) return {h:`<p>The three momentum rules are <b>not assessed</b> for ${esc(e.n)}. It is outside the scan universe.</p>`,src:[aiCite(`Stocks list, row ${e.s}`,"p-check")]};
@@ -5639,7 +5805,8 @@ function aiClose(refocus,quiet){
   AI.open=false; p.classList.remove("on"); bd.classList.remove("on"); document.body.classList.remove("ai-lock");
   const b=document.getElementById("ai-open"); if(b) b.setAttribute("aria-expanded","false");
   AI.closeT=setTimeout(()=>{ if(!AI.open){ p.hidden=true; bd.hidden=true; } },quiet?0:230);
-  if(refocus&&b) b.focus({preventScroll:true});
+  const pn=b&&b.closest("#st-pane"), shut=!!pn&&!pn.classList.contains("on");
+  if(refocus&&(shut?document.getElementById("st-handle"):b)) (shut?document.getElementById("st-handle"):b).focus({preventScroll:true});
 }
 function aiFill(){
   const e=AI.e; if(!e) return;
@@ -5691,7 +5858,7 @@ function critRow(key,e,i){
   const st=e.c[i]; const pillx=st===1?`<span class="gp good">${ic("check")}Met</span>`:st===0?`<span class="gp bad">${ic("x")}Not met</span>`:`<span class="gp na">${ic("minus")}Not assessed</span>`;
   let txt;
   if(i===0) txt=`Latest close <b>${IN2(e.px)}</b> against an all-time high of <b>${IN2(e.ath)}</b>: <b>${e.below<=0.05?"at the high":e.below.toFixed(1)+"% below"}</b>. Threshold: within 2%.`;
-  if(i===1) txt=e.pat?`Adjusted TTM profit after tax <b>${IN(e.pat[0])} cr</b> against a high of <b>${IN(e.pat[1])} cr</b> within the data window${e.oo?`, after taking out <b>${IN(e.oo)} cr</b> of one-off items`:", no one-off items to remove"}.`:`Profit history is not available for this stock. Not enough company financials to test it.`;
+  if(i===1) txt=e.pat?`Adjusted last twelve months profit after tax <b>${IN(e.pat[0])} cr</b> against a high of <b>${IN(e.pat[1])} cr</b> within the data window${e.oo?`, after taking out <b>${IN(e.oo)} cr</b> of one-off items`:", no one-off items to remove"}.`:`Profit history is not available for this stock. Not enough company financials to test it.`;
   if(i===2) txt=e.secR==null?(e.out?`No sector index is mapped to this stock, so the comparison cannot be made.`:`52-week return <b>${pct(e.r)}</b> against Nifty 500 <b>${pct(NIFTY.r)}</b>. The ${esc(e.idx)} data is missing, so the second half of the test cannot be made.`):`52-week return <b>${pct(e.r)}</b> against Nifty 500 <b>${pct(NIFTY.r)}</b> and ${esc(e.idx)} <b>${pct(e.secR)}</b>. It must beat both.`;
   const name=["Price at all-time high","Profit at its high","Ahead of both indexes"][i], k=["crit_ath","crit_pat","crit_alpha"][i];
   return `<div class="crit"><div class="cn">${i+1}. ${name}${tip(k)}</div>${pillx}<div class="cv">${txt}</div></div>`;
@@ -5701,7 +5868,7 @@ function renderStock(sym){
   $("#st-eyebrow").textContent=e.sec;
   $("#st-h1-2").innerHTML=`${esc(e.n)} <span class="mono ws-sym">${esc(e.s)}</span>`;
   $("#st-sub-2").textContent=out?"Outside the scan universe. The scanner does not score it, so it has no stance score and no bucket."
-    :`Bucket ${e.v} from the run of ${frun}. Governance, 200-day EMA and sizing data are TBD.`;
+    :`Bucket ${e.v} from the run of ${frun}. Governance, the 200 DMA and sizing data are TBD.`;
   $("#st-vd").innerHTML=out?`<span class="gp plain">Not in universe</span>`:`<span class="vd big ${e.v}">${e.v}</span>${tip("verdict")}`;
   $("#st-score").innerHTML=out?`<span class="note">Not scored</span>`:`<span class="ws-sc">${e.score}</span>${tip("score")}`;
   $("#st-px").innerHTML=`<span class="ws-pv">${IN2(e.px)}</span><span class="ws-asof">LTP, run of ${frun}</span>`;
@@ -5718,7 +5885,7 @@ function renderStock(sym){
    kpi("Below high","below_ath",e.below<=0.05?"At high":e.below.toFixed(1)+"%","High "+IN2(e.ath)+", date TBD")+
    kpi("1-year return","ret52",pct(e.r),"Index comparison TBD")+
    kpi("Adj. profit change","pat_chg","TBD","Not in the API")+
-   kpi("200-day EMA","ema200","TBD","Not in the API");
+   kpi("200 DMA","ema200","TBD","Not in the API");
   // phases: only the fields the API gives are shown; the rest is TBD
   const tbdPh=(n,title,sum)=>`<li class="phase"><span class="pn" aria-hidden="true">${n}</span><div class="ph-head"><h2>${title}</h2><span class="gp plain">TBD</span></div><p class="ph-sum">${sum}</p></li>`;
   const p1=tbdPh(1,`Phase 1. Governance ${tip("gov")}`,"Governance points are not in the API. TBD.");
@@ -5728,11 +5895,11 @@ function renderStock(sym){
   const tbdSt=`<span class="gp plain">TBD</span>`;
   const p4=`<li class="phase"><span class="pn" aria-hidden="true">4</span>
    <div class="ph-head"><h2>Phase 4. Hold or exit</h2></div>
-   <p class="ph-sum">Exit checks below. Only the stance score is in the API; the EMA and alpha checks are TBD.</p>
+   <p class="ph-sum">Exit checks below. Only the stance score is in the API; the 200 DMA and alpha checks are TBD.</p>
    ${tri("Stance score","score",out?`<span class="gp na">${ic("minus")}Not scored</span>`:`<span class="gp plain">Stance ${e.score}</span>`,out?"Outside the scan universe, so there is no score.":`Stance score ${e.score} from the latest run.`)}
-   ${tri("200-day EMA","ema200",tbdSt,"TBD. Not in the API.")}
+   ${tri("200 DMA","ema200",tbdSt,"TBD. Not in the API.")}
    ${tri("52-week alpha vs Nifty 500","alpha_n",tbdSt,"TBD. Index return not in the API.")}
-   ${tri("Moving-average exit","exit_rule_ema",tbdSt,"TBD. Needs the 200-day EMA.")}</li>`;
+   ${tri("Moving-average exit","exit_rule_ema",tbdSt,"TBD. Needs the 200 DMA.")}</li>`;
   $("#phases").innerHTML=p1+p2+p3+p4;
   // timeline: the API gives the run date, stance, LTP and distance; only the current run is shown here
   $("#st-fil").innerHTML=`<div><span><span class="mono" style="color:var(--faint)">${esc(frun)}</span><br>Stance: ${e.stance?esc(e.stance):"TBD"}</span><span class="num">LTP ${IN2(e.px)}<br>${e.below<=0.05?"At high":e.below.toFixed(1)+"% below high"}</span></div>`;
@@ -6036,6 +6203,9 @@ function hdRenderRisk(m){
   $("#hd-risk-note").textContent=`Exit line for a stock is the proposed exit from the exit price rule. Funds and ETFs have none, so ${HD.fall}% below the price is assumed. Share of NAV above ${HD_RISK}% is flagged for stocks only.`;
 }
 
+/* nav badge: holdings whose verdict is Exit, from the same model the Holdings screen renders */
+function hdRenderNavCount(m){ const el=document.getElementById("nav-exit"); if(!el) return; const n=m.stocks.filter(r=>r.e.v==="EXIT").length;
+  el.hidden=!n; el.textContent=String(n); el.setAttribute("aria-label", n?n+(n===1?" holding":" holdings")+" to exit":""); }
 function hdRenderExit(m){
   const rows=m.stocks.slice().sort((a,b)=>(b.e.trig.length>0)-(a.e.trig.length>0)||a.sym.localeCompare(b.sym));
   $("#tb-h").innerHTML=rows.map(h=>{const e=h.e, ch=h.avg!=null?(e.px-h.avg)/h.avg*100:null, link=true;
@@ -6119,7 +6289,7 @@ function hdRenderReview(m,rv){
 function renderH(){
   if(!HD.cur) HD.cur=hdDefault();
   const m=hdModel(HD.cur);
-  hdRenderReview(m,holdingsReviewed());
+  hdRenderReview(m,holdingsReviewed()); hdRenderNavCount(m);
   hdRenderKpis(m); hdRenderAlloc(m); hdRenderRules(m); hdRenderRisk(m); hdRenderExit(m);
   const left=HD.left;
   $("#hd-src").innerHTML=HD.imported
@@ -6358,7 +6528,7 @@ $("#dl-sym").innerHTML=BUYS.map(e=>`<option value="${e.s}">${esc(e.n)}</option>`
 $("#c-chips").innerHTML=`<span class="cl">Buy candidates</span>`+BUYS.map(e=>`<button type="button" class="chip" data-sym="${esc(e.s)}" aria-pressed="false">${esc(e.s)}</button>`).join("");
 $("#c-chips").addEventListener("click",e=>{const b=e.target.closest(".chip"); if(!b) return; $(F.sym).value=b.dataset.sym; symPick(); runCalc();});
 function symPick(){const e=EM[$(F.sym).value.trim().toUpperCase()]; if(e&&!e.out){const pr=propExit(e.px,e.ema); setF("buy",e.px); setF("exit",pr.exit); if(e.held){setF("held",e.held[0]);setF("avg",e.held[1]);} propNote(e);} }
-function propNote(e){const p=$("#c-prop"); e=e||EM[$(F.sym).value.trim().toUpperCase()]; if(!e||e.out){p.textContent="";return;} const pr=propExit(e.px,e.ema); p.innerHTML=`<b>Proposed exit for ${esc(e.s)}: ${IN2(pr.exit)}.</b> The lower of the <span>200-day EMA</span>${tip("ema200")} (${IN2(e.ema)}) and 80% of the buy price, within 5% to 30% risk. It is filled in for you; overwrite it with your own.`;}
+function propNote(e){const p=$("#c-prop"); e=e||EM[$(F.sym).value.trim().toUpperCase()]; if(!e||e.out){p.textContent="";return;} const pr=propExit(e.px,e.ema); p.innerHTML=`<b>Proposed exit for ${esc(e.s)}: ${IN2(pr.exit)}.</b> The lower of the <span>200 DMA</span>${tip("ema200")} (${IN2(e.ema)}) and 80% of the buy price, within 5% to 30% risk. It is filled in for you; overwrite it with your own.`;}
 
 /* worked examples: the active one is marked until any field is edited */
 function szMarkPreset(exit){[["#pre1",80],["#pre2",70]].forEach(([s,v])=>$(s).setAttribute("aria-pressed",String(exit===v)));}
@@ -6482,71 +6652,6 @@ function sizingFor(sym){
 
 /* ==== src/review.js ==== */
 /* ---------------- review page ---------------- */
-/* DEC item: [title, what it is and why, recommended default, optional [term in title, glossary key]] */
-const DEC=[
- ["Verdict wording for stocks you do not own","The four verdicts are BUY, HOLD, EXIT, REJECT. For a stock you do not own, HOLD and EXIT both mean \"not a buy\", and the page says so. Your spec has no fifth value for this.","Keep four verdicts. HOLD and EXIT read as not a buy when nothing is held.",["Verdict","verdict"]],
- ["Governance points required for a buy","A buy is blocked while debt (4), pledged shares (5) or exceptional items (18) are Not assessed, and the reason is shown. Other points can stay Not assessed.","Block on points 4, 5 and 18. Every other point is shown but does not block.",["Governance","gov"]],
- ["A 3 of 3 stock with a required point missing","It is shown as HOLD with the reason \"buy blocked\", and counted under Not assessed in the strip. It is not shown as BUY.","Show HOLD with a visible buy-blocked reason.",["3 of 3","score"]],
- ["All-time high tolerance","\"At the high\" means the latest close is within 2% of the highest close in the data.","2% on a closing basis.",["All-time high tolerance","review_ath_tol"]],
- ["Profit high is within the data window","Profit history is about 13 quarters and 12 years, so the profit rule says \"highest within the data window\", never \"lifetime\".","Use \"within the data window\" wherever the rule is worded.",["data window","data_window"]],
- ["Exit price proposal rule","Proposal is the lower of the 200-day EMA and 80% of the buy price, kept within 5% to 30% trade risk. Because it takes the lower, the 80% figure usually wins, so the proposal is mostly a 20% stop. A tighter alternative is the higher of the two.","Keep the plan's rule and always show it beside the number. Your own exit price overrides it.",["Exit price","exit_price"]],
- ["Largest allocation","A cap on any one position, as a share of Net Asset Value. Without it a very tight exit asks for a huge position.","15% of Net Asset Value, editable in the calculator.",["Largest allocation","allocation_cap"]],
- ["Trim advice","Your rules say when to add and when to exit but not when to trim. The calculator shows Trim only as arithmetic against the target size.","Show Trim as information, not as a rule signal.",["Trim advice","review_trim"]],
- ["Verdict for a stock you hold at 3 of 3","BUY means new money may be added. A held stock at 3 of 3 shows BUY.","Show BUY, with Phase 4 saying hold and add.",["Verdict","verdict"]],
- ["200-day EMA, not the simple average","The scanner today computes a 200-day simple average. Your spec says exponential.","Use the exponential average.",["200-day EMA","ema200"]],
- ["Holdings outside the universe","They are tested on what can be computed (price, 200-day EMA, 52-week return) and the rest is Not assessed. They are never dropped.","Test them and mark them Not in universe.",["universe","universe"]],
- ["Rank cut on the Stocks list","Eligible stocks (governance passed, 2 of 3 or better) are ranked by 52-week return. A rank cut line separates them from the rest, which are shown only under All evaluated.","Cut at the eligibility line, not at a fixed count.",["Rank","rank"]],
- ["Holdings input: upload first","You do not want to paste or hand-build a file each time, and brokers export different Excel layouts, so the importer finds the key columns itself. The position-sizing calculator needs only two totals, Investment Value and Net Asset Value. A broker login needs a Kite Connect key and a daily login, which the scanner does not have today.","Upload first: an Excel or CSV file with a column mapper, saved per header layout so the next file with the same headers imports with no questions. Broker login and testing on sample broker exports are a next phase. A totals-only path is always there and feeds the position-sizing calculator.",["Holdings input","review_holdings_input"]],
- ["Mutual funds and ETFs in an import","Broker files mix funds and ETFs with shares. The strategy scores individual stocks only, but your funds still count toward how much you hold in total and how much risk you carry.","Count mutual funds and ETFs for total allocation and risk management. Do not score them with the strategy.",["Mutual funds and ETFs","review_mf_etf"]],
- ["Chart defaults and events","These set what the stock chart shows when it opens. Putting every event on the chart lets you see what was happening when the price moved.","Candlestick on a white background, with a 50 EMA and a 200 DMA (daily moving averages on every timeframe). Daily is the default, with Weekly and Monthly. RSI 14, and volume with delivery. All events sit on the chart: results, dividends, splits and bonus, filings, and verdict changes. Compare with the Nifty 500 and the sector index.",["events","review_chart_events"]],
- ["Glossary tooltips on the label text","The (i) buttons add clutter. A dotted underline on the label shows that a term has an explanation and keeps every screen clean.","Open the tooltip on hover or focus of the label text (dotted underline) instead of an (i) button. Every complicated title keeps a glossary entry.",["Glossary tooltips","review_gloss_tips"]],
- ["Interface build","The wireframe uses hand-written CSS that mirrors Tailwind tokens, so it stays one offline file. The real interface is a separate build.","Build it in Node.js with Tailwind and TradingView Lightweight Charts. Wireframe first, then your sign-off, then code. No custom image is pushed to a registry."]
-];
-const PROP=[
- ["Sticky verdict header on the stock page","The verdict, score and Back stay pinned while you scroll through the 18 governance points and the four phases.","Yes."],
- ["Compare two stocks","Pick any two stocks and see their three rules, governance counts and relative price chart side by side. Useful when two BUY candidates compete for the same cash.","Yes, after the first release."],
- ["Saved filters","Remember the verdict, sector and score filters you last used on the Strategy table, in your own browser only.","Yes. Browser storage only, no account."],
- ["Exit watch count in the navigation","A small count beside Review Holding showing how many loaded holdings trigger an exit rule, with the word in the accessible name. Empty until holdings are loaded this session.","Yes."],
- ["Sortable columns and a column chooser","Click a header to sort. A Columns menu shows or hides columns, so the dense table can be trimmed on small screens.","Yes, with the current column set as the default."]
-];
-/* title with the glossary term underlined: the term text, then tip(key) directly after it */
-function rvTitle(t,p){
-  const i=p?t.indexOf(p[0]):-1; if(i<0||!G[p[1]]) return esc(t);
-  const e=i+p[0].length;
-  return esc(t.slice(0,i))+"<span>"+esc(p[0])+"</span>"+tip(p[1])+esc(t.slice(e));
-}
-function rvCard(d,no,kind){
-  const ok=kind==="dec"?"Approve default for: ":"Approve proposal: ";
-  return `<li class="rv-card"><div class="rv-top"><span class="rv-no" aria-hidden="true">${no}</span><h3>${rvTitle(d[0],d[3])}</h3></div><p class="rv-what">${esc(d[1])}</p><p class="rv-rec"><b>Recommended</b>${esc(d[2])}</p><label class="rv-tog"><span>Approve</span><span class="st" aria-hidden="true"></span><input type="checkbox" role="switch" aria-label="${ok}${esc(d[0])}"><span class="rv-trk" aria-hidden="true"></span></label></li>`;
-}
-$("#dec").innerHTML=DEC.map((d,i)=>rvCard(d,i+1,"dec")).join("");
-$("#prop").innerHTML=PROP.map((d,i)=>rvCard(d,"P"+(i+1),"prop")).join("");
-$("#dec-count").textContent=DEC.length+" items";
-$("#rv-t").textContent=DEC.length;
-
-/* sticky summary: count of ticked decisions out of the total */
-(function(){
-  const sum=$("#rv-sum");
-  function upd(){
-    const n=$$("#dec input:checked").length, p=$$("#prop input:checked").length, t=DEC.length;
-    $("#rv-n").textContent=n; $("#rv-p").textContent="Proposals: "+p+" of "+PROP.length;
-    $("#rv-fill").style.width=(t?Math.round(100*n/t):0)+"%";
-    sum.classList.toggle("all",n===t);
-    $$("#s-review .rv-card").forEach(c=>c.classList.toggle("is-on",c.querySelector("input").checked));
-  }
-  $("#s-review").addEventListener("change",e=>{ if(e.target.matches(".rv-tog input")) upd(); });
-  $("#rv-clear").onclick=()=>{ $$("#s-review .rv-tog input").forEach(i=>{i.checked=false;}); upd(); };
-  /* the summary sticks just under the pinned header, whatever its height */
-  const hdr=$(".top"), root=$("#s-review");
-  const pin=()=>root.style.setProperty("--rv-top",(hdr.getBoundingClientRect().height+8)+"px");
-  pin(); addEventListener("resize",pin);
-  if(window.ResizeObserver) new ResizeObserver(pin).observe(hdr);
-  upd();
-})();
-const CT_IN=[["investmentValue","number","Total cost of what is invested. Rupees."],["notionalPnL","number","Unrealised profit or loss. Negative for a loss. Net Asset Value = investmentValue + notionalPnL."],["cashAvailable","number or null","Cash to deploy. Null means unlimited."],["holdingsCount","integer or null","Stocks currently held."],["symbol","string","Label only. Not used in the arithmetic."],["buyPrice","number","Planned buy price. Must be above 0."],["exitPrice","number","Must be below buyPrice. Zero or below is treated as 100% trade risk."],["riskPct","number","Percent of the base risked. Default 1.2."],["capPct","number","Largest allocation, percent of Net Asset Value. Default 15."],["sizeAgainst","\"nav\" or \"investment\"","Which base the risk percent applies to. Default \"nav\"."],["heldQuantity","integer or null","Shares already held."],["averageCost","number or null","Average cost of held shares."],["maxPositions","integer","Default 15."]];
-const CT_OUT=[["valid","boolean","False when errors is not empty."],["errors","list of {field, message}","Blocking problems. Fields use the input names above, plus netAssetValue."],["warnings","list of {code, message}","cap, cash, average_down, too_many, sixteenth, tiny, exit_le_zero."],["netAssetValue","number","investmentValue + notionalPnL."],["riskBase","number","The figure the risk percent was applied to."],["riskBudget","number","riskBase x riskPct / 100."],["tradeRiskPct","number","(buyPrice - max(exitPrice, 0)) / buyPrice x 100."],["rawAmount","number","riskBudget / trade risk, before cap, cash and holdings."],["capAmount / capped","number / boolean","capPct of netAssetValue, and whether it bound."],["cashLimited","boolean","True when cash reduced the buy."],["targetQuantity","integer","floor(limited amount / buyPrice)."],["action","\"buy\" \"add\" \"hold\" \"trim\" \"not_adding\"","Advice against heldQuantity."],["quantityToBuy / quantityToTrim","integer","Shares to buy now, or to sell down to target."],["finalQuantity","integer","Position size after the action."],["amountToInvest / positionCost","number","Cost of the shares bought now, and of the whole position, at buyPrice."],["allocationPctOfNav","number","positionCost / netAssetValue x 100."],["lossAtExit / lossAtExitPctOfNav","number","finalQuantity x (buyPrice - exit), in rupees and as percent of Net Asset Value."],["comparison","{nav, investment}","Each has riskBase, riskBudget, rawAmount, amount, quantity, capped."]];
-$("#ct-in").innerHTML=CT_IN.map(r=>`<tr><td>${r[0]}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td></tr>`).join("");
-$("#ct-out").innerHTML=CT_OUT.map(r=>`<tr><td>${r[0]}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td></tr>`).join("");
 $("#gl-body").innerHTML=GLOSS_KEYS.map(k=>`<tr><td>strategy_${k}</td><td>${esc(G[k][0])}</td><td>${esc(G[k][1])}</td><td>${esc(G[k][2])}</td></tr>`).join("");
 $("#gl-count").innerHTML=GLOSS_KEYS.length+" keys for <code>scanner/glossary.py</code>. Label, meaning, and how it is worked out.";
 
@@ -6585,7 +6690,7 @@ function nav(h,push=true){ if(push&&here!==h) trailH.push(here); here=h; go(h); 
 let toastT; function toast(m){const t=$("#toast"); t.textContent=m; t.classList.add("on"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"),2800);}
 addEventListener("hashchange",()=>{ if(location.hash&&location.hash!==here){here=location.hash; restoreNext=true; go(here);} });
 try{ if(location.hash) here=location.hash; }catch(e){}
-renderH(); $("#ct-in"); loadPreset(80);
+renderH(); loadPreset(80);
 go(here);
 document.addEventListener("click",e=>{
   const ib=e.target.closest("[data-tip]");
@@ -6611,6 +6716,43 @@ $("#menu").onclick=()=>{const o=$("#nav").classList.toggle("open");$("#menu").se
   skin(ss);
   sk.onclick=e=>{const x=e.target.closest("[data-skin-set]"); if(!x) return; skin(x.dataset.skinSet); try{localStorage.setItem("ath-skin",x.dataset.skinSet);}catch(er){}};
   b.onclick=()=>{const t=root.dataset.theme==="dark"?"light":"dark"; apply(t); try{localStorage.setItem("ath-theme",t);}catch(e){}};
+})();
+/* ---------- phone stock actions pane (max 640px) ----------
+   On phones #st-act moves from the sticky header into #st-pane. It keeps its id and buttons, so renders and the
+   document-level #ai-open handler still apply. Above 640px it moves back into the header. */
+(function(){
+  const mq=(()=>{ try{ return window.matchMedia("(max-width:640px)"); }catch(e){ return {matches:false,addEventListener(){}}; } })();
+  const pane=document.getElementById("st-pane"), hd=document.getElementById("st-handle"), px=document.getElementById("st-pane-x"),
+        bodyEl=document.getElementById("st-pane-body"), act=document.getElementById("st-act"), stk=document.getElementById("s-stock");
+  if(!pane||!hd||!px||!bodyEl||!act||!stk) return;
+  const home=act.parentNode; let open=false;
+  const phone=()=>!!(mq&&mq.matches);
+  function setOpen(v,focus){
+    open=v; pane.classList.toggle("on",v); hd.setAttribute("aria-expanded",v?"true":"false");
+    if(v&&focus==="pane") requestAnimationFrame(()=>pane.focus({preventScroll:true}));
+    if(!v&&focus==="handle") hd.focus({preventScroll:true});
+  }
+  function place(){
+    if(phone()){ if(act.parentNode!==bodyEl) bodyEl.appendChild(act); }
+    else { if(act.parentNode!==home) home.appendChild(act); if(open) setOpen(false); }
+  }
+  function sync(){
+    const on=stk.classList.contains("on"); document.body.classList.toggle("st-page",on);
+    if(!on&&open) setOpen(false);
+  }
+  hd.addEventListener("click",()=>setOpen(!open,open?"handle":"pane"));
+  px.addEventListener("click",()=>setOpen(false,"handle"));
+  bodyEl.addEventListener("click",e=>{ if(e.target.closest("a,button")) setOpen(false); });
+  document.addEventListener("pointerdown",e=>{ if(open&&!pane.contains(e.target)&&!hd.contains(e.target)) setOpen(false); });
+  document.addEventListener("keydown",e=>{
+    if(e.key!=="Escape"||!open) return;
+    const p=document.getElementById("pop"); if(p&&!p.hidden) return;
+    if(typeof AI!=="undefined"&&AI.open) return;
+    e.preventDefault(); setOpen(false,"handle");
+  });
+  if(mq.addEventListener) mq.addEventListener("change",place);
+  new MutationObserver(sync).observe(stk,{attributes:true,attributeFilter:["class"]});
+  place(); sync();
 })();
 </script>
 </body>
