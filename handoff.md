@@ -21,6 +21,36 @@ placeholders only.
 
 None open. The ruflo cleanup in this project is closed (2026-10-31, see "Questions closed this session", item 8).
 
+### Wireframe review and sign-off (2026-10-31)
+
+Source: `ui/wireframes/strategy.html`, "For review" screen (`#/review`). Nothing below is approved by the user unless marked.
+
+**Completed**
+- Shared glossary: RFC, ADR 0001 (accepted), `config/glossary.json` (empty `{}`), loader `scanner/glossary.py`, 20 tests, CHANGELOG move. Pushed (`a065941`).
+- Wireframe fixes 1 to 7 (contrast of `--line-strong`, unique heading ids on the stock screens, info buttons outside labels, theme toggle with visible text, no body `overflow-x` clip, scrollable segmented controls, mobile nav offset). Committed `64da241`, not pushed.
+- Missing `run` glossary entry added (it blanked the stocks list and killed the menu and theme toggle). Committed `64da241`.
+- Phone (375px) and tablet (768px) test by Haiku agents: no page-level sideways scroll on stocks, holdings, review, sizing, HAL (and KAYNES at tablet); nav, Home link and theme toggle work.
+- Chart section and stock tab bar were hidden by a static `hidden` attribute (since `d661f23`); attribute removed (uncommitted).
+
+**Pending: decisions for the user (17, none approved)**
+1 Verdict wording for non-owned stocks; 2 Governance points required for a buy (4, 5, 18); 3 A 3 of 3 stock with a required point missing; 4 All-time high tolerance (2%); 5 Profit high within the data window; 6 Exit price proposal rule; 7 Largest allocation (15% of NAV); 8 Trim advice; 9 Verdict for a held 3 of 3 stock; 10 200-day EMA not simple average; 11 Holdings outside the universe; 12 Rank cut on the Stocks list; 13 Holdings input: upload first; 14 Mutual funds and ETFs in an import; 15 Chart defaults and events; 16 Glossary tooltips on label text (conflicts with the remaining Score, Indices, Sector info buttons); 17 Interface build.
+
+**Pending: proposals for the user (5, none approved)**
+P1 Sticky verdict header; P2 Compare two stocks (after first release); P3 Saved filters (browser storage); P4 Exit watch count in navigation; P5 Sortable columns and column chooser.
+
+**Pending: "Decided by you" section cleanup (needs user yes)**
+Items 5, 7, 9 repeat the Company financials and Exchange index data labels; items 3 and 11 repeat each other; item 10 (governance sources file awaiting review) is a task, not a decision.
+
+**Pending: wireframe work**
+- Item 8 glossary wording (exit_price vs hold_exit_line, dr_magnet, fd_cfo and fd_promoter claims, ai_ask and review_gloss_tips implementation details, reason label "AI Analysis", define TTM/EMA/squared off/ratcheted/trade risk/drawdown). Drafted, awaiting the user's answer on applying it. fd_cfo formula text needs a data-source check. All seven suspect keys (exchange_index, exit_watch, gov_grade, gov_required, log_scale, rank_chg, st_size) are in fact listed by the glossary screen, so keep them.
+- Re-test the stock page at phone and tablet widths now that the chart and tabs are visible.
+- Review screen overlap (UI implementation notes text over the proposal cards): fixed, uncommitted. Cause was the class `dot` on the two `.rv-facts` lists matching the global `.dot{width:6px;height:6px}` rule; renamed to `bul`.
+- Stock page findings not fixed: legend clipped at phone width, four `.tbl-wrap` scroll areas without keyboard access, tooltip trigger spans lost accessible name, truncated sector eyebrow, fixed `.tl-in` height 340px.
+- Sizing is not in the menu (only in-page links); confirm whether intended.
+- One unexplained route jump (theme toggle click ended on `#/stock/HAL`) and a menu that stayed open once; not reproduced.
+- Commit the unhide change; push `64da241`.
+- After sign-off: wire the wireframe to `config/glossary.json` (still `{}`), then the Node build.
+
 
 ## What's done
 

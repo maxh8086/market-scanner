@@ -1266,8 +1266,8 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
 #s-review .rv-facts.chk li::after{content:"";position:absolute;left:7px;top:15px;width:5px;height:9px;border:solid var(--gain);border-width:0 2px 2px 0;transform:rotate(45deg) scale(.9);transform-origin:center}
 #s-review .rv-facts.chk li:first-child::before{top:3px}
 #s-review .rv-facts.chk li:first-child::after{top:7px}
-#s-review .rv-facts.dot li::before{content:"";position:absolute;left:7px;top:19px;width:7px;height:7px;border-radius:50%;background:var(--accent)}
-#s-review .rv-facts.dot li:first-child::before{top:11px}
+#s-review .rv-facts.bul li::before{content:"";position:absolute;left:7px;top:19px;width:7px;height:7px;border-radius:50%;background:var(--accent)}
+#s-review .rv-facts.bul li:first-child::before{top:11px}
 
 /* tables: scroll inside the wrapper, headers stay put */
 #s-review .rv-scroll{overflow:auto;max-height:min(62vh,480px);-webkit-overflow-scrolling:touch}
@@ -2127,7 +2127,7 @@ tbody tr:hover td{background:var(--tint)}
   <p class="sub ws-sub" id="st-sub-2"></p>
   <div id="st-alert"></div>
 
-  <section class="tv" id="chartbox" aria-label="Price chart" hidden>
+  <section class="tv" id="chartbox" aria-label="Price chart">
     <div class="tvhead"><b id="tv-name"></b><span class="tvsub mono" id="tv-sub"></span><span class="tvpx mono" id="tv-px"></span></div>
     <div id="ch-topbar" class="ct-bar ct-top" role="toolbar" aria-label="Chart tools">
       <button type="button" class="ct-btn ct-sym" id="ct-sym" title="Symbol. Press / to search for another stock" aria-label="Symbol, search for another stock"><span class="ct-symt mono" id="ct-symt"></span><span class="ct-ex">NSE</span></button>
@@ -2187,7 +2187,7 @@ tbody tr:hover td{background:var(--tint)}
     <div class="tbl-wrap"><table><caption class="sr">The eight signals behind the technical read.</caption><thead><tr><th scope="col">Signal</th><th scope="col">Leans</th><th scope="col">Why</th></tr></thead><tbody id="tech-sig-body"></tbody></table></div>
   </section>
 
-  <div class="xt-tabs" hidden><div class="seg tabs" role="tablist" aria-label="Stock details" id="xt">
+  <div class="xt-tabs"><div class="seg tabs" role="tablist" aria-label="Stock details" id="xt">
     <button type="button" role="tab" id="xt-p-check" aria-selected="true" aria-controls="p-check" data-p="p-check">Verdict</button>
     <button type="button" role="tab" id="xt-p-peers" aria-selected="false" aria-controls="p-peers" data-p="p-peers" tabindex="-1">Peers</button>
     <button type="button" role="tab" id="xt-p-vol" aria-selected="false" aria-controls="p-vol" data-p="p-vol" tabindex="-1">Volume and delivery</button>
@@ -2536,7 +2536,7 @@ tbody tr:hover td{background:var(--tint)}
 
     <div class="sect">
       <header><h2>UI implementation notes</h2><span class="hint">For the build, not for approval</span></header>
-      <ul class="rv-facts dot">
+      <ul class="rv-facts bul">
         <li>Chart library: TradingView Lightweight Charts. Open source, runs in the browser, and is fed by our own API. No external data fetch from the browser.</li>
         <li>Chart features drawn in this wireframe: candlesticks on a white background, a 50 EMA and a 200 DMA on every timeframe, Daily as the default with Weekly and Monthly, RSI 14, a volume histogram with delivery, crosshair with a date and price readout, an all-time-high price line, Nifty 500 and sector index comparison rebased to 100, range buttons and a linear or log scale.</li>
         <li>Events on the chart: results, dividends, splits and bonus, filings and verdict changes, each shown on its date.</li>
@@ -2556,7 +2556,7 @@ tbody tr:hover td{background:var(--tint)}
 
     <div class="sect">
       <header><h2>Intentionally deferred</h2></header>
-      <ul class="rv-facts dot">
+      <ul class="rv-facts bul">
         <li>WhatsApp bot: the next phase. Nothing is designed here and nothing in the navigation points to it.</li>
         <li>Broker login for holdings, and testing the importer on sample broker exports: a next phase (decision 13).</li>
         <li>Automatic refresh of prices and indexes during market hours: not part of this design. Screens show a data-as-of stamp instead.</li>
