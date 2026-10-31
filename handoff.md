@@ -20,7 +20,6 @@ placeholders only.
 ## Priority next (updated 2026-10-31)
 
 1. **Ruflo cleanup in this project: mostly done, three decisions open.** Done: the `node_modules`, `package*.json`, `.agents/`, `.claude-flow/` and `ruvector.db` entries were already gone; ruflo and claude-flow entries are out of `.claude/settings.json` and `.claude/settings.local.json`; the claude-flow command, agent and skill files were removed (kept: READMEs and the files with no ruflo or claude-flow reference); the backup `settings.json.bak-ruflo-mods-*` is deleted. Snapshot before the change: `scratchpad/claude_snapshot_before_ruflo_cleanup`. Open, need the user's decision: (a) `.claude/proven-config.json` still names ruflo (`"schema": "ruflo.proven-config/v1"`, `ruflo >=3.24.0`); (b) the `statusLine` entry in `.claude/settings.json` points at a helper that does not exist in this project; (c) `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` is kept in `env` and may be ruflo-related. Note: `.claude/` is git-ignored, so none of this is committed.
-2. **Verify the `market_scanner` Mongo database through an authenticated query.** The store contains it (see What's done), but the `market_scanner` login in the secrets file does not authenticate against the copy. Check whether the password changed after the store user was created. Until this is settled, the scanner's ath_scanner data is the only part read and written through this container.
 
 
 ## What's done
@@ -154,6 +153,12 @@ placeholders only.
    `plugins/store/ruflo-console` marker, which only mention ruflo. Still
    to decide: the `skillUsage` key `ruflo-ai-team:launch-ai-team` in
    `~/.claude.json`.
+7. **Mongo `market_scanner` login — works (checked 2026-10-31).** The
+   `market_scanner_app` login from the project `.env` authenticates against
+   the copied store on `127.0.0.1:27018` (`authSource=market_scanner`), and a
+   readWrite `dbStats` passes. Counts match the copy: filings 968, extractions
+   868, conclusions 586, fundamentals 1048. Only the `.env` login was tested;
+   the infra secrets-file login was not checked.
 
 ## Factor design notes (read before touching `scanner/factors.py`)
 
