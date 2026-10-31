@@ -1861,6 +1861,21 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
 #s-stock .mo .mo-ev-row .btn[disabled]{opacity:.5;cursor:default}
 #s-stock .mo .mo-foot{margin:14px 0 0;font-size:13px;color:var(--muted)}
 
+/* order book */
+#s-stock .mo .ob-chips{display:flex;gap:6px;flex-wrap:wrap}
+#s-stock .mo .ob-chips .chip{min-height:44px}
+#s-stock .mo .ob-bars{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:8px}
+#s-stock .mo .ob-bars li{display:grid;grid-template-columns:minmax(0,9.5rem) minmax(0,1fr) auto;gap:10px;align-items:center;font-size:13px;color:var(--muted)}
+#s-stock .mo .ob-track{display:block;height:10px;border-radius:999px;background:var(--line);overflow:hidden}
+#s-stock .mo .ob-track i{display:block;height:100%;border-radius:999px;background:var(--accent)}
+#s-stock .mo .ob-v{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+#s-stock .mo .ob-cap{caption-side:top;text-align:left;font-size:13px;color:var(--faint);padding:0 0 8px}
+#s-stock .mo .ob-left{margin-top:14px;border-top:1px solid var(--line-strong);padding-top:8px}
+#s-stock .mo .ob-left summary{display:flex;align-items:center;min-height:44px;cursor:pointer;font-weight:600;color:var(--accent)}
+#s-stock .mo .ob-lo{list-style:none;margin:0;padding:0;font-size:13px;color:var(--muted)}
+#s-stock .mo .ob-lo li{padding:8px 0;border-bottom:1px solid var(--line)}
+@media (max-width:640px){#s-stock .mo .ob-chips .chip,#s-stock .mo .ob-left summary{min-height:44px}}
+
 /* screener */
 #s-stock .mo .mo-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 #s-stock .mo .mo-card{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);min-width:0}
@@ -2915,6 +2930,10 @@ Object.assign(G,{
  mo_near:["Near the high","Stocks whose latest close is within 2% of their all-time high.","Below high is 2% or less."],
  mo_lead:["Sector leaders","The three stocks with the best 52-week return in each sector index.","Rank in sector is worked out per sector index from 52-week return. The screen keeps rank 3 or better."],
  mo_held_flag:["Held and flagged","Stocks you hold that trigger an exit check today.","You hold it is Yes and Exit check is Triggered."],
+ ob_orders:["Order book","Orders the company has won, read from its LODR exchange filings. Only filings whose headline matches the keyword groups are counted.","Each filing headline is checked, without regard to capitals, for the phrases in the four keyword groups. A match counts as an order and its value is the crore figure in the headline."],
+ ob_total:["Total value won","The crore value of the counted orders added together, after cancelled orders are taken off.","Sum of the values of the counted orders, with cancelled orders entered as negative values. Sample values in this wireframe."],
+ ob_filter:["Keyword filter","Four groups of phrases. Turn a group off to stop its filings being counted. All four are on by default.","Each group is a set of phrases matched against the filing headline, without regard to capitals. L1 matches as a whole word only, so it does not match inside another word."],
+ ob_lodr:["LODR","The SEBI Listing Obligations and Disclosure Requirements. Listed companies file many notices with the exchange under them.","The scanner reads the company's LODR filings. Most are not orders, so only headlines that match the keyword filter are counted."],
 });
 
 /* ==== src/gloss_stock_ai.js ==== */
@@ -3536,8 +3555,11 @@ function haOf(t){
 const EVC={R:"#4F46E5",D:"#B45309",S:"#7C3AED",B:"#0F766E",F:"#475569",V:"var(--evv)"};
 const EVN={R:"Results",D:"Dividend",S:"Split",B:"Bonus",F:"Filing",V:"Verdict change"};
 // Sample logic for the wireframe: order book is tracked from LODR disclosures.
-const ORDER_WORDS=["order win","awarded","letter of award","contract secured","lowest bidder","L1","receipt of order","work order","purchase order","bags order","execution of agreement"];
-function classifyFiling(text){ const s=String(text||""); return ORDER_WORDS.some(w=>new RegExp("(^|[^a-z0-9])"+w+"($|[^a-z0-9])","i").test(s))?{ft:"Order win",imp:"High"}:null; }
+const ORDER_GROUPS=[{id:"g1",phrases:["order win","awarded","letter of award"]},{id:"g2",phrases:["contract secured","lowest bidder","L1"]},{id:"g3",phrases:["receipt of order","work order","purchase order"]},{id:"g4",phrases:["bags order","execution of agreement"]}];
+const ORDER_WORDS=ORDER_GROUPS.flatMap(g=>g.phrases);
+function matchedPhrase(text){ const s=String(text||""); return ORDER_WORDS.find(w=>new RegExp("(^|[^a-z0-9])"+w+"($|[^a-z0-9])","i").test(s))||null; }
+function groupOf(w){ return ORDER_GROUPS.find(g=>g.phrases.indexOf(w)>=0).id; }
+function classifyFiling(text){ return matchedPhrase(text)?{ft:"Order win",imp:"High"}:null; }
 const filingSub=(ft,imp)=>ft==="Order win"?"Order win. Importance: High. Disclosed to the exchange under SEBI LODR.":`${ft}. Importance: ${imp}. Exchange filing, read by the scanner.`;
 const FILINGS=[[2026,8,29,"Order received, 412 cr","Order win","High"],[2026,8,17,"Capacity expansion announced","Capacity expansion","Medium"],[2026,8,3,"Order received, 248 cr","Order win","High"],[2026,6,22,"Credit rating reaffirmed","Credit rating","Medium"],[2026,5,4,"Change in senior management","Change in senior management","Medium"],[2026,2,18,"Order received, 96 cr","Order win","High"],[2026,7,12,"Quarterly filing submitted","Quarterly filing","Medium"],[2026,7,20,"Investor call on the quarter","Concall / investor meet","Medium"]];
 function idxOn(ms){ if(ms<WD[0].getTime()) return -1; if(ms>WD[N-1].getTime()) return N; let lo=0,hi=N-1; while(lo<hi){const mid=(lo+hi+1)>>1; if(WD[mid].getTime()<=ms) lo=mid; else hi=mid-1;} return lo; }
@@ -5539,9 +5561,89 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
     scr.addEventListener("keydown",ev=>{ if(ev.key==="Enter"&&ev.target.tagName==="INPUT"){ ev.preventDefault(); applyRules(); } });
   }
 
+  /* ---------------- ORDER BOOK ---------------- */
+  const OB_REF=Date.UTC(2026,9,28), OB_CACHE={};
+  const obSt={ok:{g1:1,g2:1,g3:1,g4:1},e:null,bound:false};
+  const OB_WORK=["a metro rail package","a water supply project","a substation package","a road EPC project","a defence supply contract","a transmission line package","an industrial plant"];
+  const OB_CLIENT=["a state utility","a private refinery","a central ministry","a city corporation","a power developer"];
+  const OB_POS=[
+    (w,c,v)=>`Letter of award received for ${w}, worth ${v} cr`,
+    (w,c,v)=>`Bags order worth ${v} cr for ${w}`,
+    (w,c,v)=>`Lowest bidder (L1) for ${w}, ${v} cr`,
+    (w,c,v)=>`Work order received for ${w}, ${v} cr`,
+    (w,c,v)=>`Execution of agreement for ${w}, ${v} cr`,
+    (w,c,v)=>`Purchase order from ${c}, ${v} cr`,
+    (w,c,v)=>`Order win: ${w} worth ${v} cr`,
+    (w,c,v)=>`Contract secured for ${w}, ${v} cr`
+  ];
+  const OB_CANCEL=["letter of award","work order","bags order"];
+  const OB_OUT=["Credit rating reaffirmed by a rating agency","Capacity expansion announced at the plant","Change in senior management: new chief financial officer","Quarterly results filing submitted to the exchange","Notice of annual general meeting","Investor call on the quarter"];
+  const obCr=v=>(v<0?"\u2212":"")+IN(Math.abs(v));
+  function orderBookFor(e){
+    if(OB_CACHE[e.s]) return OB_CACHE[e.s];
+    const r=mul(hashStr(e.s)^0x0b0c), pick=a=>a[Math.floor(r()*a.length)], off=a=>Math.floor(r()*a.length);
+    const dayMs=()=>OB_REF-Math.floor(r()*1095)*864e5, cr=()=>Math.round(40+r()*380);
+    const nPos=6+(r()<.5?0:1), nOut=4+Math.floor(r()*3), o1=off(OB_POS), o2=off(OB_OUT), raw=[];
+    for(let i=0;i<nPos;i++){ const w=pick(OB_WORK), c=pick(OB_CLIENT), v=cr(); raw.push({ms:dayMs(),val:v,head:OB_POS[(o1+i)%OB_POS.length](w,c,v)}); }
+    { const w=pick(OB_WORK), v=cr(), p=pick(OB_CANCEL); raw.push({ms:dayMs(),val:-v,head:`Cancelled: ${p} for ${w}, ${v} cr`}); }
+    for(let j=0;j<nOut;j++) raw.push({ms:dayMs(),val:0,head:OB_OUT[(o2+j)%OB_OUT.length]});
+    const items=raw.map(x=>({ms:x.ms,head:x.head,val:x.val,phrase:matchedPhrase(x.head),cancel:/cancel/i.test(x.head)})).sort((a,b)=>b.ms-a.ms);
+    return OB_CACHE[e.s]=items;
+  }
+  const obOn=it=>!!it.phrase&&!!obSt.ok[groupOf(it.phrase)];
+  function obHtml(){
+    return `<div class="mo" id="mo-orders"><div class="sect">
+      <header><h2>Order book${tip("ob_orders")}</h2><span class="hint">Sample values. Counted from exchange filings.</span></header>
+      <p class="note">Orders are read from the company's LODR${tip("ob_lodr")} disclosures (SEBI Listing Obligations and Disclosure Requirements). LODR filings include many things that are not orders, so only filings whose headline matches the keyword filter are counted.</p>
+      <div class="mo-kinds"><span class="mo-lbl">Keyword filter${tip("ob_filter")}</span><div class="ob-chips" id="ob-chips" role="group" aria-label="Keyword groups"></div></div>
+      <div class="sr" id="ob-live" role="status" aria-live="polite"></div>
+      <div class="mo-cards" id="ob-cards"></div>
+      <h3 class="mo-mh">Last four quarters<span>Order value, crore rupees, after cancellations</span></h3>
+      <ul class="ob-bars" id="ob-bars" aria-label="Order value by quarter"></ul>
+      <div id="ob-table"></div>
+    </div></div>`;
+  }
+  function obRender(e){
+    obSt.e=e;
+    const all=orderBookFor(e), excl=all.filter(it=>!it.phrase), on=all.filter(obOn);
+    const orders=on.filter(it=>!it.cancel), total=on.reduce((s,it)=>s+it.val,0);
+    document.getElementById("ob-chips").innerHTML=ORDER_GROUPS.map(g=>{
+      const cnt=all.filter(it=>it.phrase&&groupOf(it.phrase)===g.id).length;
+      return `<button type="button" class="chip" data-g="${g.id}" aria-pressed="${!!obSt.ok[g.id]}">${esc(g.phrases.join(", "))}<span class="mo-cn">${cnt}</span></button>`;
+    }).join("");
+    document.getElementById("ob-cards").innerHTML=
+      `<div class="mo-card"><h3>Orders counted</h3><div class="mo-cc"><b>${orders.length}</b></div><p>Cancelled orders are not counted as orders, but they reduce the total.</p></div>`+
+      `<div class="mo-card"><h3>Total value won${tip("ob_total")}</h3><div class="mo-cc"><b>${obCr(total)}<small>cr</small></b></div><p>After cancellations. Sample values.</p></div>`+
+      `<div class="mo-card"><h3>Excluded LODR filings</h3><div class="mo-cc"><b>${excl.length}</b></div><p>Not orders, so left out.</p></div>`;
+    const ref=new Date(OB_REF), y=ref.getUTCFullYear(), cur=Math.floor(ref.getUTCMonth()/3)*3, qs=[];
+    for(let k=4;k>=1;k--){
+      const s0=Date.UTC(y,cur-3*k,1), e0=Date.UTC(y,cur-3*k+3,1), last=new Date(e0-1);
+      qs.push({lab:MON[new Date(s0).getUTCMonth()]+" to "+MON[last.getUTCMonth()]+" "+last.getUTCFullYear(), v:on.filter(it=>it.ms>=s0&&it.ms<e0).reduce((a,it)=>a+it.val,0)});
+    }
+    const mx=Math.max(1,...qs.map(q=>Math.abs(q.v)));
+    document.getElementById("ob-bars").innerHTML=qs.map(q=>`<li><span>${q.lab}</span><span class="ob-track" aria-hidden="true"><i style="width:${(Math.max(0,q.v)/mx*100).toFixed(1)}%"></i></span><span class="ob-v">${obCr(q.v)} cr</span></li>`).join("");
+    const rows=on.map(it=>`<tr><td>${dMs(it.ms)}</td><td>${esc(it.head)}</td><td>${esc(it.phrase)}${it.cancel?", cancelled":""}</td><td class="r">${obCr(it.val)}</td></tr>`).join("");
+    const table=on.length
+      ? `<div class="tbl-wrap" tabindex="0" role="region" aria-label="Order book filings, scrolls sideways"><table><caption class="ob-cap">Sample values. Cancelled orders show as negative values and reduce the total.</caption><thead><tr><th scope="col">Date</th><th scope="col">Headline</th><th scope="col">Matched phrase</th><th scope="col" class="r">Value (cr)</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<div class="mo-empty"><b>No orders match the keywords you chose.</b> Turn a keyword group back on above.</div>`;
+    const left=`<details class="ob-left"><summary>Left out (${excl.length})</summary><p class="mo-foot">Not orders, so left out. Listed here so you can check the filter.</p><ul class="ob-lo">${excl.map(it=>`<li><span class="mo-ev-d">${dMs(it.ms)}</span> ${esc(it.head)}</li>`).join("")}</ul></details>`;
+    document.getElementById("ob-table").innerHTML=table+left;
+    return {n:orders.length,total};
+  }
+  function obBind(){
+    if(obSt.bound) return; obSt.bound=true;
+    document.getElementById("ob-chips").addEventListener("click",ev=>{
+      const b=ev.target.closest("button[data-g]"); if(!b||!obSt.e) return;
+      const g=b.dataset.g; obSt.ok[g]=obSt.ok[g]?0:1;
+      const r=obRender(obSt.e);
+      const nb=document.querySelector(`#ob-chips [data-g="${g}"]`); if(nb) nb.focus();
+      document.getElementById("ob-live").textContent=`${r.n} orders counted, ${obCr(r.total)} cr`;
+    });
+  }
   registerStockTab({id:"p-sector",label:"Sector",after:"p-peers",html:secHtml,render(e){ mo.e=e; bind(); secRender(e); }});
   registerStockTab({id:"p-gov",label:"Governance",after:"p-sector",html:govHtml,render(e){ mo.e=e; mo.gf="all"; govRender(e); }});
   registerStockTab({id:"p-events",label:"Events and filings",after:"p-gov",html:evHtml,render(e){ mo.e=e; evRender(e); }});
+  registerStockTab({id:"p-orders",label:"Order book",after:"p-events",html:obHtml,render(e){ obBind(); obRender(e); }});
   registerStockTab({id:"p-screen",label:"Filter",after:"p-events",html:screenHtml,render(e){ mo.e=e; screenRender(); }});
 })();
 
