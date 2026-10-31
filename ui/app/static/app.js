@@ -386,6 +386,8 @@ async function renderStock(symbol) {
             <span>Latest price</span><span>${fmt(snapshot.ltp)}</span>
             <span>Stance</span><span>${snapshot.stance || "—"}</span>
             <span>Bucket</span><span>${snapshot.bucket || "—"}</span>
+            <span>EMA</span><span>TBD</span>
+            <span>Relative strength</span><span>TBD</span>
           </div>
         </div>
       </aside>

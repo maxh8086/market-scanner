@@ -28,12 +28,14 @@ rather than merely documented.
 """
 from __future__ import annotations
 
+import bisect
 import logging
 import os
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import date
+from email.utils import parsedate_to_datetime
 from typing import Callable
 from urllib.parse import quote
 
@@ -61,6 +63,25 @@ HISTORY_FLOOR = date(2000, 1, 1)
 # Per-second limit defaults (backward compatible).
 REQUESTS_PER_SEC = 8.0
 MAX_RETRIES = 5
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    """Seconds to wait for a Retry-After value, or None if absent or unparseable.
+
+    The header is either delta-seconds ("2") or an HTTP-date. A date in the past
+    gives 0.0.
+    """
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, when.timestamp() - time.time())
 
 # Official limits from https://upstox.com/developer/api-documentation/rate-limiting/
 # (checked 2026-09-29): 50 req/sec, 500 req/min, 2000 req/30min for market data.
@@ -164,17 +185,18 @@ class _RateLimiter:
                     if wait_time > total_wait:
                         total_wait = wait_time
 
-            # Apply the sleep outside the lock to avoid holding it
-            if total_wait > 0.0:
-                self._sleep_func(total_wait)
-                self.stats.seconds_waiting += total_wait
-                now = self._time_func()  # Update now after sleep
-
-            # Record this request timestamp in all windows
+            # Reserve the send slot under the lock, at the time it will actually go out.
+            # Other threads then see it and queue behind it; the sleep itself runs
+            # after the lock is released.
+            send_at = now + total_wait
             for i in range(len(self._windows)):
-                self._request_times[i].append(now)
+                bisect.insort(self._request_times[i], send_at)
 
             self.stats.requests_made += 1
+            self.stats.seconds_waiting += total_wait
+
+        if total_wait > 0.0:
+            self._sleep_func(total_wait)
 
 
 @dataclass
@@ -302,10 +324,8 @@ class UpstoxClient:
             )
 
         # Honor Retry-After header, else use exponential backoff * escalation factor
-        retry_after = resp.headers.get("Retry-After")
-        if retry_after:
-            delay = float(retry_after)
-        else:
+        delay = _parse_retry_after(resp.headers.get("Retry-After"))
+        if delay is None:
             delay = (2 ** attempt) * self._429_state.cool_down_factor
 
         self._sleep_func(delay)

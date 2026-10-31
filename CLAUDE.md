@@ -143,6 +143,7 @@ Unbounded file reads, raw directory walks, or shell dumps (`cat`, `type`, large 
 
 ## 5. Operational Guardrails
 
+- Commits have the human author only: no Co-Authored-By trailer, no "generated with" footer.
 * **Zero Direct Cloud Code**: Sonnet and Opus produce architecture definitions, pseudocode, and task tickets. Implementation goes through `tokenfrugal`.
 * **System Administration Tasks**: OS configuration, PowerShell/Bash scripting, dependency installs, and port checks are dispatched to the builder role. Log triage goes to the thinker role. Cloud models do not generate these directly. Ask before installing software.
 * **Model Selection**: tokenfrugal picks the local model for each role. Do not hardcode or override model names in Claude's prompts, plans, or the gateway config from this repo.
@@ -152,3 +153,14 @@ Unbounded file reads, raw directory walks, or shell dumps (`cat`, `type`, large 
   * Local infra bindings: load `../Shared-Market-Research-Infra/secrets/ath_scanner.env` with `INFRA_LOCAL=1`.
 
 > NOTE: local-model routing is defined by the tokenfrugal gateway and `~/.claude/CLAUDE.md`. Ignore the legacy `cc-token-saver` profiles and older model tiers if they appear elsewhere.
+## Code intelligence (synaptree-mcp)
+
+Repo: https://github.com/maxh8086/synaptree-mcp (MCP server `synaptree`, local checkout at `SYNAPTREE_DIR`, project name `SYNAPTREE_PROJECT`, default `tokenfrugal`). Query the code graph before grepping or reading whole files.
+
+- Check `index_status(project)` first; if stale or missing, run `index_repository(project, root_path)` with the main checkout path, not a worktree.
+- Find code: `search_graph` / `search_code`. Callers, callees, references: `trace_path`. Structure: `get_architecture`. Hierarchy: `query_graph` (Cypher over `INHERITS` / `IMPLEMENTS` edges). Read one symbol: `get_code_snippet`.
+- Read files directly only after the symbol is located, or for configs, docs and files the index excludes.
+- Delegated roles builder, analyzer, reviewer and debugger get `synaptree` as a native server; the Router injects `project` automatically.
+- Re-index after merges.
+
+

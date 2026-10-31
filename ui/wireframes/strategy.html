@@ -2127,7 +2127,7 @@ tbody tr:hover td{background:var(--tint)}
   <p class="sub ws-sub" id="st-sub"></p>
   <div id="st-alert"></div>
 
-  <section class="tv" id="chartbox" aria-label="Price chart">
+  <section class="tv" id="chartbox" aria-label="Price chart" hidden>
     <div class="tvhead"><b id="tv-name"></b><span class="tvsub mono" id="tv-sub"></span><span class="tvpx mono" id="tv-px"></span></div>
     <div id="ch-topbar" class="ct-bar ct-top" role="toolbar" aria-label="Chart tools">
       <button type="button" class="ct-btn ct-sym" id="ct-sym" title="Symbol. Press / to search for another stock" aria-label="Symbol, search for another stock"><span class="ct-symt mono" id="ct-symt"></span><span class="ct-ex">NSE</span></button>
@@ -2177,7 +2177,7 @@ tbody tr:hover td{background:var(--tint)}
     <p class="chart-cap">Sample prices. The product draws this chart with KLineChart from our own database, themed to match the site. Moving averages are always the daily ones, so the 200 DMA means 200 days on every timeframe.</p>
   </section>
 
-  <section class="card tech" id="st-tech" aria-labelledby="tech-h">
+  <section class="card tech" id="st-tech" aria-labelledby="tech-h" hidden>
     <header><h2 id="tech-h">Technical read <button type="button" class="info" data-tip="tech_read" aria-label="About Technical read">i</button></h2><span class="hint">Indicators on daily prices. Context only. It does not change the score or the verdict.</span></header>
     <div class="meter">
       <div id="tech-gauge" class="gauge"></div>
@@ -2187,7 +2187,7 @@ tbody tr:hover td{background:var(--tint)}
     <div class="tbl-wrap"><table><caption class="sr">The eight signals behind the technical read.</caption><thead><tr><th scope="col">Signal</th><th scope="col">Leans</th><th scope="col">Why</th></tr></thead><tbody id="tech-sig-body"></tbody></table></div>
   </section>
 
-  <div class="xt-tabs"><div class="seg tabs" role="tablist" aria-label="Stock details" id="xt">
+  <div class="xt-tabs" hidden><div class="seg tabs" role="tablist" aria-label="Stock details" id="xt">
     <button type="button" role="tab" id="xt-p-check" aria-selected="true" aria-controls="p-check" data-p="p-check">Verdict</button>
     <button type="button" role="tab" id="xt-p-peers" aria-selected="false" aria-controls="p-peers" data-p="p-peers" tabindex="-1">Peers</button>
     <button type="button" role="tab" id="xt-p-vol" aria-selected="false" aria-controls="p-vol" data-p="p-vol" tabindex="-1">Volume and delivery</button>
@@ -2202,7 +2202,7 @@ tbody tr:hover td{background:var(--tint)}
       </div>
       <aside class="stack">
         <div class="panel">
-          <header><h2>Recent filings read</h2></header>
+          <header><h2>Timeline</h2></header>
           <div class="rows" id="st-fil"></div>
         </div>
         <div class="panel">
@@ -3193,16 +3193,12 @@ function decorateTips(root){
 /* ==== src/strategy.js ==== */
 /* ---------------- stocks list (one page: replaces Strategy and Rankings) ---------------- */
 /* columns: [sort key, label, glossary key, th class, first sort direction]. Size has no sort. */
+/* list columns match the API: symbol, bucket, stance_score, run_date */
 const THS=[
- [null,"Size","st_size","c sz-h"],
  ["stock","Stock",null,"",1],
- ["rank","Rank","rank","c",1],
- ["chg","Rank Change","rank_chg","hide-sm",-1],
- ["verdict","Verdict","verdict","",1],
- ["score","Score","score","hide-xs",-1],
- ["gov","Governance","gov","hide-sm hide-md",1],
- ["reason","AI Analysis","reason","hide-sm hide-md ai",1],
- ["ret52","52-week return","ret52","r hide-sm wrapth",-1]];
+ ["verdict","Bucket","verdict","",1],
+ ["score","Stance score","score","",-1],
+ ["run","Run date","run","",-1]];
 const sortNone=`<svg class="srt" aria-hidden="true"><use href="#i-sort"/></svg>`;
 function headS(){
   const prev=runShort(prevRun(frun));
@@ -3228,32 +3224,21 @@ function chgChip(r){
   return `<span class="rk-chg flat">Same</span>`;
 }
 function rowS(e,R){
-  const r=R[e.s]||null, ret=e.below<=0.05?"At high":e.below.toFixed(1)+"% below high";
-  const rk=r?`<span class="rk-n">${r.rank}</span>`:`<span class="rk-none" aria-hidden="true">&ndash;</span><span class="sr">not ranked</span>`;
-  return `<tr class="link" tabindex="0" data-go="#/stock/${encodeURIComponent(e.s)}" aria-label="${esc(e.s)}, ${e.v}, ${e.score} of 3. Press Enter to open the stock.">
-  <td class="c sz"><button type="button" class="btn sz-btn" data-size="${esc(e.s)}" aria-label="Size ${esc(e.s)}, opens in a new tab" title="Open position sizing for ${esc(e.s)} in a new tab">${ic("calc")}<span class="sz-t">Size</span></button></td>
+  return `<tr class="link" tabindex="0" data-go="#/stock/${encodeURIComponent(e.s)}" aria-label="${esc(e.s)}, ${e.v}, stance score ${e.score}. Press Enter to open the stock.">
   <td class="stk"><a class="sym mono" href="#/stock/${encodeURIComponent(e.s)}">${esc(e.s)}</a>${e.held?'<span class="held">You hold</span>':""}<div class="nm" title="${esc(e.n)}, ${esc(e.sec)}">${esc(e.n)}<span class="sub2">${esc(e.sec)}</span></div></td>
-  <td class="c num rk">${rk}<span class="rk-m show-sm">${r?chgChip(r):""}</span></td>
-  <td class="hide-sm rkc">${chgChip(r)}</td>
-  <td><span class="vd ${e.v}">${e.v}</span><span class="show-xs mono">${e.score}/3</span></td>
-  <td class="hide-xs">${scoreCell(e)}</td>
-  <td class="hide-sm hide-md">${govCell(e)}</td>
-  <td class="hide-sm hide-md ai"><span class="ai-t" title="${esc(e.reason)}">${esc(e.reason)}</span></td>
-  <td class="r num hide-sm ${cls(e.r)}">${pct(e.r)}<span class="sub2">${ret}</span></td></tr>`;}
+  <td><span class="vd ${e.v}">${e.v}</span></td>
+  <td class="num mono">${e.score}</td>
+  <td class="num mono">${frun}</td></tr>`;}
 /* one predicate for every filter; skipV leaves the verdict out so the chip counts can reflect the other filters */
 function passS(e,skipV){return inIndex(e,fix)&&(skipV||fv==="all"||e.v===fv)&&(fsc==="all"||(fsc==="3"?e.score===3:fsc==="2"?e.score===2:e.score<=1))&&(fsec==="all"||e.sec===fsec)&&(!fheld||e.held)&&(!fq||(e.s+" "+e.n).toLowerCase().includes(fq));}
 /* sort keys; null sorts last in either direction */
 const GOV_ORD={Bad:0,Neutral:1,Good:2};
-function sortVal(e,R,k){const r=R[e.s]||null;
+function sortVal(e,R,k){
   switch(k){
    case "stock": return e.s;
-   case "rank": return r?r.rank:null;
-   case "chg": return r?(r.chg===null?0.5:r.chg):null;
    case "verdict": return ORD[e.v];
    case "score": return e.score;
-   case "gov": return e.g.assessed?GOV_ORD[e.g.worst]:null;
-   case "reason": return e.reason.toLowerCase();
-   case "ret52": return e.r;}
+   case "run": return frun;}
   return null;}
 function sortRows(rows,R){
   if(!sk) return rows;
@@ -3278,7 +3263,7 @@ function renderS(){
   $("#la-hold-txt").textContent=nf?`${nf} ${nf===1?"holding triggers":"holdings trigger"} an exit rule.`:"No holdings trigger an exit rule.";
   $("#la-hold").dataset.tone=nf?"warn":"ok";
   headS();
-  $("#cap-s").textContent=`${ix.n}, run of ${runLong(frun)}. ${sk?"Sorted by "+(THS.find(t=>t[0]===sk)[1])+", "+(sd>0?"ascending":"descending")+".":"Ordered by verdict, then score, then 52-week return."} Select a row to open the stock.`;
+  $("#cap-s").textContent=`${ix.n}, run of ${runLong(frun)}. ${sk?"Sorted by "+((THS.find(t=>t[0]===sk)||[])[1]||"")+", "+(sd>0?"ascending":"descending")+".":"Ordered by verdict, then score, then 52-week return."} Select a row to open the stock.`;
   $("#tb-s").innerHTML=rows.length?rows.map(e=>rowS(e,R)).join(""):`<tr class="none"><td colspan="${THS.length}"><div class="emp">${ic("search")}<b>No stocks match these filters</b><p>Try a different search, or clear the filters to see every stock in ${esc(ix.n)}.</p><button type="button" class="btn" id="clr">Clear filters</button></div></td></tr>`;
   $("#count-s").textContent=`Showing ${rows.length} of ${IN(ix.size)} (sample rows)`;
   const c=$("#clr"); if(c) c.onclick=()=>{resetS();renderS();$("#q").focus();};
@@ -5713,73 +5698,48 @@ function critRow(key,e,i){
   const name=["Price at all-time high","Profit at its high","Ahead of both indexes"][i], k=["crit_ath","crit_pat","crit_alpha"][i];
   return `<div class="crit"><div class="cn">${i+1}. ${name}${tip(k)}</div>${pillx}<div class="cv">${txt}</div></div>`;
 }
-const ST_FIL=[["29 Sep 2026","Order received","412 cr"],["17 Sep 2026","Capacity expansion",""],["03 Sep 2026","Order received","248 cr"]];
 function renderStock(sym){
-  const known=sym&&EM[sym], e=known?EM[sym]:EM.SBIN, g=e.g, out=!!e.out;
+  const known=sym&&EM[sym], e=known?EM[sym]:EM.SBIN, out=!!e.out;
   $("#st-eyebrow").textContent=e.sec;
   $("#st-h1").innerHTML=`${esc(e.n)} <span class="mono ws-sym">${esc(e.s)}</span>`;
-  $("#st-sub").textContent=out?"Outside the scan universe. The price chart and the technical read work. The profit, sector and governance tests cannot be made, so it has no score and no verdict."
-    :({BUY:"All three momentum rules are met and governance passed. New money may go in, sized by the calculator.",HOLD:e.blocked?"It meets all three momentum rules, but a buy is blocked until the required governance points are assessed.":"Hold if you own it. Do not add. It is not a buy today.",EXIT:"Exit if you own it. It is not a buy.",REJECT:"Rejected on governance. The price and profit rules do not matter while a governance point is Bad."})[e.v];
+  $("#st-sub").textContent=out?"Outside the scan universe. The scanner does not score it, so it has no stance score and no bucket."
+    :`Bucket ${e.v} from the run of ${frun}. Governance, 200-day EMA and sizing data are TBD.`;
   $("#st-vd").innerHTML=out?`<span class="gp plain">Not in universe</span>`:`<span class="vd big ${e.v}">${e.v}</span>${tip("verdict")}`;
-  $("#st-score").innerHTML=out?`<span class="note">Not scored</span>`:`<span class="ws-sc">${e.score}/3</span>${e.na?` <span class="note">${e.na} not assessed</span>`:""}${tip("score")}`;
-  { const cc=chartData(e).c, chg=(cc[N-1]/cc[N-2]-1)*100;
-    $("#st-px").innerHTML=`<span class="ws-pv">${IN2(e.px)}</span><span class="ws-pc ${cls(chg)}">${pct(chg,2)}</span><span class="ws-asof">Close, 30 Sep 2026</span>`; }
+  $("#st-score").innerHTML=out?`<span class="note">Not scored</span>`:`<span class="ws-sc">${e.score}</span>${tip("score")}`;
+  $("#st-px").innerHTML=`<span class="ws-pv">${IN2(e.px)}</span><span class="ws-asof">LTP, run of ${frun}</span>`;
   { const hv=holdView(e);
-    $("#st-held").innerHTML=hv?`<span class="ws-held"><span class="hl">You hold${tip("held")}</span> <b>${IN(hv.qty)}</b><span class="sep" aria-hidden="true">·</span><span class="hl">Open risk${tip("open_risk")}</span> <b>${INR(hv.open)}</b></span>`:""; }
+    $("#st-held").innerHTML=hv?`<span class="ws-held"><span class="hl">You hold${tip("held")}</span> <b>TBD</b></span>`:""; }
   $("#st-act").innerHTML=wsActions(e);
   $("#st-cap").textContent=BROKER_NOTE;
   let al="";
   if(sym&&!known) al=`<div class="alert info" role="status">${ic("warn")}<div class="txt"><b>No data for ${esc(sym)}.</b> The scanner does not track that symbol. Showing ${esc(e.s)} instead.</div></div>`;
-  else if(out) al=`<div class="alert info" role="status">${ic("warn")}<div class="txt"><b>Not in the scan universe.</b> The scanner scores the top 750 companies. This one is outside it${e.held?", but you hold it, so the exit line and the index comparison are still shown":""}.</div></div>`;
-  else if(e.blocked) al=`<div class="alert" role="status">${ic("warn")}<div class="txt"><b>Buy blocked.</b> ${g.coreMissing.map(c=>`Point ${c.n} (${c.pt.toLowerCase()})`).join(", ")} is not assessed. A buy needs debt, pledged shares and exceptional items assessed. Evidence up to ${g.latest}.</div></div>`;
-  else if(e.v==="REJECT") al=`<div class="alert loss" role="status">${ic("x")}<div class="txt"><b>Rejected.</b> ${g.bad.map(b=>`Point ${b.n}, ${b.pt.toLowerCase()}: ${esc(b.ev)}`).join(". ")}. One Bad grade rejects the stock.</div></div>`;
-  if(e.emaTrig&&e.v!=="REJECT") al+=`<div class="alert loss" role="status">${ic("warn")}<div class="txt"><b>Exit trigger.</b> Below the 200-day EMA and behind the Nifty 500.${e.held?" You hold this stock.":""}</div></div>`;
+  else if(out) al=`<div class="alert info" role="status">${ic("warn")}<div class="txt"><b>Not in the scan universe.</b> The scanner scores the top 750 companies. This one is outside it.</div></div>`;
   $("#st-alert").innerHTML=al;
-  const kpi=(k,tp,v,d,tone,vc,dc)=>`<div class="kpi"${tone?` data-tone="${tone}"`:""}><div class="k">${k}${tp?tip(tp):""}</div><div class="v ${vc||""}">${v}</div><div class="d ${dc||""}">${d}</div></div>`;
+  const kpi=(k,tp,v,d)=>`<div class="kpi"><div class="k">${k}${tp?tip(tp):""}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
   $("#st-strip").innerHTML=
-   kpi("Below high","below_ath",e.below<=0.05?"At high":e.below.toFixed(1)+"%","High "+IN2(e.ath),e.below<=2?"gain":"warn")+
-   kpi("52-week return","ret52",pct(e.r),"Nifty 500 "+pct(NIFTY.r),e.r>NIFTY.r?"gain":"warn",cls(e.r))+
-   kpi("Adj. profit change","pat_chg",e.pg==null?"Not assessed":pct(e.pg),e.pg==null?"No company financials":"TTM, one-offs out",e.pg==null?"":(e.pg>=0?"gain":"warn"),e.pg==null?"":cls(e.pg))+
-   kpi("200-day EMA","ema200",IN2(e.ema),e.emaBelow?"Price is below it":"Price is above it",e.emaBelow?"loss":"gain","",e.emaBelow?"down":"up");
-  // phases
-  const cnt=k=>g.rows.filter(r=>r.grade===k).length;
-  const gpill=r=>{const m={"Good":["good","check"],"Neutral":["neutral","minus"],"Bad":["bad","x"],"Not assessed":["na","minus"]}[r.grade]; return `<span class="gp ${m[0]}">${ic(m[1])}${r.grade}</span>`;};
-  const govRows=g.rows.map(r=>`<div class="gv"><span class="no">${r.n}</span><div class="pt">${r.pt}${r.core?`<small>Required for buy</small>`:""}</div>${gpill(r)}<div class="ev">${esc(r.ev)}${r.date?`<span class="src">${r.date} · ${r.src}</span>`:`<span class="src">${r.src}</span>`}</div></div>`).join("");
-  const p1res=g.worst==="Bad"?`<span class="gp bad">${ic("x")}Failed</span>`:g.coreMissing.length?`<span class="gp flag">${ic("warn")}Passed so far, buy blocked</span>`:`<span class="gp good">${ic("check")}Passed</span>`;
-  const p1=`<li class="phase"><span class="pn" aria-hidden="true">1</span>
-   <div class="ph-head"><h2>Phase 1. Governance ${tip("gov")}</h2>${out?`<span class="gp na">${ic("minus")}Not assessed</span>`:p1res}</div>
-   <p class="ph-sum"><b class="mono">${g.assessed} of 18</b> points assessed${g.latest?`, evidence up to <span class="mono">${g.latest}</span>`:""}. ${g.worst==="Bad"?"A Bad grade rejects the stock.":"No Bad grade found."} ${g.coreMissing.length?`Required for a buy and not assessed: ${g.coreMissing.map(c=>c.pt.toLowerCase()).join(", ")}.`:""}</p>
-   <div class="sumpills"><span class="gp good">${ic("check")}${cnt("Good")} Good</span><span class="gp neutral">${ic("minus")}${cnt("Neutral")} Neutral</span><span class="gp bad">${ic("x")}${cnt("Bad")} Bad</span><span class="gp na">${ic("minus")}${cnt("Not assessed")} Not assessed</span><span class="mute">Grades</span>${tip("gov_grade")}</div>
-   <button type="button" class="tglbtn" id="gv-tgl" aria-expanded="false" aria-controls="gv-list">${ic("chev")}<span>Show all 18</span></button>
-   <div id="gv-list" hidden style="margin-top:12px">${govRows}</div></li>`;
-  const p2=`<li class="phase"><span class="pn" aria-hidden="true">2</span>
-   <div class="ph-head"><h2>Phase 2. Momentum, three rules</h2><span class="mono" style="font-weight:600">${out?"Not scored":`${e.score} of 3${e.na?` met, ${e.na} not assessed`:" met"}`}</span></div>
-   <p class="ph-sum">A buy needs all three. Profit is compared within the <span>data window</span>${tip("data_window")} of about 13 quarters and 12 years.</p>
-   ${critRow("",e,0)}${critRow("",e,1)}${critRow("",e,2)}</li>`;
-  const pr=propExit(e.px,e.ema), tr=(e.px-pr.exit)/e.px*100, al2=1.2/tr*100;
-  let p3;
-  if(out) p3=`<li class="phase"><span class="pn" aria-hidden="true">3</span><div class="ph-head"><h2>Phase 3. Position size</h2><span class="gp plain">Not shown</span></div><p class="ph-sum">No size is proposed for a stock outside the scan universe.</p></li>`;
-  else if(e.v==="REJECT") p3=`<li class="phase"><span class="pn" aria-hidden="true">3</span><div class="ph-head"><h2>Phase 3. Position size</h2><span class="gp plain">Not shown</span></div><p class="ph-sum">No size is proposed for a rejected stock.</p></li>`;
-  else p3=`<li class="phase"><span class="pn" aria-hidden="true">3</span>
-   <div class="ph-head"><h2>Phase 3. Position size</h2></div>
-   <div class="proposal"><div class="eyebrow" style="margin-bottom:6px">Proposed exit price ${tip("exit_price")}</div>
-    <div class="kv"><span>Price today</span><span>${IN2(e.px)}</span><span>Proposed exit</span><span>${IN2(pr.exit)}</span><span>Trade risk ${tip("trade_risk")}</span><span>${tr.toFixed(1)}%</span><span>Allocation, 1.2% / ${tr.toFixed(1)}% ${tip("alloc")}</span><span>${al2.toFixed(1)}% of Net Asset Value</span></div>
-    <p class="note" style="margin:10px 0 0">Rule: the lower of the 200-day EMA (${IN2(e.ema)}) and 80% of the price today, kept within 5% to 30% trade risk. Here it is ${pr.rule}. It is a proposal; type your own exit price in the calculator.</p></div>
-   <a class="btn primary" href="#/sizing/${encodeURIComponent(e.s)}">Size this position ${ic("arrow")}</a></li>`;
+   kpi("Below high","below_ath",e.below<=0.05?"At high":e.below.toFixed(1)+"%","High "+IN2(e.ath)+", date TBD")+
+   kpi("1-year return","ret52",pct(e.r),"Index comparison TBD")+
+   kpi("Adj. profit change","pat_chg","TBD","Not in the API")+
+   kpi("200-day EMA","ema200","TBD","Not in the API");
+  // phases: only the fields the API gives are shown; the rest is TBD
+  const tbdPh=(n,title,sum)=>`<li class="phase"><span class="pn" aria-hidden="true">${n}</span><div class="ph-head"><h2>${title}</h2><span class="gp plain">TBD</span></div><p class="ph-sum">${sum}</p></li>`;
+  const p1=tbdPh(1,`Phase 1. Governance ${tip("gov")}`,"Governance points are not in the API. TBD.");
+  const p2=tbdPh(2,"Phase 2. Momentum, three rules","Momentum rule results are not in the API. TBD.");
+  const p3=tbdPh(3,"Phase 3. Position size","Position size and sizing numbers are not in the API. TBD.");
   const tri=(name,k,state,txt)=>`<div class="trig"><div class="cn">${name}${tip(k)}</div>${state}<div class="cv">${txt}</div></div>`;
-  const clear=`<span class="gp good">${ic("check")}Clear</span>`, trg=`<span class="gp bad">${ic("x")}Triggered</span>`;
+  const tbdSt=`<span class="gp plain">TBD</span>`;
   const p4=`<li class="phase"><span class="pn" aria-hidden="true">4</span>
    <div class="ph-head"><h2>Phase 4. Hold or exit</h2></div>
-   <p class="ph-sum">${e.held?`You hold ${IN(e.held[0])} at an average of ${IN2(e.held[1])}. `:""}${out?"There is no score for this stock, so only the two price checks below apply.":e.score===3?"3 of 3: hold, and add new money.":e.score===2?"2 of 3: hold, add nothing.":"0 or 1 of 3: exit."} Never average down.</p>
-   ${tri("Score now","score",out?`<span class="gp na">${ic("minus")}Not scored</span>`:e.score<=1?trg:clear,out?"Outside the scan universe, so there is no score.":`${e.score} of 3${e.na?`, ${e.na} not assessed`:""}. Exit at 1 or lower.`)}
-   ${tri("200-day EMA","ema200",e.emaBelow?`<span class="gp flag">${ic("warn")}Below it</span>`:clear,`Close <b>${IN2(e.px)}</b> against EMA <b>${IN2(e.ema)}</b>: ${e.emaBelow?"below":"above"}.`)}
-   ${tri("52-week alpha vs Nifty 500","alpha_n",e.behind?`<span class="gp flag">${ic("warn")}Behind</span>`:clear,`Stock <b>${pct(e.r)}</b> against Nifty 500 <b>${pct(NIFTY.r)}</b>: <b>${pp(e.aN)}</b>.`)}
-   ${tri("Moving-average exit","exit_rule_ema",e.emaTrig?trg:clear,"Needs both: below the 200-day EMA and behind the Nifty 500."+(e.emaTrig?" Both are true.":" At most one is true."))}</li>`;
+   <p class="ph-sum">Exit checks below. Only the stance score is in the API; the EMA and alpha checks are TBD.</p>
+   ${tri("Stance score","score",out?`<span class="gp na">${ic("minus")}Not scored</span>`:`<span class="gp plain">Stance ${e.score}</span>`,out?"Outside the scan universe, so there is no score.":`Stance score ${e.score} from the latest run.`)}
+   ${tri("200-day EMA","ema200",tbdSt,"TBD. Not in the API.")}
+   ${tri("52-week alpha vs Nifty 500","alpha_n",tbdSt,"TBD. Index return not in the API.")}
+   ${tri("Moving-average exit","exit_rule_ema",tbdSt,"TBD. Needs the 200-day EMA.")}</li>`;
   $("#phases").innerHTML=p1+p2+p3+p4;
-  $("#gv-tgl").onclick=()=>{const ex=$("#gv-tgl").getAttribute("aria-expanded")==="true"; $("#gv-tgl").setAttribute("aria-expanded",!ex); $("#gv-list").hidden=ex; $("#gv-tgl span").textContent=ex?"Show all 18":"Hide the 18";};
-  $("#st-fil").innerHTML=ST_FIL.map(f=>`<div><span><span class="mono" style="color:var(--faint)">${f[0]}</span><br>${f[1]}</span><span class="num">${f[2]}</span></div>`).join("");
+  // timeline: the API gives the run date, stance, LTP and distance; only the current run is shown here
+  $("#st-fil").innerHTML=`<div><span><span class="mono" style="color:var(--faint)">${esc(frun)}</span><br>Stance: ${e.stance?esc(e.stance):"TBD"}</span><span class="num">LTP ${IN2(e.px)}<br>${e.below<=0.05?"At high":e.below.toFixed(1)+"% below high"}</span></div>`;
   $("#st-stance").innerHTML=e.stance?`<span class="pill ${e.stance}">${e.stance[0].toUpperCase()+e.stance.slice(1)}</span>`:`<span class="gp na">${ic("minus")}Not available</span>`;
-  chs.e=e; chs.cur=null; chs.sel=null; initStockExtras(e); drawChart();
+  chs.e=e; chs.cur=null; chs.sel=null;
   return e;
 }
 
