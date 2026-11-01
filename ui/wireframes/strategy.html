@@ -781,7 +781,7 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
 #s-stock .ws-head[data-stuck=true]{box-shadow:var(--shadow-pop);border-color:var(--line-strong)}
 #s-stock .ws-row{display:flex;align-items:center;gap:8px 18px;flex-wrap:wrap}
 #s-stock .ws-id{flex:1 1 200px;min-width:0}
-#s-stock .ws-id .eyebrow{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#s-stock .ws-id .eyebrow{overflow-wrap:anywhere}
 #s-stock .ws-head h1{font-size:20px;line-height:1.2;margin:0;letter-spacing:-.01em;overflow-wrap:anywhere}
 #s-stock .ws-sym{font-size:.65em;color:var(--faint);font-weight:500;white-space:nowrap}
 #s-stock .ws-px{display:grid;grid-template-columns:auto auto;column-gap:8px;align-items:baseline;font-family:var(--sans);font-variant-numeric:tabular-nums}
@@ -822,6 +822,8 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
 #s-stock .tv .chartwrap:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:6px}
 #s-stock .tv .legend{margin-top:8px}
 #s-stock .tv .legend i{flex:none}
+#s-stock .tv .legend{min-width:0;max-width:100%}
+#s-stock .tv .legend span{min-width:0;overflow-wrap:anywhere}
 #s-stock .tvhead{display:flex;gap:2px 14px;flex-wrap:wrap;align-items:baseline;margin-bottom:10px}
 #s-stock .tvhead b{font-size:17px;letter-spacing:-.01em}
 #s-stock .tvhead .tvsub{color:var(--faint);font-size:13px}
@@ -907,8 +909,8 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
 /* corporate actions timeline: scrolls inside its own box */
 #s-stock .tl{position:relative;overflow-x:auto;overscroll-behavior-x:contain;padding:0 8px;border:1px solid var(--line);border-radius:var(--r);background:var(--tint)}
 #s-stock .tl:focus-visible{outline-offset:2px}
-#s-stock .tl-in{position:relative;display:flex;min-width:max-content;height:340px}
-#s-stock .tl-in::before{content:"";position:absolute;left:0;right:0;top:170px;border-top:2px solid var(--line-strong)}
+#s-stock .tl-in{position:relative;display:flex;min-width:max-content;height:clamp(260px,40vh,340px)}
+#s-stock .tl-in::before{content:"";position:absolute;left:0;right:0;top:50%;border-top:2px solid var(--line-strong)}
 #s-stock .tli{width:196px;position:relative;flex:none;font-size:13px}
 #s-stock .tli .dot2{position:absolute;left:50%;top:162px;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:var(--surface);border:3px solid var(--accent);z-index:1}
 #s-stock .tli.fut .dot2{border-style:dashed;border-color:var(--caution)}
@@ -2255,7 +2257,7 @@ body.st-page #st-handle{display:flex}
       <div class="tiles" id="tech-tiles"></div>
     </div>
     <h3 class="sig-h"><span class="tipl" data-tip="tech_signals" tabindex="0">Technical signals</span> </h3>
-    <div class="tbl-wrap"><table><caption class="sr">The eight signals behind the technical read.</caption><thead><tr><th scope="col">Signal</th><th scope="col">Leans</th><th scope="col">Why</th></tr></thead><tbody id="tech-sig-body"></tbody></table></div>
+    <div class="tbl-wrap" tabindex="0" role="region" aria-label="Technical signals, scrolls sideways"><table><caption class="sr">The eight signals behind the technical read.</caption><thead><tr><th scope="col">Signal</th><th scope="col">Leans</th><th scope="col">Why</th></tr></thead><tbody id="tech-sig-body"></tbody></table></div>
   </section>
 
   <div class="xt-tabs"><div class="seg tabs" role="tablist" aria-label="Stock details" id="xt">
@@ -2289,7 +2291,7 @@ body.st-page #st-handle{display:flex}
     <div class="sect">
       <header><h2><span class="tipl" data-tip="peers" tabindex="0">Peer comparison</span> </h2><span class="hint">Same sector index first, then the closest by 52-week return. Sample values.</span></header>
       <div class="bar"><div class="seg" id="pe-mode" role="group" aria-label="Peer view"><button type="button" data-v="val" aria-pressed="true">Valuation</button><button type="button" data-v="str" aria-pressed="false">Strategy score</button><button type="button" data-v="perf" aria-pressed="false">Performance</button></div></div>
-      <div class="tbl-wrap"><table><caption class="sr">Peers of the selected stock.</caption><thead><tr id="thead-pe"></tr></thead><tbody id="tb-pe"></tbody></table></div>
+      <div class="tbl-wrap" tabindex="0" role="region" aria-label="Peer comparison, scrolls sideways"><table><caption class="sr">Peers of the selected stock.</caption><thead><tr id="thead-pe"></tr></thead><tbody id="tb-pe"></tbody></table></div>
     </div>
   </div>
 
@@ -2301,7 +2303,7 @@ body.st-page #st-handle{display:flex}
         <div class="seg" id="vo-ex" role="group" aria-label="Exchange"><button type="button" data-v="NSE" aria-pressed="true">NSE</button><button type="button" data-v="BSE" aria-pressed="false">BSE</button><button type="button" data-v="Both" aria-pressed="false">Both</button></div>
         <div class="seg" id="vo-per" role="group" aria-label="Period"><button type="button" data-v="D" aria-pressed="true">Daily</button><button type="button" data-v="W" aria-pressed="false">Weekly</button><button type="button" data-v="M" aria-pressed="false">Monthly</button></div>
       </div>
-      <div class="tbl-wrap"><table><caption class="sr">Volume and delivery by period.</caption><thead><tr id="thead-vo"></tr></thead><tbody id="tb-vo"></tbody></table></div>
+      <div class="tbl-wrap" tabindex="0" role="region" aria-label="Volume and delivery, scrolls sideways"><table><caption class="sr">Volume and delivery by period.</caption><thead><tr id="thead-vo"></tr></thead><tbody id="tb-vo"></tbody></table></div>
     </div>
   </div>
 
@@ -2310,7 +2312,7 @@ body.st-page #st-handle{display:flex}
       <header><h2><span class="tipl" data-tip="deals" tabindex="0">Stock deals</span> </h2><span class="hint">Large trades reported by the exchanges, and insider trades. Invented sample rows.</span></header>
       <div class="bar"><div class="seg" id="dl-mode" role="group" aria-label="Kind of deal"><button type="button" data-v="bulk" aria-pressed="true">Bulk</button><button type="button" data-v="block" aria-pressed="false">Block</button><button type="button" data-v="insider" aria-pressed="false">Insider</button></div></div>
       <p class="note dl-line" id="dl-line"></p>
-      <div class="tbl-wrap"><table><caption class="sr">Deals in the selected stock.</caption><thead><tr id="thead-dl"></tr></thead><tbody id="tb-dl"></tbody></table></div>
+      <div class="tbl-wrap" tabindex="0" role="region" aria-label="Stock deals, scrolls sideways"><table><caption class="sr">Deals in the selected stock.</caption><thead><tr id="thead-dl"></tr></thead><tbody id="tb-dl"></tbody></table></div>
     </div>
   </div>
 
