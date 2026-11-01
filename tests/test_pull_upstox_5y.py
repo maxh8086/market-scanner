@@ -1,14 +1,27 @@
 """Offline tests for scripts/pull_upstox_5y.py using a fake Upstox client."""
+import contextlib
+import io
+import os
 import sqlite3
 import tempfile
 import unittest
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from scanner.upstox import UpstoxError
 from scripts import pull_upstox_5y as pull
 
 TODAY = date(2026, 11, 1)
+
+
+def _fake_pg(rows=None, fetchone=None):
+    """A stand-in psycopg connection whose cursor yields dict rows (dict_row style)."""
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = rows or []
+    cur.fetchone.return_value = fetchone
+    return conn, cur
 
 
 class FakeClient:
@@ -41,6 +54,10 @@ class FakeClient:
 
 class PullUpstox5yTests(unittest.TestCase):
     def setUp(self):
+        # The suite is offline: keep the pull_log ledger in SQLite.
+        env = patch.dict(os.environ, {"UPSTOX_PULL_LOG": "sqlite"})
+        env.start()
+        self.addCleanup(env.stop)
         self.tmp = Path(tempfile.mkdtemp())
         self.db = self.tmp / "upstox_5y.db"
         self.conn = pull.connect(self.db)
@@ -136,8 +153,10 @@ class PullUpstox5yTests(unittest.TestCase):
     def test_failed_symbol_stores_error_text(self):
         client = FakeClient(TODAY - timedelta(days=9), TODAY,
                             fail={"NSE_EQ|INE000000003": UpstoxError("HTTP 400 from x -- bad input")})
-        s = pull.run(client, self.conn, [("CCAVENUE", "INE000000003")], 10, TODAY,
-                     datetime(2026, 11, 1, 9))
+        # The 400 would trigger an ISIN master lookup; keep it offline and unresolved.
+        with patch("scanner.isin_resolver.try_load_master", return_value=(None, "offline test")):
+            s = pull.run(client, self.conn, [("CCAVENUE", "INE000000003")], 10, TODAY,
+                         datetime(2026, 11, 1, 9))
         self.assertEqual(s["failed"], ["CCAVENUE"])
         error = self.conn.execute(
             "SELECT error FROM pull_log WHERE symbol='CCAVENUE' AND status='failed'"
@@ -192,6 +211,88 @@ class PullUpstox5yTests(unittest.TestCase):
         check = sqlite3.connect(self.db)
         self.assertEqual(check.execute("SELECT COUNT(*) FROM candles").fetchone()[0], 5)
         check.close()
+
+    def test_invalid_backend_value_rejected(self):
+        with patch.dict(os.environ, {"UPSTOX_PULL_LOG": "mysql"}):
+            with self.assertRaises(ValueError):
+                pull.pull_log_backend()
+
+
+class PostgresPullLogTests(unittest.TestCase):
+    """Postgres ledger paths, with scanner.pg.db.connect mocked (no database needed)."""
+
+    def setUp(self):
+        env = patch.dict(os.environ, {"UPSTOX_PULL_LOG": ""})
+        env.start()
+        self.addCleanup(env.stop)
+        self.tmp = Path(tempfile.mkdtemp())
+        self.db = self.tmp / "upstox_5y.db"
+        self.conn = pull.connect(self.db)  # candles only; no SQLite pull_log in pg mode
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_default_backend_is_postgres(self):
+        self.assertEqual(pull.pull_log_backend(), "postgres")
+
+    def test_sqlite_connect_skips_pull_log_in_postgres_mode(self):
+        tables = {r[0] for r in self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        self.assertIn("candles", tables)
+        self.assertNotIn("pull_log", tables)
+
+    def test_ok_pulls_reads_latest_ok_row_from_postgres(self):
+        rows = [
+            {"symbol": "AAA", "last_date": date(2026, 10, 1), "pulled_at": datetime(2026, 10, 2, 9)},
+            {"symbol": "AAA", "last_date": date(2026, 10, 20), "pulled_at": datetime(2026, 10, 21, 9)},
+            {"symbol": "BBB", "last_date": None, "pulled_at": datetime(2026, 10, 21, 9)},
+        ]
+        pg, cur = _fake_pg(rows=rows)
+        self.assertEqual(pull._ok_pulls(pg), {"AAA": date(2026, 10, 20)})
+        sql = cur.execute.call_args[0][0]
+        self.assertIn("FROM upstox_pull_log", sql)
+        self.assertIn("status = 'ok'", sql)
+
+    def test_log_inserts_row_into_postgres(self):
+        pg, cur = _fake_pg()
+        now = datetime(2026, 11, 1, 9, 0)
+        pull._log(pg, "AAA", 5, "ok", date(2026, 10, 1), date(2026, 11, 1), now)
+        sql, params = cur.execute.call_args[0]
+        self.assertIn("INSERT INTO upstox_pull_log", sql)
+        self.assertEqual(params, ("AAA", 5, date(2026, 10, 1), date(2026, 11, 1), "ok", now, None))
+
+    def test_run_writes_ledger_to_postgres_and_candles_to_sqlite(self):
+        pg, cur = _fake_pg()
+        client = FakeClient(TODAY - timedelta(days=9), TODAY)
+        s = pull.run(client, self.conn, [("AAA", "INE000000001")], 10, TODAY,
+                     datetime(2026, 11, 1, 9), log=pg)
+        self.assertEqual(s["ok"], 1)
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM candles").fetchone()[0], 10)
+        inserts = [c for c in cur.execute.call_args_list if "INSERT INTO upstox_pull_log" in c[0][0]]
+        self.assertEqual(len(inserts), 1)
+        self.assertEqual(inserts[0][0][1][4], "ok")
+
+    def test_unconfigured_postgres_fails_fast_with_one_line(self):
+        msg = "Postgres is not configured: POSTGRES_HOST is unset. Set the POSTGRES_* values in .env"
+        buf = io.StringIO()
+        with patch("scanner.pg.db.connect", side_effect=RuntimeError(msg)), \
+                patch.object(pull, "load_universe", return_value=[("AAA", "INE000000001")]), \
+                patch.object(pull, "connect") as sqlite_connect, \
+                contextlib.redirect_stdout(buf):
+            rc = pull.main(["--symbols", "AAA", "--db", str(self.db)])
+        self.assertEqual(rc, 2)
+        sqlite_connect.assert_not_called()  # no silent fallback to SQLite
+        lines = buf.getvalue().strip().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIn("upstox_pull_log", lines[0])
+        self.assertIn("POSTGRES_HOST", lines[0])
+
+    def test_missing_ledger_table_fails_fast(self):
+        pg, _ = _fake_pg(fetchone={"present": False})
+        with patch("scanner.pg.db.connect", return_value=pg):
+            with self.assertRaises(pull.PullLogUnavailable) as ctx:
+                pull.open_pg_pull_log()
+        self.assertIn("011_fetch_metadata_pull_log.sql", str(ctx.exception))
+        pg.close.assert_called_once()
 
 
 if __name__ == "__main__":

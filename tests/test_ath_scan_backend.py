@@ -65,6 +65,8 @@ class BackendCheckTests(unittest.TestCase):
             mock.patch.object(ath_scan.report, "write_outputs", return_value=("a.csv", "a.xlsx")),
             mock.patch.object(ath_scan.report, "print_summary"),
             mock.patch.object(ath_scan.report, "write_skipped", self.write_skipped),
+            # No network for the ISIN master in these tests: CSV ISINs are used.
+            mock.patch.object(ath_scan.isin_resolver, "try_load_master", return_value=(None, "offline test")),
         ] + list(extra_patches)
         with contextlib_stack(patches), redirect_stdout(out), redirect_stderr(err):
             code = ath_scan.main()

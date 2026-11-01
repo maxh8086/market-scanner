@@ -48,6 +48,8 @@ from typing import Iterable, Optional, Sequence
 
 from scanner import factors
 from scanner import forecast as fc
+from scanner import marketdata
+from scanner.pg import db as pgdb
 
 # Monthly series, so an annual cycle is 12 points.
 SEASON_MONTHS = 12
@@ -290,7 +292,13 @@ def load_announcements(db_path: Optional[Path] = None) -> list[dict]:
     Read-only and read directly rather than through `fetch_announcements`,
     because this needs the whole history that is already stored and must never
     trigger a network fetch of its own.
+
+    With no `db_path` and the Postgres backend, reads the `announcements` table.
+    Postgres errors propagate: a broken store must not look like an empty one.
+    An explicit `db_path` always reads that SQLite file.
     """
+    if db_path is None and marketdata.get_backend() == "postgres":
+        return _load_announcements_pg()
     path = db_path or factors.DB_PATH
     if not Path(path).exists():
         return []
@@ -308,6 +316,27 @@ def load_announcements(db_path: Optional[Path] = None) -> list[dict]:
         return []
     finally:
         conn.close()
+
+
+def _load_announcements_pg() -> list[dict]:
+    """Every announcement in Postgres, in the same shape as the SQLite read.
+
+    Dates come back as ISO strings, matching what the SQLite path returns.
+    """
+    with pgdb.connect() as conn:
+        rows = conn.execute(
+            'SELECT symbol, "desc", attchmnt_text, an_dt, sort_date FROM announcements'
+        ).fetchall()
+    return [
+        {
+            "symbol": r["symbol"],
+            "desc": r["desc"],
+            "attchmntText": r["attchmnt_text"],
+            "an_dt": r["an_dt"].isoformat() if r["an_dt"] else None,
+            "sort_date": r["sort_date"].isoformat() if r["sort_date"] else None,
+        }
+        for r in rows
+    ]
 
 
 def market_intensity(rows: Optional[Iterable[dict]] = None, model=None,

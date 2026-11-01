@@ -4,7 +4,7 @@ Uses feed_coverage to track fetched windows and only fetch gaps from NSE.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import requests
@@ -71,27 +71,67 @@ def _int_or_none(value) -> int | None:
         return None
 
 
+def was_fetched_today_pg(feed_name: str, from_date: date, to_date: date) -> bool:
+    """True when this feed was last fetched today for exactly this window."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT from_date, to_date, fetched_at FROM fetch_metadata WHERE feed_name = %s",
+            (feed_name,),
+        ).fetchone()
+    if not row or row["fetched_at"] is None:
+        return False
+    return (
+        row["from_date"] == from_date
+        and row["to_date"] == to_date
+        and row["fetched_at"].astimezone().date() == date.today()
+    )
+
+
+def mark_fetched_pg(feed_name: str, from_date: date, to_date: date) -> None:
+    """Record that this feed was fetched now for this window (one row per feed)."""
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO fetch_metadata (feed_name, from_date, to_date, fetched_at)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (feed_name) DO UPDATE SET
+                from_date = excluded.from_date,
+                to_date = excluded.to_date,
+                fetched_at = excluded.fetched_at
+            """,
+            (feed_name, from_date, to_date, datetime.now().astimezone()),
+        )
+        conn.commit()
+
+
 def _save_announcements_pg(rows: list[dict]) -> None:
-    """Save announcements to Postgres."""
-    if not rows:
+    """Save announcements to Postgres.
+
+    Dates are written as date objects. A row whose an_dt does not parse is
+    skipped: an_dt is NOT NULL and part of the primary key, and such a row
+    could never be returned by a date-range read anyway.
+    """
+    data = []
+    for row in rows:
+        an_dt = _parse_date_str(row.get("an_dt", ""))
+        if an_dt is None:
+            continue
+        data.append((
+            row.get("sm_isin") or "",
+            row.get("symbol") or "",
+            an_dt,
+            row.get("desc") or "",
+            row.get("attchmntText") or "",
+            _parse_date_str(row.get("sort_date", "")) or an_dt,
+            str(row.get("seqId") or row.get("seq_id") or ""),
+            row.get("attchmntFile") or "",
+            _int_or_none(row.get("attFileSize")),
+        ))
+    if not data:
         return
 
     with connect() as conn:
         with conn.cursor() as cur:
-            data = [
-                (
-                    row.get("sm_isin", ""),
-                    row.get("symbol", ""),
-                    _to_iso(row.get("an_dt", "")),
-                    row.get("desc", ""),
-                    row.get("attchmntText", ""),
-                    _to_iso(row.get("sort_date", "")) or _to_iso(row.get("an_dt", "")),
-                    str(row.get("seqId") or row.get("seq_id") or ""),
-                    row.get("attchmntFile", "") or "",
-                    _int_or_none(row.get("attFileSize")),
-                )
-                for row in rows
-            ]
             cur.executemany(
                 """
                 INSERT INTO announcements
@@ -109,22 +149,25 @@ def _save_announcements_pg(rows: list[dict]) -> None:
 
 
 def _save_corporate_actions_pg(rows: list[dict]) -> None:
-    """Save corporate actions to Postgres."""
-    if not rows:
+    """Save corporate actions to Postgres. A row without a parsable ex_date is skipped
+    (ex_date is part of the primary key), as it could never be read back by range."""
+    data = []
+    for row in rows:
+        ex_date = _parse_date_str(row.get("exDate", ""))
+        if ex_date is None:
+            continue
+        data.append((
+            row.get("isin") or "",
+            row.get("symbol") or "",
+            row.get("subject") or "",
+            ex_date,
+            None,  # received_date
+        ))
+    if not data:
         return
 
     with connect() as conn:
         with conn.cursor() as cur:
-            data = [
-                (
-                    row.get("isin", ""),
-                    row.get("symbol", ""),
-                    row.get("subject", ""),
-                    _to_iso(row.get("exDate", "")),
-                    None,  # received_date
-                )
-                for row in rows
-            ]
             cur.executemany(
                 """
                 INSERT INTO corporate_actions (isin, symbol, subject, ex_date, received_date)
@@ -141,7 +184,7 @@ def _load_cached_announcements_pg(from_date: date, to_date: date) -> list[dict]:
     with connect() as conn:
         rows = conn.execute(
             """
-            SELECT isin, symbol, an_dt, desc, attchmnt_text, sort_date,
+            SELECT isin, symbol, an_dt, "desc", attchmnt_text, sort_date,
                    seq_id, attchmnt_file, att_file_size
             FROM announcements
             WHERE sort_date >= %s AND sort_date <= %s

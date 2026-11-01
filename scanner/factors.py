@@ -15,7 +15,9 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-DB_PATH = Path("data/factors.db")
+from scanner import marketdata
+
+DB_PATH = Path("data/factors.db")  # SQLite cache; used only when MARKETDATA_BACKEND=sqlite
 SCHEMA_VERSION = 3  # 2: dates ISO-normalised. 3: seq_id + attchmnt_file kept,
                     #    so a filing's PDF can be fetched and re-read later.
 
@@ -198,8 +200,13 @@ def _subtract_months(d: date, months: int) -> date:
     return _add_months(d, -months)
 
 
+def _use_postgres() -> bool:
+    """True when the market-data backend is Postgres. Then factors.db is never opened."""
+    return marketdata.get_backend() == "postgres"
+
+
 def _connect() -> sqlite3.Connection:
-    """Open or create the factors cache database.
+    """Open or create the factors cache database (sqlite backend only).
 
     Schema 2 stores dates ISO-normalised. Rows written by schema 1 hold raw
     NSE strings, which no longer compare correctly, so they are dropped and
@@ -330,6 +337,9 @@ def _month_end(d: date) -> date:
 
 def _was_fetched_today(feed_name: str, from_date: date, to_date: date) -> bool:
     """Check if this range was already fetched today."""
+    if _use_postgres():
+        from scanner.marketdata import factors_postgres
+        return factors_postgres.was_fetched_today_pg(feed_name, from_date, to_date)
     conn = _connect()
     try:
         row = conn.execute(
@@ -360,6 +370,10 @@ def _was_fetched_today(feed_name: str, from_date: date, to_date: date) -> bool:
 
 def _mark_fetched(feed_name: str, from_date: date, to_date: date) -> None:
     """Mark feed as fetched at this date range and time."""
+    if _use_postgres():
+        from scanner.marketdata import factors_postgres
+        factors_postgres.mark_fetched_pg(feed_name, from_date, to_date)
+        return
     conn = _connect()
     try:
         conn.execute(
@@ -384,8 +398,12 @@ def _mark_fetched(feed_name: str, from_date: date, to_date: date) -> None:
 
 
 def _save_corporate_actions(rows: list[dict]) -> None:
-    """Cache corporate actions to SQLite."""
+    """Cache corporate actions (Postgres, or SQLite when that backend is selected)."""
     if not rows:
+        return
+    if _use_postgres():
+        from scanner.marketdata import factors_postgres
+        factors_postgres._save_corporate_actions_pg(rows)
         return
     conn = _connect()
     try:
@@ -448,8 +466,12 @@ def _trim_announcement(r: dict) -> dict:
 
 
 def _save_announcements(rows: list[dict]) -> None:
-    """Cache announcements to SQLite, storing only needed columns."""
+    """Cache announcements (Postgres, or SQLite when that backend is selected)."""
     if not rows:
+        return
+    if _use_postgres():
+        from scanner.marketdata import factors_postgres
+        factors_postgres._save_announcements_pg(rows)
         return
     conn = _connect()
     try:
@@ -503,6 +525,9 @@ def _save_announcements(rows: list[dict]) -> None:
 
 def _load_cached_corporate_actions(from_date: date, to_date: date) -> list[dict]:
     """Load cached corporate actions for the date range."""
+    if _use_postgres():
+        from scanner.marketdata import factors_postgres
+        return factors_postgres._load_cached_corporate_actions_pg(from_date, to_date)
     conn = _connect()
     try:
         rows = conn.execute(
@@ -527,6 +552,9 @@ def _load_cached_corporate_actions(from_date: date, to_date: date) -> list[dict]
 
 def _load_cached_announcements(from_date: date, to_date: date) -> list[dict]:
     """Load cached announcements for the date range."""
+    if _use_postgres():
+        from scanner.marketdata import factors_postgres
+        return factors_postgres._load_cached_announcements_pg(from_date, to_date)
     conn = _connect()
     try:
         rows = conn.execute(

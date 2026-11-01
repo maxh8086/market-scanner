@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from scanner import ath, factors, history, indicators, report
+from scanner import ath, factors, history, indicators, isin_resolver, report
 from scanner.constituents import load_constituents
 from scanner.upstox import QUOTE_BATCH_SIZE, UpstoxClient, instrument_key
 
@@ -62,6 +62,20 @@ def _check_backend() -> str | None:
     except Exception as exc:  # noqa: BLE001
         return _backend_line("Backend check failed", exc)
     return None
+
+
+def _record_isin_history(resolutions) -> None:
+    """Fill isin_history / symbol_alias when the backend is Postgres. Failures only warn."""
+    from scanner.marketdata import get_backend
+    try:
+        if get_backend() != "postgres":
+            return
+        from scanner.pg import db
+        with db.connect() as conn:
+            isin_resolver.record(conn, resolutions)
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001 - recording must not stop the scan
+        print(f"Warning: ISIN history not recorded ({type(exc).__name__}).", file=sys.stderr)
 
 
 def _is_backend_failure(exc: Exception) -> bool:
@@ -148,9 +162,23 @@ def main() -> int:
     skipped: list[dict] = []
     resolved: dict[str, dict] = {}  # symbol -> {"key", "company", "industry"}
 
+    # The Upstox NSE master corrects stale CSV ISINs and renames. Loaded once per run;
+    # if it is unavailable the CSV ISINs are used and the scan carries on.
+    master, master_reason = isin_resolver.try_load_master()
+    if master is None:
+        print(f"Warning: ISIN master unavailable ({master_reason}); using constituents CSV ISINs.", file=sys.stderr)
+    resolutions: list[isin_resolver.Resolution] = []
+
     for _, crow in constituents_df.iterrows():
         symbol = str(crow["Symbol"]).strip()
         isin = str(crow.get("ISIN Code", "")).strip()
+        if master is not None:
+            res = isin_resolver.resolve(symbol, isin, master)
+            resolutions.append(res)
+            if res.changed:
+                print(isin_resolver.describe_change(symbol, isin, res))
+            if res.resolved and res.isin:
+                isin = res.isin
         if not isin:
             # Only reachable via --symbols for a ticker outside the index,
             # where there is no ISIN to build an instrument_key from.
@@ -167,6 +195,9 @@ def main() -> int:
             "company": crow.get("Company Name", ""),
             "industry": crow.get("Industry", ""),
         }
+
+    if resolutions:
+        _record_isin_history(resolutions)
 
     print(f"Resolved {len(resolved)} / {len(constituents_df)} symbols to instrument keys.")
 
