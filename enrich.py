@@ -398,9 +398,9 @@ def stage_llm(db, cfg: llm.LLMConfig, limit: int | None = None,
     reachable, detail = llm.health(cfg)
     if not reachable:
         _die(f"LLM backend unreachable at {cfg.base_url} ({detail}).\n"
-             f"  Start the vLLM service (docker compose up -d vllm), then pass\n"
-             f"    --llm-url http://vllm:8000 --llm-model qwen3-4b --llm-api openai\n"
-             f"  (start.ps1 does all of this). Any OpenAI-compatible or Ollama server works.")
+             f"  Start your OpenAI-compatible LLM server, then pass its URL:\n"
+             f"    --llm-url <server URL> --llm-model qwen3-4b --llm-api openai\n"
+             f"  (start.ps1 passes LLM_URL for you). Any OpenAI-compatible or Ollama server works.")
     print(f"\n=== LLM: {cfg.model} at {cfg.base_url} ({detail}) ===")
 
     docs = [d for d in docstore.all_filings(db) if d.get("raw_text")]

@@ -1,4 +1,4 @@
-"""Postgres connection for the shared infra. Reads POSTGRES_DSN (or the POSTGRES_* parts).
+"""Postgres connection for this project's database. Reads POSTGRES_DSN (or the POSTGRES_* parts).
 
 Never logs the DSN: it carries the password.
 """
@@ -11,20 +11,18 @@ from typing import Iterator, Optional
 import psycopg
 from psycopg.rows import dict_row
 
-from ..infra import localize
-
 
 def dsn(env: Optional[dict] = None) -> str:
     env = os.environ if env is None else env
     if env.get("POSTGRES_DSN"):
-        return localize(env["POSTGRES_DSN"], env)
+        return env["POSTGRES_DSN"]
     try:
-        return localize(f"host={env['POSTGRES_HOST']} port={env.get('POSTGRES_PORT', '5432')} "
-                        f"dbname={env['POSTGRES_DB']} user={env['POSTGRES_USER']} "
-                        f"password={env['POSTGRES_PASSWORD']}", env)
+        return (f"host={env['POSTGRES_HOST']} port={env.get('POSTGRES_PORT', '5432')} "
+                f"dbname={env['POSTGRES_DB']} user={env['POSTGRES_USER']} "
+                f"password={env['POSTGRES_PASSWORD']}")
     except KeyError as exc:
         raise RuntimeError(f"Postgres is not configured: {exc.args[0]} is unset "
-                           "(load Shared-Market-Research-Infra/secrets/market_scanner.env)") from None
+                           "(set the POSTGRES_* values in .env)") from None
 
 
 def available(env: Optional[dict] = None) -> bool:

@@ -7,9 +7,9 @@ Due to environment constraints, the following commands should be run manually:
 ```bash
 cd C:\Users\vaibh\Downloads\Projects\Market-Scanner
 set -a
-. ../Shared-Market-Research-Infra/secrets/market_scanner.env
+. ./.env
 set +a
-export PYTHONIOENCODING=utf-8 INFRA_LOCAL=1
+export PYTHONIOENCODING=utf-8
 
 python -m scanner.pg.migrate --status
 python -m scanner.pg.migrate

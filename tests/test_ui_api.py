@@ -3,7 +3,7 @@
 They skip when Postgres is unreachable or holds no completed run. The two config
 validation tests reject before any write, so they change nothing.
 
-    INFRA_LOCAL=1 (with the project's env loaded) to run them from the host.
+    Load the project's .env first to run them from the host (the Postgres values there point at 127.0.0.1).
 """
 import unittest
 

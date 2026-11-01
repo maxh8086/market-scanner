@@ -2,7 +2,10 @@
 
     python bench_models.py                     # every candidate, one at a time
     python bench_models.py --only qwen3-4b,phi4-mini-awq
-    python bench_models.py --restore none      # leave the GPU free afterwards
+
+Needs BENCH_VLLM_IMAGE (a vLLM server image you have built or pulled; this project
+does not build one). Model weights are cached in BENCH_WEIGHTS_DIR (default
+data/huggingface).
 
 Each candidate gets its own throw-away vLLM container on port 8003 (the GPU only
 holds one at a time, so trials are strictly sequential) with the same 4.5 GB
@@ -30,10 +33,9 @@ import conclude as cli
 from scanner import conclude, docstore, llm
 from scanner import modelcheck as mc
 
-IMAGE = "market-infra-vllm"     # built by Shared-Market-Research-Infra (up.ps1 -Llm)
-# Trial models are cached in the shared weights folder, next to the ones the pipeline serves.
-INFRA = Path(os.environ.get("MARKET_INFRA_DIR") or Path(__file__).resolve().parent.parent / "Shared-Market-Research-Infra")
-VOLUME = str(INFRA / "models" / "huggingface")
+IMAGE = os.environ.get("BENCH_VLLM_IMAGE", "")   # a vLLM server image, built or pulled outside this project
+# Trial models are cached in this project's weights folder (data/huggingface).
+VOLUME = str(Path(os.environ.get("BENCH_WEIGHTS_DIR") or Path(__file__).resolve().parent / "data" / "huggingface"))
 NAME = "ath-bench"
 PORT = 8003
 OUT = Path("output/model_bench.csv")
@@ -195,16 +197,15 @@ def main(argv=None) -> int:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--only", help="comma-separated candidate keys")
     p.add_argument("--sample", type=int, default=mc.SAMPLE_SIZE)
-    p.add_argument("--restore", default="compose",
-                   help="'compose' brings the default vllm service back up; 'none' leaves the GPU free")
     p.add_argument("--out", default=str(OUT), help="results CSV")
     args = p.parse_args(argv)
+    if not IMAGE:
+        print("Set BENCH_VLLM_IMAGE to the vLLM server image to benchmark.")
+        return 2
     out_path = Path(args.out)
     wanted = {k.strip() for k in args.only.split(",")} if args.only else None
     cands = [c for c in mc.CANDIDATES if not wanted or c.key in wanted]
 
-    print("Stopping the compose vllm service to free the GPU ...")
-    sh("docker", "compose", "stop", "vllm")
     results = []
     for i, cand in enumerate(cands, 1):
         print(f"\n[{i}/{len(cands)}] {cand.key}  ({cand.model}, {cand.quantization or 'no quant'}, "
@@ -227,9 +228,6 @@ def main(argv=None) -> int:
               f"empty={m.empty} trunc={m.truncated} unv={m.unverified} run={m.seconds}s "
               f"weights={r.get('weights_gib') or '-'}GiB kv={r.get('kv_gib') or '-'}GiB")
     print(f"\nResults: {out_path}")
-    if args.restore != "none":
-        print("Restoring the compose vllm service ...")
-        sh("docker", "compose", "up", "-d", "vllm")
     return 0
 
 

@@ -20,7 +20,6 @@ output_backup_*/
 node_modules
 
 # Cloned on first start; each has its own repo.
-/infra/
 /app/
 
 # Local tooling state (not project source)

@@ -1,27 +1,26 @@
 # One image per component. Everything here is a one-shot job except `laya`:
 #   docker compose run --rm scanner --symbols INFY,TCS
-# start.ps1 drives the whole sequence; stop.ps1 tears it down (this project only).
+# start.ps1 drives the whole sequence; stop.ps1 tears it down.
 # `ui` and `collector` are the two long-running services; everything else is a one-shot job.
 #
-# The databases (Postgres, MongoDB, Neo4j) and the LLM server (vLLM) plus every model weight
-# live in the separate Shared-Market-Research-Infra project, so other projects reuse them.
-# This file joins its `market-infra` network: enrich and conclude reach `vllm` (OpenAI-style
-# HTTP), graph reaches `neo4j` (bolt). start.ps1 starts that infra first.
+# The databases (Postgres, MongoDB, Neo4j) are this project's own services (scanner-postgres,
+# scanner-mongo, scanner-neo4j) on the project's `market-scanner` network. The LLM server is
+# NOT started by this project: it is an OpenAI-compatible endpoint given by URL (start.ps1 passes
+# LLM_URL to enrich; conclude reads CONCLUDE_URL). Nothing here depends on another compose project.
 #
 # Components hand off through the bind-mounted data/, output/ and logs/ folders
 # (SQLite caches, TinyDB store, CSV/XLSX outputs).
 #
 # Secrets reach containers ONLY at runtime, through `env_file` (compose reads the
-# file; no image, build arg or log ever contains it). A service gets a file only if
-# it needs it: .env (Upstox/Kite) for scanner, enrich and portfolio; the infra's
-# secrets/market_scanner.env (this project's database logins) for graph.
+# file; no image, build arg or log ever contains it). The single secrets file is .env
+# (Upstox/Kite and this project's database logins); a service gets it only if it needs it.
 x-persist: &persist
   - ./data:/app/data
   - ./output:/app/output
   - ./logs:/app/logs
 
 # Container-side database hosts. Inside a container 127.0.0.1 is the container itself, so each
-# host is this project's service name on the market-infra network. Logins still come from .env / secrets.
+# host is this project's service name on the project network. Logins still come from .env.
 # Host scripts read SCANNER_MONGO_HOST and POSTGRES_* from .env (127.0.0.1 and the published ports).
 x-scanner-db-env: &scanner-db-env
   SCANNER_MONGO_HOST: scanner-mongo:27017
@@ -34,7 +33,6 @@ services:
     build: {context: ., dockerfile: docker/scanner/Dockerfile}
     env_file:
       - .env
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
     environment:
       <<: *scanner-db-env
       RUN_ID: ${RUN_ID:-}
@@ -46,7 +44,6 @@ services:
     build: {context: ., dockerfile: docker/enrich/Dockerfile}
     env_file:
       - .env
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
     environment:
       <<: *scanner-db-env
       RUN_ID: ${RUN_ID:-}
@@ -60,7 +57,6 @@ services:
   enrich-timesfm:        # enrich + TimesFM forecaster (torch, CPU)
     build: {context: ., dockerfile: docker/timesfm/Dockerfile}
     env_file:                            # database logins, for reading candles and filings
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
       - .env
     environment:
       <<: *scanner-db-env
@@ -91,8 +87,7 @@ services:
     image: ath-enrich
     build: {context: ., dockerfile: docker/enrich/Dockerfile}
     entrypoint: ["python", "graph_sync.py"]
-    env_file:                            # NEO4J_URI / NEO4J_AUTH from the shared infra (its up.ps1 writes it)
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
+    env_file:                            # NEO4J_URI / NEO4J_AUTH from .env
       - .env
     environment:
       <<: *scanner-db-env
@@ -110,8 +105,7 @@ services:
     image: ath-enrich
     build: {context: ., dockerfile: docker/enrich/Dockerfile}
     entrypoint: ["python", "conclude.py"]
-    env_file:                            # MONGO_URI for conclusions, PG_* to record LLM calls
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
+    env_file:                            # MONGO_URI for conclusions, PG_* to record LLM calls (from .env)
       - .env
     environment:
       <<: *scanner-db-env
@@ -126,7 +120,6 @@ services:
     entrypoint: ["python", "collect.py", "serve"]
     env_file:
       - .env
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
     environment:
       <<: *scanner-db-env
       MARKETDATA_BACKEND: postgres
@@ -137,7 +130,6 @@ services:
   ui:                    # runs, cost metrics and stock dashboards on http://127.0.0.1:8080
     build: {context: ., dockerfile: docker/ui/Dockerfile}
     env_file:
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
       - .env
     environment:
       <<: *scanner-db-env
@@ -145,10 +137,10 @@ services:
       - "127.0.0.1:8080:8080"            # loopback only: the UI has no login
     restart: always
 
-  scanner-mongo:         # this project's MongoDB, data kept in ./data/mongo. Not the infra's `mongo` (mri-mongo):
-    image: mongo:7       # the service name differs on purpose, so the two never share the `mongo` alias on market-infra.
+  scanner-mongo:         # this project's MongoDB, data kept in ./data/mongo
+    image: mongo:7
     container_name: market-scanner-mongo
-    # --auth matches mri-mongo: the copied store already holds the market_scanner and admin users.
+    # --auth: connections need the login from .env (SCANNER_MONGO_USER / SCANNER_MONGO_PASSWORD).
     command: ["--auth", "--wiredTigerCacheSizeGB", "0.5", "--bind_ip_all"]
     volumes:
       - ./data/mongo:/data/db            # bind mount: the database files stay in this project folder
@@ -156,19 +148,18 @@ services:
       - "127.0.0.1:${SCANNER_MONGO_PORT:-27018}:27017"   # 27017 belongs to the tokenfrugal Mongo on this machine
     restart: unless-stopped
 
-  # This project's Postgres and Neo4j: copies of the infra's data folders (same credentials), kept in ./data.
-  # The infra's `postgres` / `neo4j` services stay as they are for the other tests. Service names differ on purpose.
+  # This project's Postgres and Neo4j, data kept in ./data. Logins come from .env.
   scanner-postgres:
     image: pgvector/pgvector:pg16
     container_name: market-scanner-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-mri_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?copy POSTGRES_ADMIN_PASSWORD from the infra env into .env}
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:?set POSTGRES_ADMIN_USER in .env (the role that owns ./data/postgres)}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?set POSTGRES_ADMIN_PASSWORD in .env}
       POSTGRES_DB: postgres
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:${SCANNER_POSTGRES_PORT:-5433}:5432"   # 5432 belongs to the infra's mri-postgres
+      - "127.0.0.1:${SCANNER_POSTGRES_PORT:-5433}:5432"   # host port 5433, so a Postgres on host port 5432 is not affected
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
       interval: 10s
@@ -180,7 +171,7 @@ services:
     image: neo4j:5-community
     container_name: market-scanner-neo4j
     environment:
-      NEO4J_AUTH: ${NEO4J_AUTH:?copy NEO4J_AUTH from the infra env into .env}
+      NEO4J_AUTH: ${NEO4J_AUTH:?set NEO4J_AUTH (user/password) in .env}
       NEO4J_server_memory_heap_initial__size: 512m
       NEO4J_server_memory_heap_max__size: 1g
       NEO4J_server_memory_pagecache_size: 512m
@@ -189,7 +180,7 @@ services:
       - ./data/neo4j/logs:/logs
     ports:
       - "127.0.0.1:${SCANNER_NEO4J_HTTP_PORT:-7475}:7474"
-      - "127.0.0.1:${SCANNER_NEO4J_BOLT_PORT:-7688}:7687"   # 7687 belongs to the infra's mri-neo4j
+      - "127.0.0.1:${SCANNER_NEO4J_BOLT_PORT:-7688}:7687"   # host port 7688, so a Neo4j on host port 7687 is not affected
     healthcheck:
       test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$${NEO4J_AUTH#*/}\" 'RETURN 1' || exit 1"]
       interval: 10s
@@ -216,5 +207,4 @@ volumes:
 
 networks:
   default:
-    name: market-infra                   # created by the shared infra up.ps1
-    external: true
+    name: market-scanner                 # this project's own network; no external network is needed

@@ -3,11 +3,12 @@
     python conclude.py                       # every stock in the newest ath_enriched_*.csv
     python conclude.py --symbols INFY,TCS    # just these
     python conclude.py --limit 10            # trial run
-    python conclude.py --url http://vllm:8000   # or set CONCLUDE_URL (compose does)
+    python conclude.py --url http://127.0.0.1:8000   # or set CONCLUDE_URL (compose does)
 
 Reads the enriched CSV and the document store (data/documents.json), builds a
-fact sheet per stock, and asks an OpenAI-compatible server (the compose `vllm`
-service: Qwen/Qwen3-4B-Instruct-2507) to summarise it. Answers are checked
+fact sheet per stock, and asks an OpenAI-compatible server (any LLM server run
+outside this project, e.g. vLLM serving Qwen/Qwen3-4B-Instruct-2507) to summarise
+it. Answers are checked
 against the fact sheet (see scanner/conclude.py) and stored in the document
 store; results are also written to output/ath_conclusions_<date>.csv.
 
@@ -104,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     reachable, detail = llm.health(cfg)
     print(f"Model server {args.url}: {detail}")
     if not reachable:
-        print("Start it with: docker compose up -d vllm  (start.ps1 does this for you)")
+        print("Start your OpenAI-compatible LLM server at that URL (or pass --url / set CONCLUDE_URL).")
         return 1
 
     db = docstore.open_db()

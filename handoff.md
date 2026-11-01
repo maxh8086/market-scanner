@@ -5,6 +5,14 @@ Status: **running end-to-end against live market data.** The data source is
 with 0 skipped, and the corporate-action, instrument-resolution and
 history-depth questions that blocked earlier sessions are all closed.
 
+**2026-11-01: the project no longer references the shared infra project.** The separate
+`Shared-Market-Research-Infra` folder, its `market-infra` network, its `secrets/market_scanner.env`,
+`ensure-infra.ps1`, `stop-infra.ps1`, `scanner/infra.py` (`INFRA_LOCAL` rewriting) and the
+`MARKET_INFRA_DIR` variable are gone. The project runs on its own `scanner-postgres`,
+`scanner-mongo` and `scanner-neo4j` containers and its own `.env` only. The LLM server is an
+external OpenAI-compatible endpoint set by `LLM_URL`. Older sections below that describe the shared
+stack are history.
+
 ## Architecture (settled 2026-09-28)
 
 **Upstox for market data, Kite for portfolio.** Upstox issues a long-lived
@@ -275,11 +283,11 @@ Merged the duplicates into 8 items; the governance sources file note moved to "I
   the expansion filings' text is present in `filings`. The spot-check can now run.
   The container is now a `scanner-mongo` service in `docker-compose.yml` (started with `--auth`, as
   `mri-mongo` is), and the `market_scanner` login from the infra secrets works against it.
-  The scanner now reads the infra's `market_scanner` databases; data previously held under the old project name has not been checked or moved (open item).
-  **Still open:** the scanner reads the infra's `mongo` host (from `market_scanner.env`), so new writes
-  still land in `mri-mongo`. The benchmark and the 2026-09-29/30 conclusions used that store. The
-  infra copy `Shared-Market-Research-Infra\data\mongo` is still mounted by `mri-mongo`, so it is kept
-  until its owner agrees to retire it.
+  The scanner read the former shared stack's `market_scanner` databases until 2026-11-01; data previously held under the old project name has not been checked or moved (open item).
+  **Was still open until 2026-11-01:** the scanner read the former shared stack's `mongo` host (from `market_scanner.env`), so new writes
+  still landed in `mri-mongo`. The benchmark and the 2026-09-29/30 conclusions used that store. The
+  infra copy `Shared-Market-Research-Infra\data\mongo` was still mounted by `mri-mongo`. Since 2026-11-01
+  the scanner uses only `scanner-mongo`, so that copy is no longer read by this project.
   **Mongo tests.** `tests/test_mongo.py` authenticates with `SCANNER_MONGO_USER` and `SCANNER_MONGO_PASSWORD` from `.env` against the project Mongo on `127.0.0.1:27018`, and runs (16 tests, previously skipped).
   They need a one-time grant: run `scripts/grant_test_dbs.js` as the Mongo admin (the admin login name is in `.env` as `SCANNER_MONGO_ADMIN`; the password is not stored in the repo) inside the `market-scanner-mongo` container with
   `docker cp scripts/grant_test_dbs.js market-scanner-mongo:/tmp/grant_test_dbs.js`, then `docker exec -it market-scanner-mongo mongosh -u <admin> --authenticationDatabase admin --file /tmp/grant_test_dbs.js`.
@@ -844,7 +852,10 @@ Architecture rule from the owner: every component is a container under the singl
 - `scanner/ath.py` remains import-clean (no I/O, no broker dependency) and
   can be reused as-is as a pure ATH/bucketing library.
 
-## Shared infrastructure (added 2026-09-30, supersedes the neo4j/vllm details above)
+## Former shared infrastructure (added 2026-09-30; removed from the project 2026-11-01)
+
+Superseded on 2026-11-01: the project no longer uses this stack (see the note at the top). The
+bullets below are kept as history.
 
 Postgres, MongoDB, Neo4j, the vLLM server and the model weights moved out of this project into
 `C:\Users\vaibh\Downloads\Projects\Shared-Market-Research-Infra` (see its README) so other projects
@@ -899,8 +910,8 @@ pipeline is about 30 minutes.
 - Postgres returns NUMERIC as `Decimal`. The read boundary in
   `scanner/marketdata/postgres_backend.py` converts to float. The offline tests use
   sqlite/tinydb and cannot catch this class of bug.
-- The infra's `up.ps1` and `down.ps1` change the caller's working directory; `start.ps1` wraps them
-  in Push/Pop-Location.
+- The former shared stack's `up.ps1` and `down.ps1` changed the caller's working directory; `start.ps1` wrapped them
+  in Push/Pop-Location. Both calls were removed on 2026-11-01.
 - The pipeline picks its input as the newest `output/` file by name. Never rename an output with a
   suffix (a `_runA` suffix sorted after the new file and made run B enrich the wrong scan). Move old
   files into a subfolder instead.
@@ -918,7 +929,7 @@ pipeline is about 30 minutes.
    export). Affected: `enrich.py`, `conclude.py`, `final_report.py`, `crosscheck.py`, `portfolio.py`,
    `bench_models.py`, `record_run.py`, `scanner/collect/sources.py`, and `start.ps1`'s "newest file".
 2. Confirm the final Cost center and Master configuration wireframes with the user.
-3. `git init` in `Shared-Market-Research-Infra`; test `stop.ps1` end to end; decide how the home
+3. (`git init` in the former shared stack folder was dropped on 2026-11-01.) Test `stop.ps1` end to end; decide how the home
    table's "scanned" count is shown; stop `mongo._ensure_indexes` swallowing auth failures; surface
    container stdout in the run logs.
 
@@ -1085,13 +1096,13 @@ Parked until the tokenfrugal changes are finished. Nothing in this repo has chan
 
 **Why this item.** It is the pilot for the EGM planning workflow. The `_create_index` auth fix that was also on the list is already in the uncommitted `scanner/mongo.py`, so it was not used.
 
-**State.** `start.ps1` starts Docker containers, such as `mri-vllm`, and logs only its own steps. When a container fails, the cause is visible only through `docker logs`, which is not written to `logs/`.
+**State.** `start.ps1` starts Docker containers (until 2026-11-01 this included `mri-vllm` from the former shared stack), and logs only its own steps. When a container fails, the cause is visible only through `docker logs`, which is not written to `logs/`.
 
 **Work plan once resumed.** Use a git worktree from committed HEAD `fe4d56b`, so the uncommitted changes stay untouched. Run `egm:egm-brainstorm` (the plugin is now installed and registered), then write the design, then have the local builder do the tasks.
 
 **Open questions for the user (answer in chat, one at a time):**
 1. When a container fails, what must the log show: its stdout only, or also start time and exit code?
-2. Should every container that `start.ps1` launches be captured, or only the ones the pipeline waits on, such as `mri-vllm`?
+2. Should every container that `start.ps1` launches be captured, or only the ones the pipeline waits on (the database containers now, and before 2026-11-01 `mri-vllm`)?
 3. vLLM output can be long. Should the run log keep everything, or only the tail when a container fails?
 4. How will you know the pilot worked?
 5. Brainstorm reviewers (decided 2026-10-27): use the EGM default, six Goldfish lenses plus the synthesizer. The user may reduce this later to two lenses plus one synthesizer. The CLAUDE.md section now says the same.

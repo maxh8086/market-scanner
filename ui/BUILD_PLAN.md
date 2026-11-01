@@ -70,12 +70,12 @@ Approved decisions (from the user, 2026-09-30):
 ## Environment for every agent
 
 - Project root: `C:\Users\vaibh\Downloads\Projects\Market-Scanner`. Windows, Git Bash. Python: `.venv/Scripts/python.exe` (3.10 on host; the Docker images are 3.13, so write code valid for both).
-- Postgres, MongoDB and Neo4j are already running (shared infra, project `market_scanner`). Load the logins and reach them from the host like this:
+- Postgres, MongoDB and Neo4j are this project's own containers (`scanner-postgres`, `scanner-mongo`, `scanner-neo4j`, host ports 5433, 27018 and 7688). Load the logins from `.env` and reach them from the host like this:
   ```bash
-  set -a; . ../Shared-Market-Research-Infra/secrets/market_scanner.env; set +a
-  export PYTHONIOENCODING=utf-8 INFRA_LOCAL=1
+  set -a; . ./.env; set +a
+  export PYTHONIOENCODING=utf-8
   ```
-  `INFRA_LOCAL=1` makes `scanner/infra.py` rewrite the in-network hostnames to `127.0.0.1` ports. Use `127.0.0.1`, never `localhost` (IPv6 lookups stall for minutes on this machine).
+  The host values in `.env` point at `127.0.0.1` and those ports. Use `127.0.0.1`, never `localhost` (IPv6 lookups stall for minutes on this machine).
 - **Never print, log or commit a password or DSN.** Do not read `.env` (Upstox/Kite keys) at all.
 - Already installed in the venv: psycopg 3, pymongo, neo4j, fastapi, uvicorn, croniter, tinydb, pandas. They are listed in `requirements.txt`.
 - Postgres helpers already exist: `scanner/pg/db.py` (`connect()`, `transaction()`, `available()`), `scanner/pg/migrate.py` (applies `db/migrations/*.sql` once each, records a hash). `001_core.sql` is applied and **frozen**: never edit an applied migration, add a new one.
@@ -83,7 +83,7 @@ Approved decisions (from the user, 2026-09-30):
   `PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe -m unittest discover -s tests -t . -q`
   `tests/__init__.py` forces `MARKETDATA_BACKEND=sqlite` and `DOCSTORE_BACKEND=tinydb`, so unit tests never touch the shared databases. Tests that need a real database must create a throwaway Postgres schema or Mongo database and drop it afterwards, and must skip cleanly when the database is unreachable.
 - Match the surrounding code: comment density, naming, idiom. Python only for backend code. No emojis. British/neutral plain English in comments.
-- Do **not** run `docker compose build`, `start.ps1`, the full pipeline, or anything that spends Upstox quota or calls NSE for more than a few requests while testing. Do not run the vLLM stack. Do not restart or reconfigure the shared infra containers.
+- Do **not** run `docker compose build`, `start.ps1`, the full pipeline, or anything that spends Upstox quota or calls NSE for more than a few requests while testing. Do not run the LLM server. Do not restart or reconfigure this project's database containers.
 - Do not `git commit`, `git push`, or change git state. The lead commits.
 - Do not edit `docker-compose.yml`, `start.ps1`, `stop.ps1`, `README.md`, `requirements.txt`, `db/migrations/001_core.sql`, `tests/__init__.py`. If you need a change there, say exactly what in your report and the lead applies it. If you need a new Python package, say which.
 

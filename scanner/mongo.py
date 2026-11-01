@@ -20,7 +20,7 @@ from urllib.parse import quote
 from pymongo import MongoClient, errors
 from pymongo.collection import Collection
 
-from scanner import infra, retention
+from scanner import retention
 
 
 def _now() -> str:
@@ -140,8 +140,8 @@ def _redact(uri: str) -> str:
 def _uri_from_env(db_name: str) -> str:
     """Build the URI from SCANNER_MONGO_* parts. Only these names are read.
 
-    The generic MONGO_* names are deliberately ignored: the infra's env files set them
-    to another project's database. User and password are percent-encoded, so characters
+    The generic MONGO_* names are deliberately ignored: they may point at another project's
+    database. User and password are percent-encoded, so characters
     such as '@', ':' or '/' in the password are safe.
     """
     user = os.environ.get("SCANNER_MONGO_USER")
@@ -164,9 +164,6 @@ def open_db(uri: Optional[str] = None, db_name: Optional[str] = None) -> MongoDB
     """
     db_name = db_name or os.environ.get("SCANNER_MONGO_DB", "market_scanner")
     uri = uri or _uri_from_env(db_name)
-
-    # Localize hostnames when INFRA_LOCAL is set
-    uri = infra.localize(uri)
 
     client = MongoClient(uri, serverSelectionTimeoutMS=5000)
     try:

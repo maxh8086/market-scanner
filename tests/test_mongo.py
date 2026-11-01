@@ -34,7 +34,7 @@ MONGO_URI = _build_mongo_uri()
 def _mongo_available() -> bool:
     """True when MongoDB accepts writes to a throwaway database.
 
-    The shared infra's project user may only write to its own database, so a login
+    A login may only write to its own database, so a login
     without rights to create test_* databases makes this return False and the tests skip.
     Missing credentials or an unreachable server also return False.
     """

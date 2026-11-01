@@ -46,7 +46,7 @@ class TestOpenDbEnvNames(unittest.TestCase):
             self._open({"MONGO_URI": "mongodb://x:y@h:27017", "MONGO_DB": "d"})
 
     def test_scanner_names_win_over_generic(self):
-        uri, _ = self._open(dict(SCANNER_ENV, MONGO_USER="infra", MONGO_PASSWORD="infra"))
+        uri, _ = self._open(dict(SCANNER_ENV, MONGO_USER="other", MONGO_PASSWORD="other"))
         self.assertEqual(urlsplit(uri).username, "market_scanner_app")
 
     def test_missing_password_raises(self):

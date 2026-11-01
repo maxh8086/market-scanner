@@ -3,7 +3,7 @@
 Resumable: a symbol whose latest `ok` pull_log row has last_date within
 SKIP_WITHIN_DAYS of today is skipped. A symbol that already has candles is
 fetched only after its newest stored date. Writes only to the SQLite file
-given by --db; never touches data/history.db or any Postgres/infra DB.
+given by --db; never touches data/history.db or any Postgres database.
 
 Usage (from the project root):
     .venv/Scripts/python.exe scripts/pull_upstox_5y.py --symbols RELIANCE,HAL

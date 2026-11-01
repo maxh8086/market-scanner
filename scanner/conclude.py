@@ -21,8 +21,8 @@ answer and none of them trusts the model:
 The conclusion never changes the ranking. It is a reading aid stored beside the
 data, keyed by (symbol, as_of), and it is not investment advice.
 
-Backend: an OpenAI-compatible chat endpoint. The compose `vllm` service serves
-Qwen/Qwen3-4B-Instruct-2507 that way, but any such server works.
+Backend: an OpenAI-compatible chat endpoint. A vLLM server serving
+Qwen/Qwen3-4B-Instruct-2507 works that way, as does any such server.
 """
 
 from __future__ import annotations

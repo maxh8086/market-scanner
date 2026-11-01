@@ -104,39 +104,36 @@ seconds.
 ## Docker pipeline
 
 The analytical engine runs as containers of this project's `docker-compose.yml`; the only thing on
-the host is `start.ps1` (and `stop.ps1`). The databases (Postgres, MongoDB, Neo4j), the vLLM server
-and the model weights are **not** part of this project: they live in the shared
-`Shared-Market-Research-Infra` folder next to it (override with `MARKET_INFRA_DIR`), which
-`start.ps1` brings up and provisions (`up.ps1 -Project market_scanner -Llm`), and this project's
-containers join its `market-infra` network. Credentials come from `.env` at runtime and are never
-baked into an image. One command runs the whole pipeline, no switches:
+the host is `start.ps1` (and `stop.ps1`). The project is self-contained: its own containers are
+`scanner-postgres`, `scanner-mongo` and `scanner-neo4j` (data kept in `./data`), on a network
+named `market-scanner`. Credentials come from this project's `.env` at runtime and are never
+baked into an image. The LLM server (an OpenAI-compatible endpoint, e.g. vLLM) is **not** started
+by this project; point `start.ps1` at it with `LLM_URL` (default `http://host.docker.internal:8000`).
+One command runs the whole pipeline, no switches:
 
 ```powershell
-./start.ps1                                   # full run (needs an NVIDIA GPU)
+./start.ps1                                   # full run (needs an NVIDIA GPU for the LLM server)
 ./start.ps1 -Symbols "INFY,TCS" -SkipPortfolio   # smaller run (not recorded in Postgres)
 ./start.ps1 -SkipServices                     # do not start the UI and collector afterwards
-./ensure-infra.ps1                            # start the shared infra only if it is not already running
-./stop.ps1                                    # stop the UI, collector and this project; asks whether to stop the shared infra too
-./stop.ps1 -KeepInfra                         # never asks, leaves the shared infra running (-StopInfra stops it without asking)
-./stop-infra.ps1                              # stop the shared infra (Postgres, MongoDB, Neo4j, vLLM)
+./stop.ps1                                    # stop every container of this project (data/, output/, logs/ untouched)
 ```
 
-`start.ps1` first runs `ensure-infra.ps1`: if the databases are already up it leaves them alone,
-otherwise it starts them through the infra's own `up.ps1`. `stop.ps1 -Prune` also removes this
-project's images; `-PurgeModels` also deletes its named volumes (the Laya model cache).
+`start.ps1` starts this project's databases (`docker compose up -d --wait` on the three database
+services) before the scan. `stop.ps1 -Prune` also removes this project's images;
+`-PurgeModels` also deletes its named volumes (the Laya model cache).
 
 | Stage | Container | What it does |
 |---|---|---|
 | scan | `scanner` | Upstox prices/history, ATH buckets |
-| enrich | `enrich` + shared `vllm` | NSE filings, fundamentals, AI extraction of order/capacity/guidance figures |
+| enrich | `enrich` + LLM server at `LLM_URL` | NSE filings, fundamentals, AI extraction of order/capacity/guidance figures |
 | forecast | `enrich-timesfm` | TimesFM revenue/volatility forecasts (CPU) |
-| graph | shared `neo4j` + `graph` | loads filings, extractions, fundamentals; reads back customer facts |
-| conclude | `conclude` + shared `vllm` | one short, checked conclusion per stock |
+| graph | `scanner-neo4j` + `graph` | loads filings, extractions, fundamentals; reads back customer facts |
+| conclude | `conclude` + LLM server | one short, checked conclusion per stock |
 | purge | `graph` | deletes expired, processed data (see Retention) |
 | report | `report` | `output/ath_report_YYYY-MM-DD.xlsx` |
 | cross-check, portfolio | `crosscheck`, `portfolio` | independent price check, Kite holdings overlay |
 
-**One model, two jobs.** The shared `vllm` serves `Qwen/Qwen3-4B-Instruct-2507` (4-bit MXFP4
+**One model, two jobs.** The external LLM server (vLLM in the tested setup) serves `Qwen/Qwen3-4B-Instruct-2507` (4-bit MXFP4
 weights, FP8 KV cache, about 4.5 GB of GPU memory) for both extraction and
 conclusions. Extraction uses strict JSON schemas and the model only *copies* a figure
 and its scale word ("crore", "million"); code does the rupee arithmetic, because a 4-bit
@@ -145,16 +142,16 @@ acceptance test for that (PASS at 95% agreement with the regex on 40 filings, th
 90%). The stance (CONSTRUCTIVE / MIXED / CAUTIOUS) comes from a fixed scorecard, not the
 model; the model only writes the prose, checked against the stock's fact sheet. It is a
 reading aid over stored data, never investment advice, and never changes the ranking.
-`python bench_models.py` compares conclusion models (see `handoff.md`). Weights are read from the shared
-`models/huggingface` folder (`Shared-Market-Research-Infra\models.ps1` downloads them, about 8 GB).
+`python bench_models.py` compares conclusion models (see `handoff.md`); it needs `BENCH_VLLM_IMAGE`
+set to a vLLM server image and caches weights in `data/huggingface`. The LLM server's own weights
+are managed outside this project.
 
 **The graph.** Neo4j holds Company, Filing (with its text), Extraction, Counterparty,
 Conclusion and Fundamentals nodes. It gives the conclusions facts no single filing
 shows: how many distinct customers, repeat customers, other companies selling to the
 same customer (`graph.*` keys in the fact sheet). TinyDB (`data/documents.json`) stays
 the system of record and the graph can always be rebuilt from it; if Neo4j is down the
-run continues without graph facts. Its login comes from the shared
-infra's `secretsth_scanner.env` (generated, git-ignored); the browser UI is on http://127.0.0.1:7474 (loopback only).
+run continues without graph facts. Its login comes from `.env` (`NEO4J_AUTH`); the Neo4j browser is on http://127.0.0.1:7475 (loopback only).
 
 **Retention.** Every stored record carries `expires_at` (its date plus `years`). The
 purge step deletes a record only when it is past that date *and processed* (a filing

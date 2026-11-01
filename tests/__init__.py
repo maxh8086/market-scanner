@@ -1,6 +1,6 @@
 """Unit tests run against local stand-ins, never against the shared databases.
 
-Set before any scanner module is imported, so a shell that has the infra secrets loaded
+Set before any scanner module is imported, so a shell that has the project's .env loaded
 cannot make a test write into the real Postgres or MongoDB.
 """
 import os

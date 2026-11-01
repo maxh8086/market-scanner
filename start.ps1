@@ -3,14 +3,13 @@
 Run the whole Market Scanner pipeline in Docker, start to finish, with no extra switches.
 
 .DESCRIPTION
-scan -> enrich (filings, fundamentals, AI extraction on vLLM) -> TimesFM forecasts ->
+scan -> enrich (filings, fundamentals, AI extraction on the LLM server) -> TimesFM forecasts ->
 Neo4j graph load -> per-stock conclusions -> graph purge of expired data -> final
 workbook -> cross-check -> portfolio -> record the run in Postgres -> start the UI and the
 collector.
 
-The shared infrastructure is checked by ensure-infra.ps1 first: if Postgres, MongoDB and Neo4j
-are already running it is left alone, otherwise it is started through the infra's own up.ps1.
-stop.ps1 stops only this project; stop-infra.ps1 stops the infrastructure.
+Postgres, MongoDB and Neo4j are this project's own containers (scanner-postgres, scanner-mongo,
+scanner-neo4j); this script starts them with the rest of the compose services. stop.ps1 stops them.
 
 Each run gets a run id. Its row is created right after the scan (so every LLM call can be
 tagged with it), GPU power is sampled while the model is loaded, and at the end the snapshots,
@@ -22,15 +21,15 @@ Every component is its own container under one docker-compose.yml; this script i
 only thing that runs on the host. No scheduler; you trigger it. data/, output/ and
 logs/ are bind-mounted from this folder, so caches survive between runs.
 
-Credentials: .env (Upstox/Kite) is read by docker compose at runtime; this script only
-checks that it exists and never opens it. The databases, Neo4j and the vLLM server are not
-part of this project: they live in ..\Shared-Market-Research-Infra (override with the
-MARKET_INFRA_DIR environment variable), which this script starts first and which creates this
-project's database logins in its secrets\market_scanner.env.
+Credentials: .env (Upstox/Kite and the database logins) is read by docker compose at runtime;
+this script only checks that it exists and never opens it.
 
-Needs an NVIDIA GPU with the container runtime (vLLM runs Qwen3-4B-Instruct-2507).
-The model weights (Qwen3-4B, TimesFM) live in the shared infra's models\huggingface folder;
-run its models.ps1 once if they are missing.
+The LLM server is not started by this project. It is an OpenAI-compatible endpoint given by the
+LLM_URL environment variable (default http://host.docker.internal:8000, the host's port 8000).
+Set LLM_URL before running this script if the server is elsewhere. Enrichment stops with a
+clear message if the endpoint is unreachable.
+
+The TimesFM weights are kept in data\huggingface, which is inside this project.
 
 Data retention (how long stored documents are kept before the purge step deletes them)
 is set in config/retention.json -- 3 years by default, "purge": false turns it off.
@@ -60,10 +59,9 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-Location -Path $PSScriptRoot
 
-$ModelName = 'qwen3-4b'                 # SERVED_NAME in the shared infra's vllm/Dockerfile
-$InfraDir  = if ($env:MARKET_INFRA_DIR) { $env:MARKET_INFRA_DIR } else { Join-Path (Split-Path $PSScriptRoot -Parent) 'Shared-Market-Research-Infra' }
-$env:MARKET_INFRA_DIR = $InfraDir       # docker-compose.yml reads it for the env_file and weights paths
-$VllmUrl   = 'http://vllm:8000'         # as seen from the other containers
+$ModelName = 'qwen3-4b'                 # model name the external OpenAI-compatible LLM server serves
+# External LLM endpoint (not part of this project). Override with LLM_URL in the shell.
+$VllmUrl   = if ($env:LLM_URL) { $env:LLM_URL } else { 'http://host.docker.internal:8000' }
 $RunId     = [guid]::NewGuid().ToString()
 $env:RUN_ID = $RunId                    # docker-compose.yml passes it to scanner, enrich and conclude
 $RecordRun = -not $Symbols              # a subset run must not replace the day's full run
@@ -162,10 +160,6 @@ if (-not (Test-Path -LiteralPath '.env')) {
     Stop-Pipeline ".env not found. Copy .env.example to .env and fill in your credentials."
 }
 Write-Host ".env present."
-# Shared infrastructure: Postgres, MongoDB, Neo4j and the vLLM server (separate project).
-if (-not (Test-Path -LiteralPath (Join-Path $InfraDir 'up.ps1'))) {
-    Stop-Pipeline "Shared infrastructure not found at $InfraDir. Set MARKET_INFRA_DIR or restore that folder."
-}
 $profiles = @()
 if ($WithLaya) { $profiles += @('--profile', 'laya') }
 
@@ -183,12 +177,9 @@ if ($WithLaya) {
     Write-Host "Laya is healthy on http://127.0.0.1:8000" -ForegroundColor Green
 }
 
-# Skipped when the databases are already running; vLLM is started without waiting so it
-# loads its weights (~2-3 minutes) while the scan runs.
-Write-Stage "Shared infrastructure (Postgres, MongoDB, Neo4j, vLLM)"
-& (Join-Path $PSScriptRoot 'ensure-infra.ps1') -Llm
-Set-Location -Path $PSScriptRoot   # the infra's up.ps1 changes directory; compose must run in this project
-if ($LASTEXITCODE -ne 0) { Stop-Pipeline "Could not start the shared infrastructure (see the messages above)." }
+Write-Stage "Databases (Postgres, MongoDB, Neo4j)"
+$code = Invoke-Docker @('compose', 'up', '-d', '--wait', 'scanner-postgres', 'scanner-mongo', 'scanner-neo4j')
+if ($code -ne 0) { Stop-Pipeline "Could not start the project databases (see the messages above)." }
 
 Write-Stage "Scan"
 $scanArgs = @('compose', 'run', '--rm', 'scanner')
@@ -223,18 +214,12 @@ if ($RecordRun) {
     Write-Host "Subset run (-Symbols): not recorded in Postgres." -ForegroundColor Yellow
 }
 
-if (-not $NoStocks) {
-    Write-Stage "Waiting for vLLM"
-    if (-not (Wait-Healthy 'mri-vllm' 30)) { Stop-Pipeline "vLLM did not become healthy within 30 minutes. See: docker logs mri-vllm" }
-    Write-Host "vLLM is healthy on http://127.0.0.1:8001" -ForegroundColor Green
-}
-
 if ($NoStocks) {
     Write-Host "Enrichment skipped: no stocks in range."
 } elseif ($SkipEnrich) {
     Write-Host "Enrichment skipped."
 } else {
-    Write-Stage "Enrich (filings, fundamentals, AI extraction on vLLM)"
+    Write-Stage "Enrich (filings, fundamentals, AI extraction on the LLM server at $VllmUrl)"
     $enrichArgs = @('compose', 'run', '--rm', 'enrich', '--all',
                     '--llm-url', $VllmUrl, '--llm-model', $ModelName, '--llm-api', 'openai', '--llm-workers', '4')
     $code = Measure-Stage 'enrich' { Invoke-Docker $enrichArgs }
@@ -269,9 +254,6 @@ if ($NoStocks) {
 }
 
 Stop-GpuSampler
-Write-Stage "Freeing the GPU (the shared databases keep running for other projects)"
-& (Join-Path $InfraDir 'down.ps1') -Llm | Out-Null
-Set-Location -Path $PSScriptRoot
 
 if ($haveEnriched) {
     Write-Stage "Final workbook (sheet 1: every stock, sheet 2: summary)"
@@ -335,4 +317,4 @@ Get-ChildItem -LiteralPath 'output' -File -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending | Select-Object -First 8 |
     ForEach-Object { Write-Host ("  output/{0}" -f $_.Name) }
 Write-Host ""
-Write-Host "Finished. ./stop.ps1 stops this project only; ./stop-infra.ps1 stops the shared databases." -ForegroundColor Green
+Write-Host "Finished. ./stop.ps1 stops this project's containers." -ForegroundColor Green

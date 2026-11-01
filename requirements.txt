@@ -19,7 +19,7 @@ pypdf>=4.0.0           # text layer out of NSE filing PDFs
 # never at install time.
 # laya>=0.3.21
 
-# Shared databases (Shared-Market-Research-Infra) and the UI service
+# Database clients (this project's own Postgres and MongoDB) and the UI service
 psycopg[binary]>=3.2   # Postgres: runs, snapshots, market data, settings
 pymongo>=4.8           # MongoDB: filings, extractions, conclusions, fundamentals
 fastapi>=0.115         # ui/ service
