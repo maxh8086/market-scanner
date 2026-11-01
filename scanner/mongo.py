@@ -147,7 +147,11 @@ def _uri_from_env(db_name: str) -> str:
     user = os.environ.get("SCANNER_MONGO_USER")
     password = os.environ.get("SCANNER_MONGO_PASSWORD")
     if not user or not password:
-        raise RuntimeError("SCANNER_MONGO_USER and SCANNER_MONGO_PASSWORD must be set in .env")
+        raise RuntimeError(
+            "MongoDB is selected (DOCSTORE_BACKEND unset or mongo) but SCANNER_MONGO_USER and "
+            "SCANNER_MONGO_PASSWORD are not set. Either set them in .env and start the project's "
+            "Mongo (start.ps1, or docker compose up -d --wait scanner-mongo), or for an offline run "
+            "set DOCSTORE_BACKEND=tinydb.")
     host = os.environ.get("SCANNER_MONGO_HOST", "127.0.0.1:27018")
     auth_source = os.environ.get("SCANNER_MONGO_AUTH_SOURCE", db_name)
     return (

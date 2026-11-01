@@ -101,5 +101,40 @@ class DocstoreBackendDefaultTests(unittest.TestCase):
         self.assertIn("tinydb", str(ctx.exception))
 
 
+class MongoUnconfiguredErrorTests(unittest.TestCase):
+    """Mongo selected by default but no SCANNER_MONGO_* credentials: fails before any connection."""
+
+    def test_missing_credentials_message_names_variables_and_both_exits(self):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+                mock.patch("scanner.mongo.MongoClient") as client:
+            from scanner import mongo
+            with self.assertRaises(RuntimeError) as ctx:
+                mongo.open_db()
+            client.assert_not_called()
+        msg = str(ctx.exception)
+        self.assertIn("SCANNER_MONGO_USER", msg)
+        self.assertIn("SCANNER_MONGO_PASSWORD", msg)
+        self.assertIn("start.ps1", msg)
+        self.assertIn("DOCSTORE_BACKEND=tinydb", msg)
+
+    def test_unset_docstore_backend_hits_the_same_message(self):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+                mock.patch("scanner.mongo.MongoClient") as client:
+            os.environ.pop("DOCSTORE_BACKEND", None)
+            with self.assertRaises(RuntimeError) as ctx:
+                docstore.open_db()
+            client.assert_not_called()
+        self.assertIn("SCANNER_MONGO_USER", str(ctx.exception))
+
+    def test_message_never_contains_a_credential_value(self):
+        env = {"SCANNER_MONGO_USER": "svc-login-7731", "SCANNER_MONGO_PASSWORD": ""}
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch("scanner.mongo.MongoClient"):
+            from scanner import mongo
+            with self.assertRaises(RuntimeError) as ctx:
+                mongo.open_db()
+        self.assertNotIn("svc-login-7731", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

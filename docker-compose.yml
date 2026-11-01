@@ -105,7 +105,7 @@ services:
     image: ath-enrich
     build: {context: ., dockerfile: docker/enrich/Dockerfile}
     entrypoint: ["python", "conclude.py"]
-    env_file:                            # MONGO_URI for conclusions, PG_* to record LLM calls (from .env)
+    env_file:                            # SCANNER_MONGO_* for conclusions, POSTGRES_* to record LLM calls (from .env)
       - .env
     environment:
       <<: *scanner-db-env

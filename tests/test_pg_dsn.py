@@ -62,5 +62,26 @@ class TestDsnGuard(unittest.TestCase):
         self.assertNotIn("postgresql://", msg)
 
 
+class TestUnconfiguredPostgres(unittest.TestCase):
+    """No POSTGRES_* at all: the error names the missing key and both exits, and connect() never dials."""
+
+    def test_unconfigured_message_names_key_and_both_exits(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            _dsn({})
+        msg = str(ctx.exception)
+        self.assertIn("POSTGRES_HOST", msg)
+        self.assertIn("POSTGRES_* values in .env", msg)
+        self.assertIn("scripts/ensure_postgres.ps1", msg)
+        self.assertIn("MARKETDATA_BACKEND=sqlite", msg)
+
+    def test_connect_fails_before_dialing(self):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+                mock.patch("scanner.pg.db.psycopg.connect") as dial:
+            with self.assertRaises(RuntimeError) as ctx:
+                db.connect()
+            dial.assert_not_called()
+        self.assertIn("Postgres is not configured", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

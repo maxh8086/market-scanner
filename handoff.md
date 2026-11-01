@@ -15,7 +15,7 @@ stack are history.
 
 **Postgres preflight.** `scripts/ensure_postgres.ps1` starts the project Postgres and waits until healthy; `start.ps1` calls it first. Tests are not meant to start containers.
 
-**Backend defaults (no silent local fallback).** Unset `MARKETDATA_BACKEND` means Postgres and unset `DOCSTORE_BACKEND` means Mongo; sqlite and tinydb run only when set explicitly, and an outage fails loudly. Nothing copies local-file data back. Follow-ups: `intensity.load_announcements` still reads `factors.db` directly, and `fetch_metadata` and `pull_log` have no Postgres table.
+**Backend defaults (no silent local fallback).** Unset `MARKETDATA_BACKEND` means Postgres and unset `DOCSTORE_BACKEND` means Mongo; sqlite and tinydb run only when set explicitly, and an outage fails loudly. Nothing copies local-file data back. Unconfigured Postgres or Mongo now raises a RuntimeError that names the variables and the offline escape (`MARKETDATA_BACKEND=sqlite`, `DOCSTORE_BACKEND=tinydb`). Offline `ath_scan.py` runs need `MARKETDATA_BACKEND=sqlite`, and `bench_extract.py`, `bench_models.py` and host-side `graph_sync.py` need `DOCSTORE_BACKEND=tinydb` or Mongo credentials. Follow-ups: `intensity.load_announcements` still reads `factors.db` directly, and `fetch_metadata` and `pull_log` have no Postgres table. Open risk: `ath_scan.py` catches history errors per symbol, so an unreachable Postgres turns into skipped rows in `logs/skipped.csv` rather than a failed run.
 
 **Test counts:** `tests/test_import_sqlite.py` skips (counted as skipped) unless Postgres is reachable and `data/history.db` exists.
 

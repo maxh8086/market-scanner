@@ -50,8 +50,9 @@ def dsn(env: Optional[dict] = None) -> str:
                 f"dbname={env['POSTGRES_DB']} user={env['POSTGRES_USER']} "
                 f"password={env['POSTGRES_PASSWORD']}")
     except KeyError as exc:
-        raise RuntimeError(f"Postgres is not configured: {exc.args[0]} is unset "
-                           "(set the POSTGRES_* values in .env)") from None
+        raise RuntimeError(f"Postgres is not configured: {exc.args[0]} is unset. Set the POSTGRES_* "
+                           "values in .env and run scripts/ensure_postgres.ps1 to start the project's "
+                           "Postgres, or for an offline market-data run set MARKETDATA_BACKEND=sqlite.") from None
 
 
 def available(env: Optional[dict] = None) -> bool:

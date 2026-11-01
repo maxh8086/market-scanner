@@ -95,6 +95,14 @@ python ath_scan.py --rebuild        # re-download constituents and ALL history
 python ath_scan.py --refresh-history RELIANCE,TCS   # re-download history for just these symbols
 ```
 
+Candles come from Postgres by default (`MARKETDATA_BACKEND` unset). Without `POSTGRES_*` in `.env`, or with Postgres down, every symbol is skipped (see `logs/skipped.csv`). Start Postgres with `scripts\ensure_postgres.ps1`. For a run against the local SQLite cache (`data/history.db`, `data/factors.db`) instead, set the backend explicitly first (Upstox quotes are still fetched live):
+
+```powershell
+$env:MARKETDATA_BACKEND = "sqlite"; .venv\Scripts\python.exe ath_scan.py --symbols INFY,TCS
+```
+
+The document-store scripts (`bench_extract.py`, `bench_models.py`, host-side `graph_sync.py`) default to Mongo (`DOCSTORE_BACKEND` unset). They do not read `.env`, so export `SCANNER_MONGO_USER` and `SCANNER_MONGO_PASSWORD` in the shell (same values as in `.env`) and have Mongo running. To use the old TinyDB file (`data/documents.json`) instead, set `$env:DOCSTORE_BACKEND = "tinydb"` for that command. `graph_sync.py` also runs in its container: `docker compose run --rm graph purge --dry-run`.
+
 First run: ~750 stocks × ~3 history calls each (Upstox serves ~a decade of
 daily candles per request, so a full 26-year history is 3 requests, not
 13). Measured at ~7 req/sec sustained ⇒ **roughly 5 minutes**. Later runs
@@ -149,8 +157,9 @@ are managed outside this project.
 **The graph.** Neo4j holds Company, Filing (with its text), Extraction, Counterparty,
 Conclusion and Fundamentals nodes. It gives the conclusions facts no single filing
 shows: how many distinct customers, repeat customers, other companies selling to the
-same customer (`graph.*` keys in the fact sheet). TinyDB (`data/documents.json`) stays
-the system of record and the graph can always be rebuilt from it; if Neo4j is down the
+same customer (`graph.*` keys in the fact sheet). MongoDB is the document store (`DOCSTORE_BACKEND`
+unset means mongo; `data/documents.json` is the old TinyDB file, read only by `scanner.mongo_import`
+and by runs that set `DOCSTORE_BACKEND=tinydb`), and the graph can always be rebuilt from it; if Neo4j is down the
 run continues without graph facts. Its login comes from `.env` (`NEO4J_AUTH`); the Neo4j browser is on http://127.0.0.1:7475 (loopback only).
 
 **Retention.** Every stored record carries `expires_at` (its date plus `years`). The
