@@ -15,8 +15,12 @@ try:
 except Exception:
     POSTGRES_AVAILABLE = False
 
+# Same relative path the importer reads; the file is not in every checkout
+HISTORY_DB_EXISTS = Path("data/history.db").exists()
+
 
 @unittest.skipUnless(POSTGRES_AVAILABLE, "Postgres is not reachable")
+@unittest.skipUnless(HISTORY_DB_EXISTS, "data/history.db is missing (the importer's input file; not in this checkout)")
 class TestImportSQLiteToPostgres(unittest.TestCase):
     """Tests for idempotent SQLite to Postgres import."""
 

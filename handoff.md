@@ -15,6 +15,8 @@ stack are history.
 
 **Postgres preflight.** `scripts/ensure_postgres.ps1` starts the project Postgres and waits until healthy; `start.ps1` calls it first. Tests are not meant to start containers.
 
+**Test counts:** `tests/test_import_sqlite.py` skips (counted as skipped) unless Postgres is reachable and `data/history.db` exists.
+
 ## Architecture (settled 2026-09-28)
 
 **Upstox for market data, Kite for portfolio.** Upstox issues a long-lived
