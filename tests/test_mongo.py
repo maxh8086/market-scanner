@@ -58,6 +58,7 @@ def _mongo_available() -> bool:
 SKIP_MONGO = not _mongo_available()
 
 
+@unittest.skipIf(SKIP_MONGO, "MongoDB not reachable")
 class MongoDBBackendTests(unittest.TestCase):
     """Tests using MongoDB backend (skips if unreachable)."""
 

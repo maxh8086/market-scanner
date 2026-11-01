@@ -292,6 +292,10 @@ Merged the duplicates into 8 items; the governance sources file note moved to "I
   They need a one-time grant: run `scripts/grant_test_dbs.js` as the Mongo admin (the admin login name is in `.env` as `SCANNER_MONGO_ADMIN`; the password is not stored in the repo) inside the `market-scanner-mongo` container with
   `docker cp scripts/grant_test_dbs.js market-scanner-mongo:/tmp/grant_test_dbs.js`, then `docker exec -it market-scanner-mongo mongosh -u <admin> --authenticationDatabase admin --file /tmp/grant_test_dbs.js`.
   It creates role `scannerTestDbs` (readWrite-style rights, incl. dropDatabase, on `test_market_scanner_probe`, `test_market_scanner_mongo` and `test_import_idempotent` only) and grants it to the app user.
+- **5-year Upstox candle pull** (`data/upstox_5y.db`, git-ignored): 751 symbols, 810,261 rows, 2021-11-02..2026-10-30. Checked 2026-11-01: every row is already in Postgres `public.candles` with zero price/volume differences, so no load was needed. Postgres was reached on the published port 5433; the helper's default 5432 is not published.
+- **CCAVENUE:** the constituents CSV had the old ISIN INE483S01020, which Upstox rejects (HTTP 400). The current ISIN is INE483S01038 (AvenuesAI Ltd). The CSV fix is local only (the file is git-ignored). Under the new ISIN Upstox has only 9 days of history (2026-10-19..2026-10-30); Postgres already holds the longer history from other sources.
+- **Test counts:** "Ran N" still varies when `tests/test_ui_api.py` `UIApiContractTests` raises `SkipTest` in `setUpClass` (no completed run in Postgres), dropping its tests from N. Also `tests/test_import_sqlite.py` `setUpClass` errors instead of skipping when Postgres is configured but unreachable.
+- **Open:** the Postgres helper can resolve the wrong user/database/port from a `POSTGRES_DSN` that takes precedence over the `POSTGRES_*` parts. Check where that DSN is set.
 - **Order-book *value* — BUILT AND MEASURED 2026-09-29 over 964 real PDFs.**
   The value is in the attached filing PDF, and SEBI LODR Schedule III Part A
   para 4 mandates a template whose field (g) is literally

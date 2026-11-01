@@ -58,11 +58,22 @@ SCHEMA = [
         first_date TEXT,
         last_date TEXT,
         status TEXT NOT NULL,
-        pulled_at TEXT NOT NULL
+        pulled_at TEXT NOT NULL,
+        error TEXT
     )
     """,
     "CREATE INDEX IF NOT EXISTS ix_pull_log_symbol ON pull_log(symbol)",
 ]
+# Added after the first release: CREATE TABLE IF NOT EXISTS does not add it to old DBs.
+MIGRATIONS = [
+    ("pull_log", "error", "ALTER TABLE pull_log ADD COLUMN error TEXT"),
+]
+ERROR_MAX_CHARS = 300
+_SECRET_PATTERNS = (
+    (re.compile(r"Bearer\s+\S+", re.IGNORECASE), "Bearer [redacted]"),
+    (re.compile(r"(authorization|access_token|token)(\W{0,3})\S+", re.IGNORECASE),
+     r"\1\2[redacted]"),
+)
 
 
 class AuthError(RuntimeError):
@@ -74,6 +85,10 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     for stmt in SCHEMA:
         conn.execute(stmt)
+    for table, column, stmt in MIGRATIONS:
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            conn.execute(stmt)
     conn.commit()
     return conn
 
@@ -81,6 +96,14 @@ def connect(db_path: Path) -> sqlite3.Connection:
 def _status_code(exc: Exception) -> int | None:
     match = re.search(r"HTTP (\d{3})", str(exc))
     return int(match.group(1)) if match else None
+
+
+def _error_text(exc: BaseException) -> str:
+    """Short, token-free error text for pull_log.error (at most ERROR_MAX_CHARS)."""
+    text = " ".join((str(exc) or type(exc).__name__).split())
+    for pattern, replacement in _SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text[:ERROR_MAX_CHARS]
 
 
 def load_universe(symbols_arg: str | None, limit: int | None) -> list[tuple[str, str]]:
@@ -158,10 +181,11 @@ def _write_candles(conn: sqlite3.Connection, symbol: str, df: pd.DataFrame) -> i
 
 
 def _log(conn: sqlite3.Connection, symbol: str, rows: int, status: str,
-         first: date | None, last: date | None, now: datetime) -> None:
+         first: date | None, last: date | None, now: datetime,
+         error: str | None = None) -> None:
     conn.execute(
-        "INSERT INTO pull_log (symbol, rows, first_date, last_date, status, pulled_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO pull_log (symbol, rows, first_date, last_date, status, pulled_at, error) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
             symbol,
             rows,
@@ -169,6 +193,7 @@ def _log(conn: sqlite3.Connection, symbol: str, rows: int, status: str,
             last.isoformat() if last else None,
             status,
             now.isoformat(timespec="seconds"),
+            error,
         ),
     )
 
@@ -177,7 +202,7 @@ def pull_symbol(client, conn: sqlite3.Connection, symbol: str, isin: str,
                 days: int, today: date, now: datetime) -> str:
     """Pull one symbol and log it. Returns the status written to pull_log."""
     if not isin:
-        _log(conn, symbol, 0, "failed", None, None, now)
+        _log(conn, symbol, 0, "failed", None, None, now, "no ISIN in constituents list")
         conn.commit()
         print(f"{symbol}: failed (no ISIN in constituents list)")
         return "failed"
@@ -225,13 +250,13 @@ def run(client, conn: sqlite3.Connection, universe: list[tuple[str, str]],
             code = _status_code(exc)
             if code in AUTH_STATUS_CODES:
                 raise AuthError(f"HTTP {code}") from None
-            _log(conn, symbol, 0, "failed", None, None, now)
+            _log(conn, symbol, 0, "failed", None, None, now, _error_text(exc))
             conn.commit()
             print(f"{symbol}: failed (HTTP {code})" if code else f"{symbol}: failed (UpstoxError)")
             summary["failed"].append(symbol)
             continue
         except Exception as exc:  # noqa: BLE001 - record and continue
-            _log(conn, symbol, 0, "failed", None, None, now)
+            _log(conn, symbol, 0, "failed", None, None, now, _error_text(exc))
             conn.commit()
             print(f"{symbol}: failed ({type(exc).__name__})")
             summary["failed"].append(symbol)

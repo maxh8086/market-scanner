@@ -41,5 +41,7 @@ All notable changes to this project are recorded here. Newest first.
 - Wireframe, Sector and industry performance (Industry tab): "All industries" ranked list, "Technical trends" cards for the top five and weakest five, and a minimum group size of 4 stocks for ranking and the bars. Glossary keys `ind_all`, `ind_trend` and `min_group`.
 - Wireframe, stock chart: removed the duplicate 200 DMA line. It was the same 200-day average as the exit line, scaled by 1.01. The chart now draws one line, the Exit line, on by default, and the 200 DMA legend entry is gone.
 - `tests/test_mongo.py` authenticates with `SCANNER_MONGO_*` from `.env`, so the Mongo tests run. New `scripts/grant_test_dbs.js`: one-time grant of the `scannerTestDbs` role to the app user for the test databases.
+- `scripts/pull_upstox_5y.py` now stores a short, token-redacted error text (max 300 chars) in a new `pull_log.error` column, with an automatic `ALTER` for existing databases.
+- `tests/test_mongo.py`: `MongoDBBackendTests` is skipped with a class decorator, so its tests count as skipped instead of vanishing from "Ran N".
 ### Removed
 - `.claude/proven-config.json` (named ruflo). The `statusLine` entry and `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` were removed from `.claude/settings.json`. This folder is git-ignored, so these changes are local only.

@@ -133,6 +133,46 @@ class PullUpstox5yTests(unittest.TestCase):
         self.assertEqual(s2["ok"], 1)
         self.assertEqual(self._count("BAD"), 10)
 
+    def test_failed_symbol_stores_error_text(self):
+        client = FakeClient(TODAY - timedelta(days=9), TODAY,
+                            fail={"NSE_EQ|INE000000003": UpstoxError("HTTP 400 from x -- bad input")})
+        s = pull.run(client, self.conn, [("CCAVENUE", "INE000000003")], 10, TODAY,
+                     datetime(2026, 11, 1, 9))
+        self.assertEqual(s["failed"], ["CCAVENUE"])
+        error = self.conn.execute(
+            "SELECT error FROM pull_log WHERE symbol='CCAVENUE' AND status='failed'"
+        ).fetchone()[0]
+        self.assertIn("HTTP 400", error)
+        self.assertIn("bad input", error)
+
+    def test_error_text_is_redacted_and_capped(self):
+        secret = "Bearer eyJsecret123"
+        long_msg = f"HTTP 500 from x -- {secret} " + "x" * 1000
+        client = FakeClient(TODAY - timedelta(days=9), TODAY,
+                            fail={"NSE_EQ|INE000000003": UpstoxError(long_msg)})
+        pull.run(client, self.conn, [("BAD", "INE000000003")], 10, TODAY,
+                 datetime(2026, 11, 1, 9))
+        error = self.conn.execute(
+            "SELECT error FROM pull_log WHERE symbol='BAD'"
+        ).fetchone()[0]
+        self.assertLessEqual(len(error), pull.ERROR_MAX_CHARS)
+        self.assertNotIn("eyJsecret123", error)
+        self.assertIn("Bearer [redacted]", error)
+
+    def test_connect_adds_error_column_to_old_db(self):
+        old = self.tmp / "old.db"
+        raw = sqlite3.connect(old)
+        raw.execute("CREATE TABLE pull_log (symbol TEXT NOT NULL, rows INTEGER, "
+                    "first_date TEXT, last_date TEXT, status TEXT NOT NULL, pulled_at TEXT NOT NULL)")
+        raw.commit()
+        raw.close()
+        conn = pull.connect(old)  # migration adds the column
+        conn.close()
+        conn = pull.connect(old)  # second run: column exists, no error
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(pull_log)")]
+        conn.close()
+        self.assertIn("error", cols)
+
     def test_auth_error_stops_run(self):
         client = FakeClient(TODAY - timedelta(days=9), TODAY,
                             fail={"NSE_EQ|INE000000001": UpstoxError("HTTP 401 from x -- bad")})
