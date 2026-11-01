@@ -7,21 +7,39 @@ import os
 import unittest
 from datetime import date
 
+from dotenv import find_dotenv, load_dotenv
 from pymongo import MongoClient
 
 from scanner import docstore, mongo
 
-# Same default and env name as scanner/mongo.py (_uri_from_env).
-MONGO_HOST = os.environ.get("SCANNER_MONGO_HOST", "127.0.0.1:27018")
-MONGO_URI = f"mongodb://{MONGO_HOST}"
+load_dotenv(find_dotenv(usecwd=True))
+
+
+def _build_mongo_uri():
+    """Authenticated URI from SCANNER_MONGO_* in .env, or None when credentials are missing.
+
+    Built by scanner/mongo.py (_uri_from_env); the auth source defaults to the project's
+    database (SCANNER_MONGO_DB, default 'market_scanner').
+    """
+    db_name = os.environ.get("SCANNER_MONGO_DB", "market_scanner")
+    try:
+        return mongo._uri_from_env(db_name)
+    except RuntimeError:
+        return None
+
+
+MONGO_URI = _build_mongo_uri()
 
 
 def _mongo_available() -> bool:
     """True when MongoDB accepts writes to a throwaway database.
 
-    The shared infra's project user may only write to its own database, so an
-    unauthenticated or project-scoped login cannot create test_* databases: skip then.
+    The shared infra's project user may only write to its own database, so a login
+    without rights to create test_* databases makes this return False and the tests skip.
+    Missing credentials or an unreachable server also return False.
     """
+    if MONGO_URI is None:
+        return False
     client = None
     try:
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)

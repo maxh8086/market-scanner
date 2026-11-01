@@ -280,6 +280,10 @@ Merged the duplicates into 8 items; the governance sources file note moved to "I
   still land in `mri-mongo`. The benchmark and the 2026-09-29/30 conclusions used that store. The
   infra copy `Shared-Market-Research-Infra\data\mongo` is still mounted by `mri-mongo`, so it is kept
   until its owner agrees to retire it.
+  **Mongo tests.** `tests/test_mongo.py` authenticates with `SCANNER_MONGO_USER` and `SCANNER_MONGO_PASSWORD` from `.env` against the project Mongo on `127.0.0.1:27018`, and runs (16 tests, previously skipped).
+  They need a one-time grant: run `scripts/grant_test_dbs.js` as the Mongo admin (the admin login name is in `.env` as `SCANNER_MONGO_ADMIN`; the password is not stored in the repo) inside the `market-scanner-mongo` container with
+  `docker cp scripts/grant_test_dbs.js market-scanner-mongo:/tmp/grant_test_dbs.js`, then `docker exec -it market-scanner-mongo mongosh -u <admin> --authenticationDatabase admin --file /tmp/grant_test_dbs.js`.
+  It creates role `scannerTestDbs` (readWrite-style rights, incl. dropDatabase, on `test_market_scanner_probe`, `test_market_scanner_mongo` and `test_import_idempotent` only) and grants it to the app user.
 - **Order-book *value* — BUILT AND MEASURED 2026-09-29 over 964 real PDFs.**
   The value is in the attached filing PDF, and SEBI LODR Schedule III Part A
   para 4 mandates a template whose field (g) is literally
