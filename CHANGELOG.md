@@ -26,6 +26,7 @@ All notable changes to this project are recorded here. Newest first.
 - 2026-11-01, decision 10 reversed: the wireframe uses a simple 200-day moving average (200 DMA) and a 50-day exponential average (50 EMA). There is no 200 EMA anywhere. Glossary keys `ema200`, `cross50_200` and `exit_rule_ema` keep their names, but their text says 200 DMA. The technical vote list counts EMAs 10, 20, 50 and 100 only. Checked: the backend computes a simple 200-day average only.
 
 ### Changed
+- `scanner/pg/db.py` `dsn()`: raises RuntimeError when `POSTGRES_DSN` user or database differs from `POSTGRES_USER` or `POSTGRES_DB` (names only, no password or host). Tests in `tests/test_pg_dsn.py`.
 - `handoff.md`: ruflo cleanup closed. Decisions recorded under "Questions closed this session", item 8.
 - Wireframe fixes (commits `64da241`, `05cbd3e`, `7b24ac9`): contrast, unique heading ids, info buttons outside labels, visible theme toggle text, no sideways page scroll, chart and stock tab bar unhidden, review screen text overlap fixed, glossary wording (item 8) applied except `fd_cfo`, duplicate Decided by you items merged to 8.
 - `handoff.md`: wireframe review and sign-off section records the 2026-11-01 approvals and the pending wireframe work.
