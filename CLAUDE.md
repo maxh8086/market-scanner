@@ -1,4 +1,4 @@
-# ATH-Scanner — Claude Fleet & Token-Optimization Execution Rules
+# Market Scanner — Claude Fleet & Token-Optimization Execution Rules
 
 ## Architecture & Fleet Orchestration
 
@@ -150,7 +150,7 @@ Unbounded file reads, raw directory walks, or shell dumps (`cat`, `type`, large 
 * **Secrets**: never paste secrets into tasks or chat. Keep them in the gateway's secret store (`~/.docker/mcp/mcp.env`).
 * **Verification Commands**:
   * Offline tests: `.venv/Scripts/python.exe -m unittest discover -s tests -t . -q`
-  * Local infra bindings: load `../Shared-Market-Research-Infra/secrets/ath_scanner.env` with `INFRA_LOCAL=1`.
+  * Local infra bindings: load `../Shared-Market-Research-Infra/secrets/market_scanner.env` with `INFRA_LOCAL=1`.
 
 > NOTE: local-model routing is defined by the tokenfrugal gateway and `~/.claude/CLAUDE.md`. Ignore the legacy `cc-token-saver` profiles and older model tiers if they appear elsewhere.
 ## Code intelligence (synaptree-mcp)

@@ -2,7 +2,7 @@
 
 ## UI rollout (first priority, updated 2026-10-10)
 
-Repo for every task below: `C:\Users\vaibh\Downloads\Projects\Market-Scanner` (the older path in the sections further down says `Kite-ATH-Scanner`; ignore it for UI work).
+Repo for every task below: `C:\Users\vaibh\Downloads\Projects\Market-Scanner`.
 
 ### Wiring state (checked against code)
 
@@ -69,10 +69,10 @@ Approved decisions (from the user, 2026-09-30):
 
 ## Environment for every agent
 
-- Project root: `C:\Users\vaibh\Downloads\Projects\Kite-ATH-Scanner`. Windows, Git Bash. Python: `.venv/Scripts/python.exe` (3.10 on host; the Docker images are 3.13, so write code valid for both).
-- Postgres, MongoDB and Neo4j are already running (shared infra, project `ath_scanner`). Load the logins and reach them from the host like this:
+- Project root: `C:\Users\vaibh\Downloads\Projects\Market-Scanner`. Windows, Git Bash. Python: `.venv/Scripts/python.exe` (3.10 on host; the Docker images are 3.13, so write code valid for both).
+- Postgres, MongoDB and Neo4j are already running (shared infra, project `market_scanner`). Load the logins and reach them from the host like this:
   ```bash
-  set -a; . ../Shared-Market-Research-Infra/secrets/ath_scanner.env; set +a
+  set -a; . ../Shared-Market-Research-Infra/secrets/market_scanner.env; set +a
   export PYTHONIOENCODING=utf-8 INFRA_LOCAL=1
   ```
   `INFRA_LOCAL=1` makes `scanner/infra.py` rewrite the in-network hostnames to `127.0.0.1` ports. Use `127.0.0.1`, never `localhost` (IPv6 lookups stall for minutes on this machine).

@@ -1,4 +1,4 @@
-"""API routes for the ATH Scanner UI."""
+"""API routes for the Market Scanner UI."""
 
 import json
 import uuid

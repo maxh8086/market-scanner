@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ATH Scanner UI Wireframes</title>
+<title>Market Scanner UI Wireframes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -614,7 +614,7 @@ fieldset.sb:disabled{opacity:.55}
 
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="#/home"><i><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18l6-7 4 4 6-9"/></svg></i>ATH Scanner</a>
+    <a class="brand" href="#/home"><i><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18l6-7 4 4 6-9"/></svg></i>Market Scanner</a>
     <nav class="main" id="nav" aria-label="Primary">
       <a href="#/home" data-nav="home">Home</a>
       <a href="strategy.html#/stocks" data-nav="stocks">Stocks</a>
@@ -977,7 +977,7 @@ function go(h){
   if(key==="config") t+=`<span>/</span><b>Master configuration</b>`;
   $("#trail").innerHTML=key==="home"?`<b>Home</b>`:t;
   $("#crumbs").style.display=key==="home"?"none":"";
-  document.title=(key==="home"?"":$(ROUTES[key]).dataset.title+" · ")+"ATH Scanner UI Wireframes";
+  document.title=(key==="home"?"":$(ROUTES[key]).dataset.title+" · ")+"Market Scanner UI Wireframes";
   scrollTo(0,0); $("#nav").classList.remove("open"); $("#menu").setAttribute("aria-expanded","false");
 }
 /* Navigation does not depend on location.hash: embedded previews block it. The hash is updated when allowed. */

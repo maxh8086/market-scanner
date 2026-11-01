@@ -1,4 +1,4 @@
-# Design System: ATH Scanner
+# Design System: Market Scanner
 
 Screens: Home, Run dashboard, Results table, Stock dashboard, Cost center, Report dashboard, Master configuration.
 Wireframe: `ui/wireframes/index.html` (single file, open in a browser, no server needed).

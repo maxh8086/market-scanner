@@ -1,7 +1,7 @@
 [project]
 name = "market-scanner"
 version = "0.1.0"
-description = "ATH scanner for NSE stocks, with conclusions, workbook export and UI."
+description = "Market scanner for NSE stocks, with conclusions, workbook export and UI."
 requires-python = ">=3.13"
 
 # Build gate. Run from the repo root with the project venv:

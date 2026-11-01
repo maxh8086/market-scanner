@@ -5,7 +5,7 @@ Make sure the shared market-research infrastructure is running; start it only if
 .DESCRIPTION
 Checks the Postgres, MongoDB and Neo4j containers of ..\Shared-Market-Research-Infra
 (override with MARKET_INFRA_DIR). If all three are running, nothing is touched and the
-script says so. If any is down, or this project's secrets\ath_scanner.env is missing, it
+script says so. If any is down, or this project's secrets\market_scanner.env is missing, it
 starts the infra with that project's own up.ps1 (which reuses existing data and accounts).
 
 vLLM holds the GPU, so it is checked separately and only with -Llm.
@@ -23,7 +23,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $InfraDir = if ($env:MARKET_INFRA_DIR) { $env:MARKET_INFRA_DIR } else { Join-Path (Split-Path $PSScriptRoot -Parent) 'Shared-Market-Research-Infra' }
-$Project  = 'ath_scanner'
+$Project  = 'market_scanner'
 $Databases = @('mri-postgres', 'mri-mongo', 'mri-neo4j')
 
 # 'running' | 'healthy' | 'unhealthy' | 'starting' | 'stopped' | 'missing'

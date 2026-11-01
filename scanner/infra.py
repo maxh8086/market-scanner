@@ -1,6 +1,6 @@
 """Reach the shared infra from the host as well as from inside its Docker network.
 
-secrets/ath_scanner.env names the services by their in-network hostnames (postgres, mongo,
+secrets/market_scanner.env names the services by their in-network hostnames (postgres, mongo,
 neo4j, vllm). Containers use them as written. A process on the host (tests, a dev shell) sets
 INFRA_LOCAL=1 and the same values are rewritten to the 127.0.0.1-only ports the infra publishes:
 5432, 27017, 7687, and 8001 for vLLM.

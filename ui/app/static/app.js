@@ -1,5 +1,5 @@
 /**
- * ATH Scanner UI - Vanilla JS SPA
+ * Market Scanner UI - Vanilla JS SPA
  * Hash-based routing with data fetching from REST API
  */
 
@@ -50,7 +50,7 @@ function updateBreadcrumb(view, args) {
   if (view === "home") {
     crumbs.style.display = "none";
     trail.innerHTML = "<b>Home</b>";
-    document.title = "ATH Scanner";
+    document.title = "Market Scanner";
   } else {
     crumbs.style.display = "";
     let html = `<a href="#/">Home</a>`;
@@ -65,7 +65,7 @@ function updateBreadcrumb(view, args) {
     else if (view === "config") html += `<span>/</span><b>Master configuration</b>`;
 
     trail.innerHTML = html;
-    document.title = `${view.charAt(0).toUpperCase() + view.slice(1)} | ATH Scanner`;
+    document.title = `${view.charAt(0).toUpperCase() + view.slice(1)} | Market Scanner`;
   }
 }
 

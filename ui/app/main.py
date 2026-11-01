@@ -1,4 +1,4 @@
-"""ATH Scanner UI: FastAPI server-rendered shell with vanilla JS SPA."""
+"""Market Scanner UI: FastAPI server-rendered shell with vanilla JS SPA."""
 
 import os
 from pathlib import Path
@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 
 from ui.app import api
 
-app = FastAPI(title="ATH Scanner UI", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Market Scanner UI", docs_url=None, redoc_url=None, openapi_url=None)
 
 # Mount static files
 static_dir = Path(__file__).parent / "static"

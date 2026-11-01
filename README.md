@@ -1,4 +1,4 @@
-# ATH Scanner — Nifty Total Market
+# Market Scanner — Nifty Total Market
 
 Finds every stock in the Nifty Total Market index (~750 names) that's at its
 all-time high, or within a configurable percentage of it.
@@ -107,7 +107,7 @@ The analytical engine runs as containers of this project's `docker-compose.yml`;
 the host is `start.ps1` (and `stop.ps1`). The databases (Postgres, MongoDB, Neo4j), the vLLM server
 and the model weights are **not** part of this project: they live in the shared
 `Shared-Market-Research-Infra` folder next to it (override with `MARKET_INFRA_DIR`), which
-`start.ps1` brings up and provisions (`up.ps1 -Project ath_scanner -Llm`), and this project's
+`start.ps1` brings up and provisions (`up.ps1 -Project market_scanner -Llm`), and this project's
 containers join its `market-infra` network. Credentials come from `.env` at runtime and are never
 baked into an image. One command runs the whole pipeline, no switches:
 

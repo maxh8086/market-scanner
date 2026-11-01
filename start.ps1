@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Run the whole ATH Scanner pipeline in Docker, start to finish, with no extra switches.
+Run the whole Market Scanner pipeline in Docker, start to finish, with no extra switches.
 
 .DESCRIPTION
 scan -> enrich (filings, fundamentals, AI extraction on vLLM) -> TimesFM forecasts ->
@@ -26,7 +26,7 @@ Credentials: .env (Upstox/Kite) is read by docker compose at runtime; this scrip
 checks that it exists and never opens it. The databases, Neo4j and the vLLM server are not
 part of this project: they live in ..\Shared-Market-Research-Infra (override with the
 MARKET_INFRA_DIR environment variable), which this script starts first and which creates this
-project's database logins in its secrets\ath_scanner.env.
+project's database logins in its secrets\market_scanner.env.
 
 Needs an NVIDIA GPU with the container runtime (vLLM runs Qwen3-4B-Instruct-2507).
 The model weights (Qwen3-4B, TimesFM) live in the shared infra's models\huggingface folder;

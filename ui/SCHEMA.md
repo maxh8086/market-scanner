@@ -8,8 +8,8 @@ collector). This file describes what those migrations create and why.
 
 | Store | Holds | Why there |
 |---|---|---|
-| Postgres (`ath_scanner` db) | runs, per-stock snapshots, change log, LLM-call metrics, collector settings and history, candles, announcements, corporate actions, feed coverage, listing dates | relational, joined and filtered by the UI, needs unique keys |
-| MongoDB (`ath_scanner` db) | filings (with text), extractions, conclusions, fundamentals | documents of varying shape, looked up by key |
+| Postgres (`market_scanner` db) | runs, per-stock snapshots, change log, LLM-call metrics, collector settings and history, candles, announcements, corporate actions, feed coverage, listing dates | relational, joined and filtered by the UI, needs unique keys |
+| MongoDB (`market_scanner` db) | filings (with text), extractions, conclusions, fundamentals | documents of varying shape, looked up by key |
 | Neo4j | Company, Filing, Extraction, Counterparty, Conclusion, Fundamentals and their relationships | customer and repeat-order questions no single filing answers; rebuildable from Mongo |
 | `output/` files | scan, enriched, conclusions and report files written by each stage | hand-off between pipeline stages today; see "Files" below |
 

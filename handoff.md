@@ -1,4 +1,4 @@
-# Handoff — ATH Scanner
+# Handoff — Market Scanner
 
 Status: **running end-to-end against live market data.** The data source is
 **Upstox** (not Kite); portfolio stays on Kite. A 6-symbol live run completed
@@ -150,7 +150,7 @@ Merged the duplicates into 8 items; the governance sources file note moved to "I
 
 - **Rate limits verified 2026-09-29 (closed by measurement).** The cold scan made 1,969 requests with 0 HTTP 429s in about 30 minutes, under the 80%-of-limit windows in `scanner/upstox.py` (40/s, 400/min, 1600/30min). The 30-minute window has been exercised, so the earlier "unmeasured" note is resolved.
 
-- **Scanner Mongo store copied from the infra, 2026-10-30.** `data/mongo/` (bind-mounted into `market-scanner-mongo`) holds the same files as `Shared-Market-Research-Infra/data/mongo`, which contains two databases: `ath_scanner` (filings 968, extractions 868, conclusions 586, fundamentals 298) and `market_scanner` (filings 968, extractions 868, conclusions 586, fundamentals 1048). The file lists match exactly. The copy is verified by file set; an authenticated count of `market_scanner` is still open (see Priority next).
+- **Scanner Mongo store copied from the infra, 2026-10-30.** `data/mongo/` (bind-mounted into `market-scanner-mongo`) holds the same files as `Shared-Market-Research-Infra/data/mongo`, which contains two databases: one under the old project name (filings 968, extractions 868, conclusions 586, fundamentals 298) and `market_scanner` (filings 968, extractions 868, conclusions 586, fundamentals 1048). The file lists match exactly. The copy is verified by file set; an authenticated count of `market_scanner` is still open (see Priority next).
 
 - **Retry-After parsing fixed 2026-10-30.** `_parse_retry_after` in `scanner/upstox.py` accepts delta-seconds or an HTTP-date (past dates give 0). Covered by two tests in `tests/test_upstox.py`. Full offline suite: 848 tests, OK (46 skipped).
 
@@ -249,7 +249,7 @@ Merged the duplicates into 8 items; the governance sources file note moved to "I
 ## Still open
 
 - **Expansion (factor 4) is the least trustworthy column.** Spot-check run 2026-10-30 on the
-  12 candidates (15 stored `kind: expansion` filings, text from `ath_scanner.filings.raw_text`,
+  12 candidates (15 stored `kind: expansion` filings, text from `market_scanner.filings.raw_text`,
   matched with `_expansion_text` and `EXPANSION_KEYWORDS`). Result: 14 filings have a keyword
   hit. 12 read as real capacity or commercial-production news (WELSPUNLIV, AARTIPHARM,
   ASKAUTOLTD x2, SHYAMMETL x3, TI, ADANIPORTS, INDHOTEL, POWERINDIA, AMBER). Weak: COALINDIA
@@ -262,20 +262,21 @@ Merged the duplicates into 8 items; the governance sources file note moved to "I
   Still open: confirm the keep decision and close this item.
   **Was blocked 2026-10-29 (see below for the fix):** the stored filing text was not in this checkout. `data/factors.db`
   is absent here, the copies in `app/data/` and the worktrees are empty, and the MongoDB on
-  `localhost:27017` has an empty `ath_scanner` database. The infra env file points at host
+  `localhost:27017` has an empty `market_scanner` database. The infra env file points at host
   `mongo`, which does not resolve from this machine. Candidates (the 12 text-match-only rows
   in `output/ath_enriched_2026-09-28.csv`): AXISCADES, COALINDIA, WELSPUNLIV, AARTIPHARM,
   ASKAUTOLTD, SHYAMMETL, TI, ADANIPORTS, INDHOTEL, POWERINDIA, AMBER, RELIANCE.
   **Unblocked 2026-10-29.** MongoDB now runs in a container, `market-scanner-mongo` (`mongo:7`),
   with `data/mongo` under this project mounted as `/data/db`. The container is published on
   `127.0.0.1:27018`, because `27017` belongs to the tokenfrugal project's own Mongo container.
-  The store was copied from `Shared-Market-Research-Infra\data\mongo`, not moved. `ath_scanner`
+  The store was copied from `Shared-Market-Research-Infra\data\mongo`, not moved. `market_scanner`
   holds `filings` 968, `extractions` 868, `conclusions` 586 and `fundamentals` 298. The 968
   count matches the 968 unique filings recorded in the handoff's scope. Not yet checked: that
   the expansion filings' text is present in `filings`. The spot-check can now run.
   The container is now a `scanner-mongo` service in `docker-compose.yml` (started with `--auth`, as
-  `mri-mongo` is), and the `ath_scanner` login from the infra secrets works against it.
-  **Still open:** the scanner reads the infra's `mongo` host (from `ath_scanner.env`), so new writes
+  `mri-mongo` is), and the `market_scanner` login from the infra secrets works against it.
+  The scanner now reads the infra's `market_scanner` databases; data previously held under the old project name has not been checked or moved (open item).
+  **Still open:** the scanner reads the infra's `mongo` host (from `market_scanner.env`), so new writes
   still land in `mri-mongo`. The benchmark and the 2026-09-29/30 conclusions used that store. The
   infra copy `Shared-Market-Research-Infra\data\mongo` is still mounted by `mri-mongo`, so it is kept
   until its owner agrees to retire it.
@@ -697,7 +698,7 @@ conclusion never changes the ranking and is not investment advice.
   failed, 4 speculative, 10 unverified numbers, 0 truncated, 7 empty or
   stance-inconsistent (many stocks have no positives, almost all CAUTIOUS, which
   is consistent), stance MIXED 140 / CONSTRUCTIVE 107 / CAUTIOUS 43.
-- **Disk:** the `kite-ath-scanner-vllm` image is the upstream vLLM image plus two
+- **Disk:** the old project's vLLM image is the upstream vLLM image plus two
   thin layers, so the ~30.7 GB is paid once (the two tags share layers); there is
   no smaller vLLM image with CUDA. Trial models cache in the `huggingface_vllm`
   volume (Qwen3-4B ~8 GB, LFM2.5 ~2.4 GB kept); `docker builder prune -a` frees
@@ -849,10 +850,10 @@ containers) and, next, the UI.
 - `docker-compose.yml` no longer has `vllm`, `neo4j` or the `huggingface_vllm`/`neo4j_data` volumes;
   `docker/vllm/` was removed (now `Shared-Market-Research-Infra/vllm/`). Containers join the external
   network `market-infra` and reach `http://vllm:8000` and `bolt://neo4j:7687` by name.
-- `start.ps1` runs `Shared-Market-Research-Infra\up.ps1 -Project ath_scanner -Llm -NoWait` (creates the
-  project's databases, writes `secrets\ath_scanner.env`), waits on `mri-vllm`, and after conclusions runs
+- `start.ps1` runs `Shared-Market-Research-Infra\up.ps1 -Project market_scanner -Llm -NoWait` (creates the
+  project's databases, writes `secrets\market_scanner.env`), waits on `mri-vllm`, and after conclusions runs
   `down.ps1 -Llm` to free the GPU (the databases keep running). `.env.neo4j` and `stop.ps1 -PurgeGraph`
-  are gone; the graph login comes from `secrets\ath_scanner.env`. `MARKET_INFRA_DIR` overrides the location.
+  are gone; the graph login comes from `secrets\market_scanner.env`. `MARKET_INFRA_DIR` overrides the location.
 - Weights are the Hugging Face cache layout in `Shared-Market-Research-Infra\models\huggingface`; the
   imported copies have no blobs, so vllm and `enrich-timesfm` run with `HF_HUB_OFFLINE=1`.
   `bench_models.py` mounts the same folder.
@@ -860,15 +861,14 @@ containers) and, next, the UI.
   and Mongo are provisioned and empty for this project. Next: move the run/stock/timeline schema and the
   docstore there, then the UI and cost metrics.
 - Old Docker leftovers that can be removed once nothing needs them: volumes
-  `kite-ath-scanner_huggingface_vllm`, `kite-ath-scanner_neo4j_data`, image `kite-ath-scanner-vllm`.
+  the old project's huggingface_vllm and neo4j_data volumes and its vLLM image.
 
 ## Postgres, UI, collector and cost metrics (added 2026-09-30, supersedes "Still TinyDB/SQLite" above)
 
 State at the end of 2026-09-30: committed and pushed (`d5f885f` and later docs). Run A (3 stocks) and
 run B (full, 291 scanned, 11 at ATH, Postgres run `61b38ae4-1e25-4be8-85bd-9b39930866de`) are
-complete and verified. The old volumes `kite-ath-scanner_huggingface_vllm`,
-`kite-ath-scanner_neo4j_data` and image `kite-ath-scanner-vllm` have been removed; keep
-`kite-ath-scanner_huggingface_cache` (not used by compose now; compose volume is `market-scanner_huggingface_cache`, empty, re-downloads weights).
+complete and verified. The old project's huggingface_vllm and neo4j_data volumes and its vLLM image have been removed; keep
+the old project's huggingface_cache volume (not used by compose now; compose volume is `market-scanner_huggingface_cache`, empty, re-downloads weights).
 
 **What exists.**
 - Storage split: Postgres (runs, snapshots, changes, `llm_calls`, collector tables, candles,

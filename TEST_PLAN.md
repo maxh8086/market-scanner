@@ -5,9 +5,9 @@ Due to environment constraints, the following commands should be run manually:
 ## 1. Apply Migration
 
 ```bash
-cd C:\Users\vaibh\Downloads\Projects\Kite-ATH-Scanner
+cd C:\Users\vaibh\Downloads\Projects\Market-Scanner
 set -a
-. ../Shared-Market-Research-Infra/secrets/ath_scanner.env
+. ../Shared-Market-Research-Infra/secrets/market_scanner.env
 set +a
 export PYTHONIOENCODING=utf-8 INFRA_LOCAL=1
 

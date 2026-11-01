@@ -14,7 +14,7 @@
 # Secrets reach containers ONLY at runtime, through `env_file` (compose reads the
 # file; no image, build arg or log ever contains it). A service gets a file only if
 # it needs it: .env (Upstox/Kite) for scanner, enrich and portfolio; the infra's
-# secrets/ath_scanner.env (this project's database logins) for graph.
+# secrets/market_scanner.env (this project's database logins) for graph.
 x-persist: &persist
   - ./data:/app/data
   - ./output:/app/output
@@ -34,7 +34,7 @@ services:
     build: {context: ., dockerfile: docker/scanner/Dockerfile}
     env_file:
       - .env
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
     environment:
       <<: *scanner-db-env
       RUN_ID: ${RUN_ID:-}
@@ -46,7 +46,7 @@ services:
     build: {context: ., dockerfile: docker/enrich/Dockerfile}
     env_file:
       - .env
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
     environment:
       <<: *scanner-db-env
       RUN_ID: ${RUN_ID:-}
@@ -60,7 +60,7 @@ services:
   enrich-timesfm:        # enrich + TimesFM forecaster (torch, CPU)
     build: {context: ., dockerfile: docker/timesfm/Dockerfile}
     env_file:                            # database logins, for reading candles and filings
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
       - .env
     environment:
       <<: *scanner-db-env
@@ -92,7 +92,7 @@ services:
     build: {context: ., dockerfile: docker/enrich/Dockerfile}
     entrypoint: ["python", "graph_sync.py"]
     env_file:                            # NEO4J_URI / NEO4J_AUTH from the shared infra (its up.ps1 writes it)
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
       - .env
     environment:
       <<: *scanner-db-env
@@ -111,7 +111,7 @@ services:
     build: {context: ., dockerfile: docker/enrich/Dockerfile}
     entrypoint: ["python", "conclude.py"]
     env_file:                            # MONGO_URI for conclusions, PG_* to record LLM calls
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
       - .env
     environment:
       <<: *scanner-db-env
@@ -126,7 +126,7 @@ services:
     entrypoint: ["python", "collect.py", "serve"]
     env_file:
       - .env
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
     environment:
       <<: *scanner-db-env
       MARKETDATA_BACKEND: postgres
@@ -137,7 +137,7 @@ services:
   ui:                    # runs, cost metrics and stock dashboards on http://127.0.0.1:8080
     build: {context: ., dockerfile: docker/ui/Dockerfile}
     env_file:
-      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/ath_scanner.env", required: false}
+      - {path: "${MARKET_INFRA_DIR:-../Shared-Market-Research-Infra}/secrets/market_scanner.env", required: false}
       - .env
     environment:
       <<: *scanner-db-env
@@ -148,7 +148,7 @@ services:
   scanner-mongo:         # this project's MongoDB, data kept in ./data/mongo. Not the infra's `mongo` (mri-mongo):
     image: mongo:7       # the service name differs on purpose, so the two never share the `mongo` alias on market-infra.
     container_name: market-scanner-mongo
-    # --auth matches mri-mongo: the copied store already holds the ath_scanner and admin users.
+    # --auth matches mri-mongo: the copied store already holds the market_scanner and admin users.
     command: ["--auth", "--wiredTigerCacheSizeGB", "0.5", "--bind_ip_all"]
     volumes:
       - ./data/mongo:/data/db            # bind mount: the database files stay in this project folder

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""ATH Scanner CLI — find Nifty Total Market constituents at or near their
+"""Market Scanner CLI — find Nifty Total Market constituents at or near their
 all-time high, using Upstox market data.
 
 Market data comes from Upstox (long-lived analytics token, so no daily

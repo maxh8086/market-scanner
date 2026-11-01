@@ -24,7 +24,7 @@ def dsn(env: Optional[dict] = None) -> str:
                         f"password={env['POSTGRES_PASSWORD']}", env)
     except KeyError as exc:
         raise RuntimeError(f"Postgres is not configured: {exc.args[0]} is unset "
-                           "(load Shared-Market-Research-Infra/secrets/ath_scanner.env)") from None
+                           "(load Shared-Market-Research-Infra/secrets/market_scanner.env)") from None
 
 
 def available(env: Optional[dict] = None) -> bool:

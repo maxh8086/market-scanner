@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Shut the ATH Scanner Docker setup down.
+Shut the Market Scanner Docker setup down.
 
 .DESCRIPTION
 Stops and removes every container of this project (including the optional laya service, the UI
@@ -38,7 +38,7 @@ function Invoke-Docker {
     }
 }
 
-Write-Host "=== Stopping the ATH Scanner setup ===" -ForegroundColor Cyan
+Write-Host "=== Stopping the Market Scanner setup ===" -ForegroundColor Cyan
 
 $down = @('compose', '--profile', 'laya', 'down', '--remove-orphans')
 if ($Prune) { $down += @('--rmi', 'local') }

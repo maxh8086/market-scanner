@@ -1,1 +1,1 @@
-"""ATH Scanner UI application."""
+"""Market Scanner UI application."""
