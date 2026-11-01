@@ -11,6 +11,10 @@ from pymongo import MongoClient
 
 from scanner import docstore, mongo
 
+# Same default and env name as scanner/mongo.py (_uri_from_env).
+MONGO_HOST = os.environ.get("SCANNER_MONGO_HOST", "127.0.0.1:27018")
+MONGO_URI = f"mongodb://{MONGO_HOST}"
+
 
 def _mongo_available() -> bool:
     """True when MongoDB accepts writes to a throwaway database.
@@ -20,7 +24,7 @@ def _mongo_available() -> bool:
     """
     client = None
     try:
-        client = MongoClient("mongodb://127.0.0.1:27017", serverSelectionTimeoutMS=2000)
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
         client.admin.command("ping")
         probe = client["test_market_scanner_probe"]
         probe.t.insert_one({"x": 1})
@@ -43,7 +47,7 @@ class MongoDBBackendTests(unittest.TestCase):
     def setUpClass(cls):
         if SKIP_MONGO:
             raise unittest.SkipTest("MongoDB not reachable")
-        cls.db = mongo.open_db(uri="mongodb://127.0.0.1:27017", db_name="test_market_scanner_mongo")
+        cls.db = mongo.open_db(uri=MONGO_URI, db_name="test_market_scanner_mongo")
 
     @classmethod
     def tearDownClass(cls):
@@ -124,7 +128,7 @@ class MongoDBBackendTests(unittest.TestCase):
     def test_extractions_keyed_on_seq_id_and_kind(self):
         mongo.put_extraction(self.db, "1", "capacity", {"existing": "1 MTPA"})
         mongo.put_extraction(self.db, "1", "orderval", {"rupees": 1e9})
-        self.assertEqual(len(self.db.table("extractions").find()), 2)
+        self.assertEqual(self.db.table("extractions").count_documents({}), 2)
         self.assertEqual(
             mongo.get_extraction(self.db, "1", "capacity")["existing"], "1 MTPA")
 
@@ -170,7 +174,7 @@ class MongoImportTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        db = mongo.open_db(uri="mongodb://127.0.0.1:27017", db_name="test_import_idempotent")
+        db = mongo.open_db(uri=MONGO_URI, db_name="test_import_idempotent")
         try:
             # Create a small test TinyDB
             with tempfile.TemporaryDirectory() as tmp:
