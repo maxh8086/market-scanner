@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ATH Scanner Strategy Wireframes</title>
+<title>Market Scanner Strategy Wireframes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1870,6 +1870,20 @@ a.sym:hover{color:var(--accent);text-decoration:underline}
 #s-stock .mo .ob-track i{display:block;height:100%;border-radius:999px;background:var(--accent)}
 #s-stock .mo .ob-v{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
 #s-stock .mo .ob-cap{caption-side:top;text-align:left;font-size:13px;color:var(--faint);padding:0 0 8px}
+#s-stock .mo .ob-off{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;border:1px solid var(--line-strong);font-size:12px;color:var(--ink);white-space:normal}
+#s-stock .mo .ind-all{margin:14px 0 0;border-top:1px solid var(--line-strong);padding-top:8px}
+#s-stock .mo .ind-all summary{display:flex;align-items:center;min-height:44px;cursor:pointer;font-weight:600;color:var(--accent)}
+#s-stock .mo .ind-all th,#s-stock .mo .ind-all td{font-size:13px;padding:8px 10px}
+#s-stock .mo .ind-sh{margin:14px 0 6px;font:600 14px/1.3 var(--sans);color:var(--ink)}
+#s-stock .mo .ind-small{margin:0;padding:0 0 0 18px;font-size:13px;color:var(--muted)}
+#s-stock .mo .ind-trend{list-style:none;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+#s-stock .mo .ind-card{padding:12px 14px;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);min-width:0}
+#s-stock .mo .ind-cn{margin:0 0 8px;font:600 14px/1.3 var(--sans);color:var(--ink);overflow-wrap:anywhere}
+#s-stock .mo .ind-dir{display:inline-block;margin-right:6px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+#s-stock .mo .ind-kv{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:13px}
+#s-stock .mo .ind-kv li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 8px;color:var(--muted)}
+#s-stock .mo .ind-kv b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+@media (max-width:640px){#s-stock .mo .ind-all summary{min-height:44px}}
 #s-stock .mo .ob-left{margin-top:14px;border-top:1px solid var(--line-strong);padding-top:8px}
 #s-stock .mo .ob-left summary{display:flex;align-items:center;min-height:44px;cursor:pointer;font-weight:600;color:var(--accent)}
 #s-stock .mo .ob-lo{list-style:none;margin:0;padding:0;font-size:13px;color:var(--muted)}
@@ -2074,7 +2088,7 @@ body.st-page #st-handle{display:flex}
 <header class="top">
   <div class="wf" role="note">Wireframe: sample values, not real data. Northbridge Polymers is a fictional company.</div>
   <div class="wrap">
-    <a class="brand" href="index.html" aria-label="ATH Scanner, home"><i><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18l6-7 4 4 6-9"/></svg></i>ATH Scanner</a>
+    <a class="brand" href="index.html" aria-label="Market Scanner, home"><i><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18l6-7 4 4 6-9"/></svg></i>Market Scanner</a>
     <nav class="main" id="nav" aria-label="Primary">
       <a href="#/stocks" data-nav="stocks">Stocks</a>
       <a href="#/holdings" data-nav="holdings">Review Holding<span class="nav-count" id="nav-exit" role="img" aria-label="" hidden>0</span></a>
@@ -2935,6 +2949,11 @@ Object.assign(G,{
  ob_filter:["Keyword filter","Four groups of phrases. Turn a group off to stop its filings being counted. All four are on by default.","Each group is a set of phrases matched against the filing headline, without regard to capitals. L1 matches as a whole word only, so it does not match inside another word."],
  ob_lodr:["LODR","The SEBI Listing Obligations and Disclosure Requirements. Listed companies file many notices with the exchange under them.","The scanner reads the company's LODR filings. Most are not orders, so only headlines that match the keyword filter are counted."],
 });
+Object.assign(G,{
+ ind_all:["All industries","Every industry in the scan, ranked by the median return of its stocks over the chosen window. The best comes first. Industries with fewer than 4 stocks are listed apart and are not ranked.","Median of each stock's return over the window (today's close divided by its close at the start, minus 1), across the scanned stocks in the industry. Sample values."],
+ ind_trend:["Technical trends","For each of the top five and weakest five industries, how many of its stocks sit above the 50 EMA, above the 200 DMA, or at a 52-week high.","Count of the group's scanned stocks that pass each test on the latest close, and that count as a share of the stocks in the group. Sample values, fixed for each industry."],
+ min_group:["Minimum group size","An industry or sector needs at least 4 scanned stocks to be ranked. Smaller groups are listed apart and are not counted in the top five or the weakest five.","Count of scanned stocks mapped to the group. Groups with 3 stocks or fewer are left out of the ranking."]
+});
 
 /* ==== src/gloss_stock_ai.js ==== */
 /* Glossary keys for the stock workspace header, the Your position tab and Ask AI. Prefix ai_. */
@@ -3510,7 +3529,7 @@ function chartData(e){
     o.push(Math.min(op,e.ath)); h.push(hi); l.push(lo); v.push(Math.round((0.6+r())*1.4e6*(1+Math.abs(c[i]/op-1)*25))); del.push(.34+r()*.3+(c[i]>=op?.06:0)); if(hi>h[mi]) mi=i;}
   if(h[mi]<e.ath) h[mi]=e.ath;
   const ema=smaOf(c,200); const f=e.ema/ema[N-1]; for(let i=0;i<N;i++) ema[i]*=f;
-  const ema50=emaOf(c,50), ema20=emaOf(c,20), sma100=smaOf(c,100); let dma200=smaOf(c,200); const f2=e.ema*1.01/dma200[N-1]; dma200=dma200.map(x=>x*f2);
+  const ema50=emaOf(c,50), ema20=emaOf(c,20), sma100=smaOf(c,100); const dma200=ema.slice();
   const rsi=rsiOf(c,14);
   const nifty=series(seed^0x51,[[0,7400],[N-757,13100+r()*900],[N-253,19200/(1+NIFTY.r/100)*1.0],[N-1,19200]],.03,.015,.003);
   const sec=e.secR==null?null:series(seed^0x77,[[0,3000],[N-757,5200+r()*400],[N-253,7000/(1+e.secR/100)],[N-1,7000]],.03,.02,.004);
@@ -3520,13 +3539,13 @@ function chartData(e){
    Moving averages and RSI stay daily and are sampled at each bar's last day. ----- */
 function tfData(e,tf){
   const d=chartData(e); if(d.tf[tf]) return d.tf[tf];
-  if(tf==="D") return d.tf.D={n:N,o:d.o,h:d.h,l:d.l,c:d.c,v:d.v,dl:d.del,di:Array.from({length:N},(_,i)=>i),rsi:d.rsi,e50:d.ema50,d200:d.dma200,ex:d.ema};
+  if(tf==="D") return d.tf.D={n:N,o:d.o,h:d.h,l:d.l,c:d.c,v:d.v,dl:d.del,di:Array.from({length:N},(_,i)=>i),rsi:d.rsi,e50:d.ema50,ex:d.ema};
   const key=i=>{const t=WD[i]; return tf==="W"?Math.floor((t.getTime()/864e5+3)/7):t.getUTCFullYear()*12+t.getUTCMonth();};
   const o=[],h=[],l=[],c=[],v=[],ds=[],di=[]; let k=null;
   for(let i=0;i<N;i++){const kk=key(i); if(kk!==k){k=kk; o.push(d.o[i]); h.push(d.h[i]); l.push(d.l[i]); v.push(0); ds.push(0); c.push(0); di.push(0);}
     const b=o.length-1; h[b]=Math.max(h[b],d.h[i]); l[b]=Math.min(l[b],d.l[i]); c[b]=d.c[i]; v[b]+=d.v[i]; ds[b]+=d.v[i]*d.del[i]; di[b]=i;}
   const dl=ds.map((x,b)=>x/v[b]);
-  return d.tf[tf]={n:o.length,o,h,l,c,v,dl,di,rsi:rsiOf(c,14),e50:di.map(i=>d.ema50[i]),d200:di.map(i=>d.dma200[i]),ex:di.map(i=>d.ema[i])};
+  return d.tf[tf]={n:o.length,o,h,l,c,v,dl,di,rsi:rsiOf(c,14),e50:di.map(i=>d.ema50[i]),ex:di.map(i=>d.ema[i])};
 }
 function barOf(t,i){let lo=0,hi=t.n-1; while(lo<hi){const mid=(lo+hi)>>1; if(t.di[mid]>=i) hi=mid; else lo=mid+1;} return lo;}
 /* ----- extra indicators. Daily arrays are cached per symbol; weekly and monthly sample them at each bar's last day. ----- */
@@ -3561,7 +3580,7 @@ function matchedPhrase(text){ const s=String(text||""); return ORDER_WORDS.find(
 function groupOf(w){ return ORDER_GROUPS.find(g=>g.phrases.indexOf(w)>=0).id; }
 function classifyFiling(text){ return matchedPhrase(text)?{ft:"Order win",imp:"High"}:null; }
 const filingSub=(ft,imp)=>ft==="Order win"?"Order win. Importance: High. Disclosed to the exchange under SEBI LODR.":`${ft}. Importance: ${imp}. Exchange filing, read by the scanner.`;
-const FILINGS=[[2026,8,29,"Order received, 412 cr","Order win","High"],[2026,8,17,"Capacity expansion announced","Capacity expansion","Medium"],[2026,8,3,"Order received, 248 cr","Order win","High"],[2026,6,22,"Credit rating reaffirmed","Credit rating","Medium"],[2026,5,4,"Change in senior management","Change in senior management","Medium"],[2026,2,18,"Order received, 96 cr","Order win","High"],[2026,7,12,"Quarterly filing submitted","Quarterly filing","Medium"],[2026,7,20,"Investor call on the quarter","Concall / investor meet","Medium"]];
+const FILINGS=[[2026,8,29,"Letter of award received, 412 cr","Order win","High"],[2026,8,17,"Capacity expansion announced","Capacity expansion","Medium"],[2026,8,3,"Bags order worth 248 cr","Order win","High"],[2026,6,22,"Credit rating reaffirmed","Credit rating","Medium"],[2026,5,4,"Change in senior management","Change in senior management","Medium"],[2026,2,18,"Work order received, 96 cr","Order win","High"],[2026,7,12,"Quarterly filing submitted","Quarterly filing","Medium"],[2026,7,20,"Investor call on the quarter","Concall / investor meet","Medium"]];
 function idxOn(ms){ if(ms<WD[0].getTime()) return -1; if(ms>WD[N-1].getTime()) return N; let lo=0,hi=N-1; while(lo<hi){const mid=(lo+hi+1)>>1; if(WD[mid].getTime()<=ms) lo=mid; else hi=mid-1;} return lo; }
 const dMs=ms=>dFmt(new Date(ms));
 function eventsFor(e){
@@ -3592,14 +3611,13 @@ function eventsFor(e){
 }
 
 const chs={tf:"D",n:253,off:0,cn:false,cs:false,log:false,pct:false,auto:true,lock:null,type:"candle",cur:null,sel:null,e:null,geo:null,evBars:{},evOf:{},
-  ov:{e50:1,d200:1,exit:0,ath:1,vol:1,rsi:1},x:{bb:0,macd:0,vwap:0,st:0,don:0},hid:{},style:{},alerts:[],set:{legend:1,events:1,last:1,lg:1},ev:{R:1,D:1,S:1,B:1,F:1,V:1}};
+  ov:{e50:1,exit:1,ath:1,vol:1,rsi:1},x:{bb:0,macd:0,vwap:0,st:0,don:0},hid:{},style:{},alerts:[],set:{legend:1,events:1,last:1,lg:1},ev:{R:1,D:1,S:1,B:1,F:1,V:1}};
 const TPER={D:1,W:5,M:21}, TDEF={D:253,W:1260,M:"all"};
 const TYN={candle:"Candles",hollow:"Hollow candles",ha:"Heikin Ashi",bars:"Bars",line:"Line",area:"Area"};
 /* ----- indicator registry. live: drawn from the sample series. The rest are previews (the product draws them with KLineChart). ----- */
 const IND=[
   {k:"e50",name:"50 EMA",live:1,tabs:["Trend"],col:"#D9730D",w:1.8,opt:"cw",desc:"Exponential average of the last 50 closes. Always the daily one."},
-  {k:"d200",name:"200 DMA",live:1,tabs:["Trend"],col:"#1D4ED8",w:1.8,opt:"cw",desc:"Simple average of the last 200 closes. Always the daily one."},
-  {k:"exit",name:"Exit line",live:1,tabs:["Trend"],col:"#BE123C",w:1.6,opt:"cw",desc:"The 200 DMA the strategy uses as its exit line."},
+  {k:"exit",name:"Exit line (200 DMA)",live:1,tabs:["Trend"],col:"#BE123C",w:1.6,opt:"cw",desc:"The 200 DMA the strategy uses as its exit line."},
   {k:"ath",name:"All-time high",live:1,tabs:["Trend"],col:"#0E7490",w:1.2,opt:"cw",desc:"A level line at the highest price on record."},
   {k:"vol",name:"Volume",live:1,tabs:["Volume"],col:"#94A3B8",w:1,opt:"",desc:"Shares traded each bar. The darker part is the delivery share."},
   {k:"rsi",name:"RSI 14",live:1,tabs:["Technicals"],col:"#7C3AED",w:1.6,opt:"cw",desc:"Relative strength index. Above 70 is stretched, below 30 is washed out."},
@@ -3670,13 +3688,13 @@ function tagsSvg(tags,top,bottom,x,w){
 }
 function barLabel(t,b,nb,per){const dd=WD[t.di[b]], days=nb*per; return days<=200?dd.getUTCDate()+" "+MON[dd.getUTCMonth()]:days<=1500?MON[dd.getUTCMonth()]+" "+String(dd.getUTCFullYear()).slice(2):String(dd.getUTCFullYear());}
 
-const LGT={e50:"ema50",d200:"dma200",exit:"exit_line",rsi:"rsi14",bb:"ct_bb",vwap:"ct_vwap",st:"ct_supertrend",don:"ct_donchian",macd:"ct_macd"};
-const LGN={e50:"50 EMA",d200:"200 DMA",exit:"Exit line",ath:"All-time high",vol:"Volume",rsi:"RSI 14",bb:"Bollinger 20, 2",macd:"MACD 12, 26, 9",vwap:"VWAP 20",st:"Supertrend 10, 3",don:"Donchian 20"};
-const LORD=["vol","e50","d200","exit","ath","bb","vwap","st","don","rsi","macd"], TFN={D:"1D",W:"1W",M:"1M"};
+const LGT={e50:"ema50",exit:"exit_line",rsi:"rsi14",bb:"ct_bb",vwap:"ct_vwap",st:"ct_supertrend",don:"ct_donchian",macd:"ct_macd"};
+const LGN={e50:"50 EMA",exit:"Exit line (200 DMA)",ath:"All-time high",vol:"Volume",rsi:"RSI 14",bb:"Bollinger 20, 2",macd:"MACD 12, 26, 9",vwap:"VWAP 20",st:"Supertrend 10, 3",don:"Donchian 20"};
+const LORD=["vol","e50","exit","ath","bb","vwap","st","don","rsi","macd"], TFN={D:"1D",W:"1W",M:"1M"};
 function legVal(k,e,t,b){
   const f=v=>IN2(v), A=a=>xa(e,t,a)[b];
   switch(k){
-    case "e50": return f(t.e50[b]); case "d200": return f(t.d200[b]); case "exit": return f(t.ex[b]); case "ath": return f(e.ath);
+    case "e50": return f(t.e50[b]); case "exit": return f(t.ex[b]); case "ath": return f(e.ath);
     case "rsi": return t.rsi[b].toFixed(1);
     case "bb": return f(A("bbU"))+" "+f(A("bbM"))+" "+f(A("bbL"));
     case "macd": return A("macd").toFixed(2)+" "+A("sig").toFixed(2)+" "+A("hist").toFixed(2);
@@ -3745,7 +3763,7 @@ function drawChartCore(){
   let lo=Infinity,hi=-Infinity; const ex=v=>{ if(v<lo) lo=v; if(v>hi) hi=v; };
   for(let b=s0;b<ne;b++){
     if(lineOnly) ex(t.c[b]); else { ex(P.l[b]); ex(P.h[b]); }
-    if(chartOn("e50")) ex(t.e50[b]); if(chartOn("d200")) ex(t.d200[b]); if(chartOn("exit")) ex(t.ex[b]);
+    if(chartOn("e50")) ex(t.e50[b]); if(chartOn("exit")) ex(t.ex[b]);
     if(A.bbU){ ex(A.bbU[b]); ex(A.bbL[b]); } if(A.donU){ ex(A.donU[b]); ex(A.donL[b]); } if(A.vw) ex(A.vw[b]); if(A.st) ex(A.st[b]);
   }
   if(chartOn("ath")&&e.ath<=hi*1.35) hi=Math.max(hi,e.ath);
@@ -3788,7 +3806,6 @@ function drawChartCore(){
   if(A.vw) s+=line(A.vw,indCol("vwap"),indW("vwap"));
   if(A.st){ let up="",dn="",prev=0; for(let b=s0;b<ne;b++){ const dr=A.sd[b], pt=`${f1(xs(b))},${f1(y(A.st[b]))}`; if(dr!==prev){ if(dr===1) up+="M"+pt; else dn+="M"+pt; prev=dr; } else if(dr===1) up+="L"+pt; else dn+="L"+pt; }
     const w=indW("st"); s+=`<path d="${up}" fill="none" stroke="var(--gain)" stroke-width="${w}" stroke-linejoin="round"/><path d="${dn}" fill="none" stroke="var(--loss)" stroke-width="${w}" stroke-linejoin="round"/>`; }
-  if(chartOn("d200")){ s+=line(t.d200,indCol("d200"),indW("d200")); addTag(t.d200[ne-1],tagCol("d200")); }
   if(chartOn("e50")){ s+=line(t.e50,indCol("e50"),indW("e50")); addTag(t.e50[ne-1],tagCol("e50")); }
   if(chartOn("exit")){ s+=line(t.ex,indCol("exit"),indW("exit"),"6 4"); addTag(t.ex[ne-1],tagCol("exit")); }
   let athLab="";
@@ -3845,7 +3862,7 @@ function drawChartCore(){
   $("#ch-legend").innerHTML=`<span>${dot("var(--gain)")}Up ${tfw}</span><span>${dot("var(--loss)")}Down ${tfw}</span>`+(VH?`<span>Darker part of each volume bar is delivery</span>`:"")+(chs.tf!=="D"?`<span>Averages and indicators are daily values</span>`:"");
   const rl={5:"5 days",21:"1 month",63:"3 months",126:"6 months",253:"1 year",1260:"5 years"}[chs.n]||(chs.n==="all"?"the full data window":"a custom range"), tfn={D:"daily",W:"weekly",M:"monthly"}[chs.tf];
   const onl=LORD.filter(k=>indState(k)).map(k=>LGN[k]);
-  $("#ch-alt").textContent=`${tfn[0].toUpperCase()+tfn.slice(1)} ${TYN[type].toLowerCase()} chart of ${e.s} over ${rl}${onl.length?", with "+onl.join(", "):""}. Latest close ${IN2(d.c[N-1])}, all-time high ${IN2(e.ath)}, ${e.below<=0.05?"at the high":e.below.toFixed(1)+"% below it"}, 200 DMA ${IN2(d.dma200[N-1])}, RSI ${d.rsi[N-1].toFixed(0)}. 52-week return ${pct(e.r)} against Nifty 500 ${pct(NIFTY.r)}${e.secR==null?"; sector index data missing":" and "+esc(e.idx)+" "+pct(e.secR)}.`;
+  $("#ch-alt").textContent=`${tfn[0].toUpperCase()+tfn.slice(1)} ${TYN[type].toLowerCase()} chart of ${e.s} over ${rl}${onl.length?", with "+onl.join(", "):""}. Latest close ${IN2(d.c[N-1])}, all-time high ${IN2(e.ath)}, ${e.below<=0.05?"at the high":e.below.toFixed(1)+"% below it"}, 200 DMA ${IN2(d.ema[N-1])}, RSI ${d.rsi[N-1].toFixed(0)}. 52-week return ${pct(e.r)} against Nifty 500 ${pct(NIFTY.r)}${e.secR==null?"; sector index data missing":" and "+esc(e.idx)+" "+pct(e.secR)}.`;
 }
 function drawCompare(e,d,W,mob){
   const nb=chs.n==="all"?N:Math.min(N,chs.n), s0=N-nb, PL=8, PR=mob?54:66, PT=10, PH=mob?250:320, H=PT+PH+26, bot=PT+PH;
@@ -3877,7 +3894,7 @@ function moveCross(b,say){
     const inP=yy>=G2.PT&&yy<=G2.PT+G2.PH, hideTag=b===G2.n-1&&chs.set.last;
     if(inP) s+=`<line x1="${G2.PL}" x2="${G2.W-G2.PR}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" stroke="var(--faint)" stroke-dasharray="3 3"/>${hideTag?"":`<rect x="${G2.W-G2.PR+2}" y="${(yy-8.5).toFixed(1)}" width="${G2.PR-4}" height="17" rx="4" style="fill:var(--ink)"/><text x="${G2.W-G2.PR+G2.PR/2}" y="${(yy+4).toFixed(1)}" text-anchor="middle" style="fill:var(--bg);font-weight:600">${G2.pf(pc)}</text>`}`;
     if(G2.RH) s+=`<circle cx="${x.toFixed(1)}" cy="${(G2.rsiTop+G2.RH-t.rsi[b]/100*G2.RH).toFixed(1)}" r="3.5" style="fill:${indCol("rsi")}"/>`;
-    ro=`<b>${nm}${dFmt(WD[di])}</b><span>O <b>${IN2(t.o[b])}</b></span><span>H <b>${IN2(t.h[b])}</b></span><span>L <b>${IN2(t.l[b])}</b></span><span>C <b>${IN2(t.c[b])}</b></span><span class="${cls(ch)}"><b>${pct(ch,2)}</b></span><span>Vol <b>${(t.v[b]/1e6).toFixed(2)}M</b></span><span>Delivery <b>${(t.dl[b]*100).toFixed(0)}%</b></span><span>50 EMA${sfx} <b>${IN2(t.e50[b])}</b></span><span>200 DMA${sfx} <b>${IN2(t.d200[b])}</b></span><span>RSI <b>${t.rsi[b].toFixed(1)}</b></span>`;
+    ro=`<b>${nm}${dFmt(WD[di])}</b><span>O <b>${IN2(t.o[b])}</b></span><span>H <b>${IN2(t.h[b])}</b></span><span>L <b>${IN2(t.l[b])}</b></span><span>C <b>${IN2(t.c[b])}</b></span><span class="${cls(ch)}"><b>${pct(ch,2)}</b></span><span>Vol <b>${(t.v[b]/1e6).toFixed(2)}M</b></span><span>Delivery <b>${(t.dl[b]*100).toFixed(0)}%</b></span><span>50 EMA${sfx} <b>${IN2(t.e50[b])}</b></span><span>200 DMA${sfx} <b>${IN2(t.ex[b])}</b></span><span>RSI <b>${t.rsi[b].toFixed(1)}</b></span>`;
     sp2=`${nm}${dFmt(WD[di])}. Close ${IN2(t.c[b])}, ${pct(ch,2)}. Volume ${(t.v[b]/1e6).toFixed(2)} million, delivery ${(t.dl[b]*100).toFixed(0)} percent.${chs.evOf[b]!=null?" Event on this day. Press Enter to read it.":""}`; }
   $("#ch-cross").innerHTML=s;
   if(G2.mode==="c"){ const t2=G2.t, P2=G2.type==="ha"?haOf(t2):t2, yy2=G2.y(P2.c[b]); $$("#ch-svg .ptag").forEach(g=>{ g.style.opacity=(!(b===G2.n-1)&&Math.abs(+g.dataset.y-yy2)<19)?"0":""; }); }
@@ -4143,7 +4160,7 @@ const TYS=[["candle","Open, high, low and close as a body with wicks."],["hollow
 anchorBtn($("#ct-type"),btn=>ctMenu(btn,TYS.map(([k,sub])=>({label:TYN[k],sub,icon:k,role:"menuitemradio",checked:chs.type===k,onSelect:()=>{ chs.type=k; drawChart(); }})),{label:"Chart type"}));
 /* ---------- indicators dialog ---------- */
 const dlgInd=mkDlg("ct-dlg-ind","ct-dlg-ind","ct-di-h"), TABS=["Favorites","Technicals","Volume","Trend"];
-const favs=()=>{ const f=LS.get(K_FAV,null); return Array.isArray(f)?f.filter(k=>INDM[k]):["e50","d200","rsi","vol","macd","bb"]; };
+const favs=()=>{ const f=LS.get(K_FAV,null); return Array.isArray(f)?f.filter(k=>INDM[k]):["e50","exit","rsi","vol","macd","bb"]; };
 let indTab="Favorites", indQ="";
 dlgInd.innerHTML=`${dHead("ct-di-h","Indicators")}<div class="ct-ds"><span class="ct-dsi" aria-hidden="true">${cti("search")}</span><input type="search" id="ct-di-q" placeholder="Search indicators" aria-label="Search indicators" autocomplete="off" spellcheck="false"></div><div class="ct-dbd"><div class="ct-dtabs" role="tablist" aria-label="Indicator groups">${TABS.map(t=>`<button type="button" role="tab" class="ct-dtab" data-tab="${t}" id="ct-dt-${t}" aria-controls="ct-di-list" aria-selected="false" tabindex="-1">${t}</button>`).join("")}</div><div class="ct-dlist" id="ct-di-list" role="tabpanel" tabindex="-1"></div></div><div class="sr" id="ct-di-live" role="status" aria-live="polite"></div>`;
 const diList=$("#ct-di-list",dlgInd), diQ=$("#ct-di-q",dlgInd), diLive=$("#ct-di-live",dlgInd);
@@ -4175,7 +4192,7 @@ $(".ct-dtabs",dlgInd).addEventListener("keydown",ev=>{
 function openInd(){ if(chs.cn||chs.cs){ ctToast("Switch the comparison off to add indicators."); return; } indQ=""; diQ.value=""; if(!favs().length&&indTab==="Favorites") indTab="Technicals"; renderInd(); showDlg(dlgInd,diQ); }
 $("#ct-ind").addEventListener("click",openInd);
 /* ---------- templates ---------- */
-const BUILT=[{name:"Momentum playbook",sub:"50 EMA, volume, RSI and MACD",ov:["e50","vol","rsi"],x:["macd"]},{name:"Trend and Volume",sub:"50 and 200 averages, all-time high, volume, Supertrend and VWAP",ov:["e50","d200","ath","vol"],x:["st","vwap"]}];
+const BUILT=[{name:"Momentum playbook",sub:"50 EMA, volume, RSI and MACD",ov:["e50","vol","rsi"],x:["macd"]},{name:"Trend and Volume",sub:"50 and 200 averages, all-time high, volume, Supertrend and VWAP",ov:["e50","exit","ath","vol"],x:["st","vwap"]}];
 const userTpl=()=>{ const t=LS.get(K_TPL,[]); return (Array.isArray(t)?t:[]).filter(x=>x&&typeof x.name==="string"&&Array.isArray(x.ov)&&Array.isArray(x.x)); };
 function applyTpl(t){
   Object.keys(chs.ov).forEach(k=>chs.ov[k]=t.ov.includes(k)?1:0); Object.keys(chs.x).forEach(k=>chs.x[k]=t.x.includes(k)?1:0); chs.hid={}; drawChart(); ctToast("Template applied: "+t.name+".");
@@ -5255,6 +5272,7 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
         </div>
         <div id="mo-pf-panel" role="tabpanel" aria-labelledby="mo-pf-t-sector"><div id="mo-pf-body"></div></div>
         <p class="mo-cap">Based on the stocks in our scan. Hover or focus a bar to see how many.${tip("perf_members")}</p>
+        <div id="mo-ind" hidden></div>
         <p class="sr" id="mo-pf-live" aria-live="polite"></p>
       </div>
       <div class="sect"><header><h2>Rank in sector${tip("mo_sector_rank")}</h2></header><div id="mo-rank"></div></div>
@@ -5317,10 +5335,11 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
   }
   /* ---------------- SECTOR AND INDUSTRY PERFORMANCE ---------------- */
   const PFB=90, PFLBL={sector:"Sector",industry:"Industry"};
+  const MIN_GROUP=4;
   function pfGroups(tab,win){
-    const all=PERF[tab].map(x=>({n:x.n,k:x.k,v:x.r[win]}));
+    const every=PERF[tab].map(x=>({n:x.n,k:x.k,v:x.r[win]})), all=every.filter(x=>x.k>=MIN_GROUP), small=every.filter(x=>x.k<MIN_GROUP);
     const desc=[...all].sort((a,b)=>b.v-a.v), h=Math.min(5,Math.floor(all.length/2));
-    return {all, up:desc.slice(0,h), dn:[...desc].reverse().slice(0,h).reverse()}; /* losers: lowest return last */
+    return {all, small, up:desc.slice(0,h), dn:[...desc].reverse().slice(0,h).reverse()}; /* losers: lowest return last */
   }
   function pfOwn(e,tab){
     if(!e||e.out) return null;
@@ -5347,10 +5366,35 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
     const ownShown=!!ownItem&&shown.some(x=>x.n===own);
     const grp=(list,dir,head)=>`<section class="pf-grp pf-${dir}" aria-labelledby="mo-pf-h-${dir}"><h3 class="pf-h" id="mo-pf-h-${dir}">${ic("arrow",dir==="up"?"mo-u":"mo-d")}${head}</h3><ul class="pf-list">${list.map(x=>pfItem(x,max,ownShown&&x.n===own,tab,win)).join("")}</ul></section>`;
     let cap="";
-    if(!ownItem) cap=`<p class="mo-cap">${esc(e.s)} is not mapped to ${tab==="sector"?"a sector index":"an industry"}, so no bar is marked.</p>`;
+    if(own&&g.small.some(x=>x.n===own)) cap=`<p class="mo-cap">${esc(own)} has fewer than ${MIN_GROUP} scanned stocks, so it is not ranked and no bar is marked.</p>`;
+    else if(!ownItem) cap=`<p class="mo-cap">${esc(e.s)} is not mapped to ${tab==="sector"?"a sector index":"an industry"}, so no bar is marked.</p>`;
     else if(!ownShown){ const rk=[...g.all].sort((a,b)=>b.v-a.v).findIndex(x=>x.n===own)+1; cap=`<p class="mo-cap">${esc(own)} is ranked ${rk} of ${g.all.length} over ${win}: ${pct(ownItem.v)}.</p>`; }
     box.innerHTML=`<div class="pf-chart">${grp(g.up,"up","Top performing")}${grp(g.dn,"dn","Under performing")}</div>${cap}`;
+    indBody(tab,win,g);
     if(announce){ const lv=document.getElementById("mo-pf-live"), top=g.up[0], low=g.dn[g.dn.length-1]; if(lv&&top&&low) lv.textContent=`${PFLBL[tab]} performance over ${win}: top ${top.n} ${pct(top.v)}, lowest ${low.n} ${pct(low.v)}.`; }
+  }
+  /* Industry tab only: every ranked industry, groups under MIN_GROUP listed apart, and technical trend cards for the top and weakest groups. Sample values, fixed per group name. */
+  function indBody(tab,win,g){
+    const box=document.getElementById("mo-ind"); if(!box) return;
+    if(tab!=="industry"){ box.hidden=true; box.innerHTML=""; return; }
+    box.hidden=false;
+    const ranked=[...g.all].sort((a,b)=>b.v-a.v);
+    const rows=ranked.map((x,k)=>`<tr><td class="r">${k+1}</td><th scope="row">${esc(x.n)}</th><td class="r">${x.k}</td><td class="r">${pct(x.v)}</td></tr>`).join("");
+    const small=[...(g.small||[])].sort((a,b)=>b.v-a.v).map(x=>`<li>${esc(x.n)}: ${x.k} stocks, median ${pct(x.v)} over ${win}</li>`).join("");
+    const tg=[...g.up.map(x=>({x,dir:"Top"})),...g.dn.map(x=>({x,dir:"Weakest"}))];
+    const cards=tg.map(({x,dir})=>{
+      const r=mul(hashStr(x.n)^0x7e1), k=x.k;
+      const a=Math.round(k*(0.3+0.6*r())), b=Math.round(k*(0.2+0.6*r())), c=Math.round(k*(0.05+0.4*r()));
+      const kv=(lab,n)=>`<li><span>${lab}</span><b>${n} of ${k} stocks, ${Math.round(n/k*100)}%</b></li>`;
+      return `<li class="ind-card"><p class="ind-cn"><span class="ind-dir">${dir}</span>${esc(x.n)}</p><ul class="ind-kv">${kv("Above the 50 EMA",a)}${kv("Above the 200 DMA",b)}${kv("At a 52-week high",c)}</ul></li>`;
+    }).join("");
+    box.innerHTML=`<details class="ind-all"><summary>All industries (${ranked.length} ranked)${tip("ind_all")}</summary>`
+      +`<p class="mo-foot">Median return of the scanned stocks in each industry over ${win}, best first. Sample values.</p>`
+      +`<div class="tbl-wrap" tabindex="0" role="region" aria-label="All industries ranked by median return over ${win}, scrolls sideways"><table><caption class="sr">Industries ranked by median return over ${win}, best first. Industries with fewer than ${MIN_GROUP} stocks are not ranked.</caption><thead><tr><th scope="col" class="r">Rank</th><th scope="col">Industry</th><th scope="col" class="r">Stocks</th><th scope="col" class="r">Median return</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      +(small?`<h4 class="ind-sh">Fewer than ${MIN_GROUP} stocks, not ranked${tip("min_group")}</h4><ul class="ind-small">${small}</ul>`:"")
+      +`</details>`
+      +`<h3 class="mo-mh">Technical trends${tip("ind_trend")}<span>Top five and weakest five over ${win}. Sample values.</span></h3>`
+      +`<ul class="ind-trend" aria-label="Technical trends for the top and weakest industries">${cards}</ul>`;
   }
   function leadersBox(e){
     const box=document.getElementById("mo-leaders"), h=document.getElementById("mo-ld-h"); if(!box) return;
@@ -5605,7 +5649,7 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
   }
   function obRender(e){
     obSt.e=e;
-    const all=orderBookFor(e), excl=all.filter(it=>!it.phrase), on=all.filter(obOn);
+    const all=orderBookFor(e), lo=all.filter(it=>!obOn(it)), on=all.filter(obOn);
     const orders=on.filter(it=>!it.cancel), total=on.reduce((s,it)=>s+it.val,0);
     document.getElementById("ob-chips").innerHTML=ORDER_GROUPS.map(g=>{
       const cnt=all.filter(it=>it.phrase&&groupOf(it.phrase)===g.id).length;
@@ -5614,7 +5658,7 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
     document.getElementById("ob-cards").innerHTML=
       `<div class="mo-card"><h3>Orders counted</h3><div class="mo-cc"><b>${orders.length}</b></div><p>Cancelled orders are not counted as orders, but they reduce the total.</p></div>`+
       `<div class="mo-card"><h3>Total value won${tip("ob_total")}</h3><div class="mo-cc"><b>${obCr(total)}<small>cr</small></b></div><p>After cancellations. Sample values.</p></div>`+
-      `<div class="mo-card"><h3>Excluded LODR filings</h3><div class="mo-cc"><b>${excl.length}</b></div><p>Not orders, so left out.</p></div>`;
+      `<div class="mo-card"><h3>Excluded LODR filings</h3><div class="mo-cc"><b>${lo.length}</b></div><p>Not orders, or matches for a keyword group that is off. Not counted.</p></div>`;
     const ref=new Date(OB_REF), y=ref.getUTCFullYear(), cur=Math.floor(ref.getUTCMonth()/3)*3, qs=[];
     for(let k=4;k>=1;k--){
       const s0=Date.UTC(y,cur-3*k,1), e0=Date.UTC(y,cur-3*k+3,1), last=new Date(e0-1);
@@ -5626,9 +5670,10 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
     const table=on.length
       ? `<div class="tbl-wrap" tabindex="0" role="region" aria-label="Order book filings, scrolls sideways"><table><caption class="ob-cap">Sample values. Cancelled orders show as negative values and reduce the total.</caption><thead><tr><th scope="col">Date</th><th scope="col">Headline</th><th scope="col">Matched phrase</th><th scope="col" class="r">Value (cr)</th></tr></thead><tbody>${rows}</tbody></table></div>`
       : `<div class="mo-empty"><b>No orders match the keywords you chose.</b> Turn a keyword group back on above.</div>`;
-    const left=`<details class="ob-left"><summary>Left out (${excl.length})</summary><p class="mo-foot">Not orders, so left out. Listed here so you can check the filter.</p><ul class="ob-lo">${excl.map(it=>`<li><span class="mo-ev-d">${dMs(it.ms)}</span> ${esc(it.head)}</li>`).join("")}</ul></details>`;
+    const offTxt=it=>ORDER_GROUPS.find(x=>x.id===groupOf(it.phrase)).phrases.join(", ");
+    const left=`<details class="ob-left"><summary>Left out (${lo.length})</summary><p class="mo-foot">Not orders, or matches for a keyword group that is off. Listed here so you can check the filter.</p><ul class="ob-lo">${lo.map(it=>`<li><span class="mo-ev-d">${dMs(it.ms)}</span> ${esc(it.head)}${it.phrase?` <span class="ob-off">Filter off: ${esc(offTxt(it))}</span>`:""}</li>`).join("")}</ul></details>`;
     document.getElementById("ob-table").innerHTML=table+left;
-    return {n:orders.length,total};
+    return {n:orders.length,total,left:lo.length};
   }
   function obBind(){
     if(obSt.bound) return; obSt.bound=true;
@@ -5637,7 +5682,7 @@ registerStockTab({id:"p-tech",label:"Technicals",after:"p-fund",
       const g=b.dataset.g; obSt.ok[g]=obSt.ok[g]?0:1;
       const r=obRender(obSt.e);
       const nb=document.querySelector(`#ob-chips [data-g="${g}"]`); if(nb) nb.focus();
-      document.getElementById("ob-live").textContent=`${r.n} orders counted, ${obCr(r.total)} cr`;
+      document.getElementById("ob-live").textContent=`${r.n} orders counted, ${obCr(r.total)} cr. ${r.left} left out.`;
     });
   }
   registerStockTab({id:"p-sector",label:"Sector",after:"p-peers",html:secHtml,render(e){ mo.e=e; bind(); secRender(e); }});
@@ -6786,7 +6831,7 @@ function go(h){
   else if(key==="review") t=`<b>For review</b>`;
   $("#trail").innerHTML=t;
   $("#crumbs").style.display=key==="stocks"?"none":"";
-  document.title=ttl+" · ATH Scanner Wireframes";
+  document.title=ttl+" · Market Scanner Wireframes";
   hideTip(true); scrollTo({top:restoreNext&&scrollAt[h]||0,behavior:"instant"}); $("#nav").classList.remove("open"); $("#menu").setAttribute("aria-expanded","false");
   if(key==="stock") drawChart();
   if(curH!==null){ const h1=$(ROUTES[key]+" h1"); if(h1){ h1.setAttribute("tabindex","-1"); h1.focus({preventScroll:true}); } }
