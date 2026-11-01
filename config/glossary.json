@@ -1,1 +1,569 @@
-{}
+{
+  "universe": {
+    "key": "universe",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Universe",
+    "tooltip": "The stocks the strategy looks at: India's 750 largest companies by market value.",
+    "derivation_kind": "formula",
+    "formula": "Ranked by market capitalisation from exchange data. Refreshed at each weekly review.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "verdict": {
+    "key": "verdict",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Verdict",
+    "tooltip": "The single call for a stock: BUY, HOLD, EXIT or REJECT. For a stock you do not own, HOLD and EXIT both mean it is not a buy.",
+    "derivation_kind": "formula",
+    "formula": "REJECT if any governance point is Bad. Otherwise from the score: 3 of 3 is BUY (only when the required governance points are assessed), 2 of 3 is HOLD, 0 or 1 is EXIT. Below the 200 DMA while behind the Nifty 500 is also EXIT.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "verdict_buy": {
+    "key": "verdict_buy",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Buy",
+    "tooltip": "All three momentum rules are met and governance passed, so new money may go in.",
+    "derivation_kind": "formula",
+    "formula": "Score 3 of 3, no Bad governance grade, and governance points 4, 5 and 18 assessed.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "verdict_hold": {
+    "key": "verdict_hold",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Hold",
+    "tooltip": "Keep it if you own it, but add nothing. If you do not own it, it is not a buy.",
+    "derivation_kind": "formula",
+    "formula": "Score 2 of 3. Also shown for 3 of 3 when a required governance point is not assessed, with the reason.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "verdict_reject": {
+    "key": "verdict_reject",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Rejected",
+    "tooltip": "Governance failed, so the stock is out however strong its price is.",
+    "derivation_kind": "formula",
+    "formula": "At least one of the 18 governance points is graded Bad.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "score": {
+    "key": "score",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Score",
+    "tooltip": "How many of the three momentum rules the stock meets today.",
+    "derivation_kind": "formula",
+    "formula": "Price at its all-time high, profit at its high, and 52-week return ahead of both indexes. Each is met or not met. A rule that could not be checked is shown as not assessed and does not count as met.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "run": {
+    "key": "run",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Run date",
+    "tooltip": "The date of the scan run these results come from.",
+    "derivation_kind": "formula",
+    "formula": "Prices and profits are as of that day's close. Every row in the list shows the run date selected above the table.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "rank": {
+    "key": "rank",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Rank",
+    "tooltip": "Position by 52-week return among the stocks in the chosen index that pass the first two momentum checks. 1 is the strongest. Worked out again on every scan. Stocks that do not qualify show a dash.",
+    "derivation_kind": "formula",
+    "formula": "The first two momentum checks are price at its all-time high and profit at its high. Stocks that pass both are ordered by 52-week return, highest first, within the index chosen in the Indices drop-down.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "ret52": {
+    "key": "ret52",
+    "visibility": [
+      "ui"
+    ],
+    "label": "52-week return",
+    "tooltip": "How much the price rose or fell over the last 52 weeks.",
+    "derivation_kind": "formula",
+    "formula": "Closing price today divided by the closing price 52 weeks ago, minus 1. Adjusted for splits and bonuses.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "alpha_n": {
+    "key": "alpha_n",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Alpha vs Nifty 500",
+    "tooltip": "How far the stock's 52-week return is ahead of, or behind, the Nifty 500.",
+    "derivation_kind": "formula",
+    "formula": "Stock 52-week return minus Nifty 500 52-week return, in percentage points. Exchange index data.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "alpha_s": {
+    "key": "alpha_s",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Alpha vs sector",
+    "tooltip": "How far the stock's 52-week return is ahead of, or behind, its own sector index.",
+    "derivation_kind": "formula",
+    "formula": "Stock 52-week return minus the 52-week return of the sector index the stock is mapped to, in percentage points. Blank when the index data is missing.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "below_ath": {
+    "key": "below_ath",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Below all-time high",
+    "tooltip": "How far the latest close is under the highest close on record.",
+    "derivation_kind": "producer",
+    "producer": "scanner.ath.distance_pct",
+    "explanation": "(All-time high close minus latest close) divided by all-time high close. Within 2% counts as at the high.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "pat_chg": {
+    "key": "pat_chg",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Adjusted profit change",
+    "tooltip": "Change in the last twelve months of profit after tax against the twelve months before, with one-off items taken out.",
+    "derivation_kind": "formula",
+    "formula": "Last twelve months profit after tax minus exceptional items (land sales, stake sales), compared with the same figure a year earlier. Company financials.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "gov": {
+    "key": "gov",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Governance",
+    "tooltip": "How many of the 18 governance points have evidence, and the worst grade among them.",
+    "derivation_kind": "formula",
+    "formula": "Each point is graded Good, Neutral or Bad from filings and company financials. Points without evidence are Not assessed.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "gov_grade": {
+    "key": "gov_grade",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Governance grade",
+    "tooltip": "The grade for one governance point.",
+    "derivation_kind": "formula",
+    "formula": "Good: no concern found. Neutral: some concern, not disqualifying. Bad: disqualifying, which rejects the stock. Not assessed: no evidence yet.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "gov_required": {
+    "key": "gov_required",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Required for buy",
+    "tooltip": "Debt, pledged shares and exceptional items must be assessed before a buy is allowed.",
+    "derivation_kind": "formula",
+    "formula": "Points 4, 5 and 18. While any of them is Not assessed the verdict cannot be BUY, and the screen says why.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "not_assessed": {
+    "key": "not_assessed",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Not assessed",
+    "tooltip": "The data needed to grade this point or check this rule is missing. It is never treated as good.",
+    "derivation_kind": "formula",
+    "formula": "Shown in words wherever the data is missing. Not assessed governance points do not count as passed; a rule that could not be checked does not count as met.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "reason": {
+    "key": "reason",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Verdict reason",
+    "tooltip": "A one-line reason for the verdict. Hover to read the full text.",
+    "derivation_kind": "formula",
+    "formula": "Chosen by the rules in order: governance Bad, exit trigger, missing data that blocks a buy, then the first rule not met.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "crit_ath": {
+    "key": "crit_ath",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Price at all-time high",
+    "tooltip": "Whether the stock is trading at the highest price it has ever closed at.",
+    "derivation_kind": "formula",
+    "formula": "Latest close within 2% of the all-time high close. The tolerance is 2%.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "crit_pat": {
+    "key": "crit_pat",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Profit at its high",
+    "tooltip": "Whether the last twelve months of profit after tax are the highest in the data window, with one-offs removed.",
+    "derivation_kind": "formula",
+    "formula": "Last twelve months profit after tax minus exceptional items, compared with every earlier last-twelve-months figure in the data window (about 13 quarters and 12 years). It is the highest within the data window, not lifetime.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "crit_alpha": {
+    "key": "crit_alpha",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Ahead of both indexes",
+    "tooltip": "Whether the 52-week return beats both the Nifty 500 and the stock's own sector index.",
+    "derivation_kind": "formula",
+    "formula": "Stock 52-week return greater than the Nifty 500 return and greater than the sector index return. Ahead of only one does not count.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "data_window": {
+    "key": "data_window",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Data window",
+    "tooltip": "The stretch of history the profit and price checks can see.",
+    "derivation_kind": "formula",
+    "formula": "About 13 quarters of quarterly profit and 12 years of yearly profit. Highs are highs within this window.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "exchange_index": {
+    "key": "exchange_index",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Exchange index data",
+    "tooltip": "Index levels published by the exchange, used for the Nifty 500 and sector comparisons.",
+    "derivation_kind": "formula",
+    "formula": "Daily index closes stored in our own database.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "one_offs": {
+    "key": "one_offs",
+    "visibility": [
+      "ui"
+    ],
+    "label": "One-off items",
+    "tooltip": "Profit that will not repeat, such as a property sale or the sale of a stake.",
+    "derivation_kind": "formula",
+    "formula": "Exceptional items reported by the company are subtracted from profit after tax before the high is tested.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "sma200": {
+    "key": "sma200",
+    "visibility": [
+      "ui"
+    ],
+    "label": "200 DMA",
+    "tooltip": "The simple average of the last 200 daily closing prices. It is the long-term trend line, and the exit line is worked out from it.",
+    "derivation_kind": "producer",
+    "producer": "scanner.indicators.sma",
+    "explanation": "Simple moving average of the last 200 daily closes: their sum divided by 200. It stays 200 days on weekly and monthly charts.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "exit_rule_ema": {
+    "key": "exit_rule_ema",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Moving-average exit",
+    "tooltip": "A hard exit when the price is below its 200 DMA and the stock is behind the Nifty 500.",
+    "derivation_kind": "formula",
+    "formula": "Both must be true: latest close under the 200 DMA, and 52-week return under the Nifty 500 return.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "exit_trigger": {
+    "key": "exit_trigger",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Exit trigger",
+    "tooltip": "A rule that says to exit a holding, in plain words.",
+    "derivation_kind": "formula",
+    "formula": "Score of 1 of 3 or lower, or below the 200 DMA while behind the Nifty 500.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "analyst_stance": {
+    "key": "analyst_stance",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Analyst stance (context)",
+    "tooltip": "The older six-pillar read of the company: Constructive, Mixed or Cautious.",
+    "derivation_kind": "producer",
+    "producer": "scanner.conclude.scorecard",
+    "explanation": "From the earlier scorecard on filings and financials. It is context and no longer drives ranking.",
+    "provisional": true,
+    "wording_status": "draft"
+  },
+  "trade_risk": {
+    "key": "trade_risk",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Trade risk",
+    "tooltip": "The share of the price you would lose if the stock fell to your exit.",
+    "derivation_kind": "formula",
+    "formula": "(Buy price minus exit price) divided by buy price.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "risk_per_position": {
+    "key": "risk_per_position",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Risk per position",
+    "tooltip": "The most you are willing to lose on one stock, as a share of the chosen base.",
+    "derivation_kind": "formula",
+    "formula": "18% total loss budget divided by 15 stocks is 1.2%.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "exit_price": {
+    "key": "exit_price",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Exit price",
+    "tooltip": "The price you set before buying, to sell at if the stock falls to it. Position sizing uses it.",
+    "derivation_kind": "formula",
+    "formula": "Suggested value: the lower of the 200 DMA and 80% of the buy price. The suggestion stays between 5% and 30% below the buy price. A price you type replaces it.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "alloc": {
+    "key": "alloc",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Allocation",
+    "tooltip": "How much of the base goes into this stock.",
+    "derivation_kind": "formula",
+    "formula": "Risk per position divided by the percentage fall from buy price to exit. Buy at 100 with exit at 80 is a 20% fall, so 1.2% / 20% = 6%.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "allocation_cap": {
+    "key": "allocation_cap",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Largest allocation",
+    "tooltip": "A ceiling on any one position, as a share of Net Asset Value.",
+    "derivation_kind": "formula",
+    "formula": "Default 15%. A very tight exit would otherwise ask for a huge position.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "investment_value": {
+    "key": "investment_value",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Investment Value",
+    "tooltip": "The total cost of what is invested in your portfolio today.",
+    "derivation_kind": "formula",
+    "formula": "Sum of quantity times average cost over your holdings. You type it.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "notional_pnl": {
+    "key": "notional_pnl",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Notional profit or loss",
+    "tooltip": "The gain or loss on paper on your holdings, not yet sold.",
+    "derivation_kind": "formula",
+    "formula": "Current market value of holdings minus Investment Value. Enter a negative number for a loss.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "nav": {
+    "key": "nav",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Net Asset Value",
+    "tooltip": "What your portfolio is worth today.",
+    "derivation_kind": "formula",
+    "formula": "Investment Value plus notional profit, or minus notional loss. Type it directly and the profit or loss updates to match.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "cash_available": {
+    "key": "cash_available",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Cash available",
+    "tooltip": "Money you can put into the new stock now.",
+    "derivation_kind": "formula",
+    "formula": "Optional. The position is reduced if the amount asked for is more than this.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "holdings_count": {
+    "key": "holdings_count",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Stocks you hold",
+    "tooltip": "How many stocks are in your portfolio now.",
+    "derivation_kind": "formula",
+    "formula": "Optional. Used only to warn when the 1.2% rule's assumption of 15 stocks is exceeded.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "average_cost": {
+    "key": "average_cost",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Average cost",
+    "tooltip": "What you paid per share on average for the shares you already hold.",
+    "derivation_kind": "formula",
+    "formula": "Total cost divided by quantity. Used to stop advice to add when the price is below it.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "size_against": {
+    "key": "size_against",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Size against",
+    "tooltip": "Which figure the risk percentage is applied to.",
+    "derivation_kind": "formula",
+    "formula": "Net Asset Value (default): risk budget is 1.2% of what the portfolio is worth today. Investment Value: 1.2% of what was put in.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "risk_budget": {
+    "key": "risk_budget",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Risk budget",
+    "tooltip": "The rupees you are willing to lose on this stock.",
+    "derivation_kind": "formula",
+    "formula": "Risk per position times the chosen base.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "add_hold_trim": {
+    "key": "add_hold_trim",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Add, Hold or Trim",
+    "tooltip": "What the target size means for shares you already own.",
+    "derivation_kind": "formula",
+    "formula": "Target quantity minus quantity held. Never advises adding when the price is below your average cost.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "rank_chg": {
+    "key": "rank_chg",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Rank Change",
+    "tooltip": "Places moved since the previous scan of this index (the run date is shown). Up means a better rank. New means it was not ranked in the previous scan. A stock can move only because others moved. A rank change never changes the verdict.",
+    "derivation_kind": "formula",
+    "formula": "Rank in the previous completed scan of the same index minus rank in this scan. Scans run on market days only, so the previous scan is not always the previous calendar day.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "held": {
+    "key": "held",
+    "visibility": [
+      "ui"
+    ],
+    "label": "You hold",
+    "tooltip": "Marks stocks that are in the holdings you loaded this session.",
+    "derivation_kind": "formula",
+    "formula": "Matches symbols from your holdings. Not stored after the session.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "not_in_universe": {
+    "key": "not_in_universe",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Not in universe",
+    "tooltip": "The stock is not in the top 750, so only what can be computed is tested.",
+    "derivation_kind": "formula",
+    "formula": "Price, 200 DMA and 52-week return can be computed; profit history, sector index and governance may not be.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "change_entry": {
+    "key": "change_entry",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Change since entry",
+    "tooltip": "How much the price has moved since your average cost.",
+    "derivation_kind": "formula",
+    "formula": "(Last price minus average price) divided by average price.",
+    "provisional": false,
+    "wording_status": "draft"
+  },
+  "exit_watch": {
+    "key": "exit_watch",
+    "visibility": [
+      "ui"
+    ],
+    "label": "Exit watch",
+    "tooltip": "Holdings currently triggering an exit rule.",
+    "derivation_kind": "formula",
+    "formula": "Count of loaded holdings with at least one exit trigger.",
+    "provisional": false,
+    "wording_status": "draft"
+  }
+}

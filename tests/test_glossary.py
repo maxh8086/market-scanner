@@ -50,7 +50,9 @@ class GlossaryLoaderTests(unittest.TestCase):
         self.assertIn(key_name, str(ctx.exception))
 
     def test_repo_glossary_file_loads(self) -> None:
-        self.assertEqual(load_glossary(glossary.GLOSSARY_PATH), {})
+        entries = load_glossary(glossary.GLOSSARY_PATH)
+        self.assertIn("verdict", entries)
+        self.assertTrue(all(e["wording_status"] == "draft" for e in entries.values()))
 
     def test_empty_file_loads(self) -> None:
         self.assertEqual(load_glossary(self._write({})), {})
