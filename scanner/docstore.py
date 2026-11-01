@@ -68,18 +68,29 @@ def _expiry(base) -> str:
 def open_db(path: Path | str = DB_PATH) -> TinyDB:
     """Open (creating if needed) the document store and record its schema.
 
-    Selection per BUILD_PLAN: DOCSTORE_BACKEND env var controls which backend.
-    - mongo: uses MongoDB via scanner.mongo
-    - tinydb (default): uses TinyDB at path
+    DOCSTORE_BACKEND selects the backend:
+    - unset or empty: mongo (the live store). No fallback to TinyDB; if Mongo
+      is unreachable, scanner.mongo.open_db raises.
+    - "mongo": MongoDB via scanner.mongo.
+    - "tinydb": TinyDB at path, only when set explicitly.
+    Any other value raises ValueError.
     """
     import os
-    backend = os.environ.get("DOCSTORE_BACKEND", "tinydb").lower()
+    raw = os.environ.get("DOCSTORE_BACKEND", "")
+    backend = raw.strip().lower()
+    if not backend:
+        backend = "mongo"
+    elif backend not in ("mongo", "tinydb"):
+        raise ValueError(
+            f"DOCSTORE_BACKEND={raw!r} is not valid; "
+            "allowed values are mongo, tinydb (unset means mongo)"
+        )
 
     if backend == "mongo":
         from scanner import mongo
         return mongo.open_db()
 
-    # TinyDB backend (default)
+    # TinyDB backend (explicit only)
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     db = TinyDB(p, storage=_CompactStorage, encoding="utf-8")

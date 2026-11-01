@@ -13,8 +13,10 @@ collector). This file describes what those migrations create and why.
 | Neo4j | Company, Filing, Extraction, Counterparty, Conclusion, Fundamentals and their relationships | customer and repeat-order questions no single filing answers; rebuildable from Mongo |
 | `output/` files | scan, enriched, conclusions and report files written by each stage | hand-off between pipeline stages today; see "Files" below |
 
-Backends are switchable for offline work and tests: `MARKETDATA_BACKEND=postgres|sqlite`,
-`DOCSTORE_BACKEND=mongo|tinydb`. `tests/__init__.py` forces sqlite/tinydb, so the offline tests
+Defaults: `MARKETDATA_BACKEND` unset means `postgres`, and `DOCSTORE_BACKEND` unset means `mongo`.
+`sqlite` (`MARKETDATA_BACKEND=sqlite`) and `tinydb` (`DOCSTORE_BACKEND=tinydb`) are used only when
+set explicitly, for offline work. Nothing falls back to local files when Postgres or Mongo is down.
+`tests/__init__.py` forces sqlite/tinydb, so the offline tests
 do not exercise Postgres types (NUMERIC arrives as `Decimal`; the Postgres read boundary converts
 it to float, see `tests/test_postgres_decimal.py`).
 

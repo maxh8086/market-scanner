@@ -1016,16 +1016,8 @@ def collect_announcements(
     Returns:
         {"fetched": int, "new": int, "from": date|None, "to": date|None}
     """
-    import os
-    backend = os.environ.get("MARKETDATA_BACKEND", "").lower()
-
-    # Auto-detect backend
-    if backend not in ("postgres", "sqlite"):
-        try:
-            from scanner.pg.db import available
-            backend = "postgres" if available() else "sqlite"
-        except Exception:
-            backend = "sqlite"
+    from scanner.marketdata import get_backend
+    backend = get_backend()
 
     if backend == "postgres":
         from scanner.marketdata.factors_postgres import collect_announcements as pg_collect
@@ -1043,16 +1035,8 @@ def collect_corporate_actions(
     Returns:
         {"fetched": int, "new": int, "from": date|None, "to": date|None}
     """
-    import os
-    backend = os.environ.get("MARKETDATA_BACKEND", "").lower()
-
-    # Auto-detect backend
-    if backend not in ("postgres", "sqlite"):
-        try:
-            from scanner.pg.db import available
-            backend = "postgres" if available() else "sqlite"
-        except Exception:
-            backend = "sqlite"
+    from scanner.marketdata import get_backend
+    backend = get_backend()
 
     if backend == "postgres":
         from scanner.marketdata.factors_postgres import collect_corporate_actions as pg_collect
@@ -1067,16 +1051,8 @@ def announcement_coverage() -> list[dict]:
 
     Returns list of dicts with coverage status per symbol.
     """
-    import os
-    backend = os.environ.get("MARKETDATA_BACKEND", "").lower()
-
-    # Auto-detect backend
-    if backend not in ("postgres", "sqlite"):
-        try:
-            from scanner.pg.db import available
-            backend = "postgres" if available() else "sqlite"
-        except Exception:
-            backend = "sqlite"
+    from scanner.marketdata import get_backend
+    backend = get_backend()
 
     if backend == "postgres":
         from scanner.coverage import announcement_coverage as pg_coverage

@@ -19,40 +19,53 @@ if TYPE_CHECKING:
     from scanner.history import SymbolHistory
 
 
+_ALLOWED_BACKENDS = ("postgres", "sqlite")
+
+
 def get_backend() -> str:
-    """Active backend: 'postgres' or 'sqlite'.
+    """Active market-data backend: 'postgres' or 'sqlite'.
 
-    Defaults to 'postgres' if Postgres is available; falls back to 'sqlite'.
+    MARKETDATA_BACKEND unset or empty selects 'postgres' (the live store).
+    'sqlite' is used only when it is set explicitly (case-insensitive).
+    There is no auto-detect and no silent fallback to local files: if
+    Postgres is down, the caller fails. Any other non-empty value raises
+    ValueError.
     """
-    backend = os.environ.get("MARKETDATA_BACKEND", "").lower()
-    if backend in ("postgres", "sqlite"):
+    raw = os.environ.get("MARKETDATA_BACKEND", "")
+    backend = raw.strip().lower()
+    if not backend:
+        return "postgres"
+    if backend in _ALLOWED_BACKENDS:
         return backend
-
-    # Auto-detect
-    try:
-        from scanner.pg.db import available
-        return "postgres" if available() else "sqlite"
-    except Exception:
-        return "sqlite"
+    raise ValueError(
+        f"MARKETDATA_BACKEND={raw!r} is not valid; "
+        f"allowed values are {', '.join(_ALLOWED_BACKENDS)} (unset means postgres)"
+    )
 
 
 def get_history_impl() -> object:
-    """Return the backend's history implementation."""
+    """Return the backend's history implementation.
+
+    No callers exist in this checkout. The sqlite module is not present.
+    """
     backend = get_backend()
     if backend == "postgres":
         from . import postgres_backend
         return postgres_backend
-    else:
-        from . import sqlite_backend
-        return sqlite_backend
+    raise NotImplementedError(
+        "sqlite backend module is not in this checkout; use MARKETDATA_BACKEND=postgres"
+    )
 
 
 def get_factors_impl() -> object:
-    """Return the backend's factors implementation."""
+    """Return the backend's factors implementation.
+
+    No callers exist in this checkout. The sqlite module is not present.
+    """
     backend = get_backend()
     if backend == "postgres":
         from . import postgres_backend
         return postgres_backend
-    else:
-        from . import sqlite_backend
-        return sqlite_backend
+    raise NotImplementedError(
+        "sqlite backend module is not in this checkout; use MARKETDATA_BACKEND=postgres"
+    )

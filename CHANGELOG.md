@@ -27,6 +27,7 @@ All notable changes to this project are recorded here. Newest first.
 - 2026-11-01, decision 10 reversed: the wireframe uses a simple 200-day moving average (200 DMA) and a 50-day exponential average (50 EMA). There is no 200 EMA anywhere. Glossary keys `ema200`, `cross50_200` and `exit_rule_ema` keep their names, but their text says 200 DMA. The technical vote list counts EMAs 10, 20, 50 and 100 only. Checked: the backend computes a simple 200-day average only.
 
 ### Changed
+- Backend defaults: `MARKETDATA_BACKEND` unset means `postgres` and `DOCSTORE_BACKEND` unset means `mongo`. `sqlite` and `tinydb` are used only when set explicitly. The auto-detect and the silent fallback to local files are removed, and invalid values raise `ValueError`. `scanner/factors.py` uses `get_backend()`. Tests in `tests/test_backend_defaults.py`.
 - `tests/test_import_sqlite.py`: the reachability probe (`SELECT 1`) moved to module level, and the class is skipped with `@unittest.skipUnless` when Postgres is unreachable. The unguarded `setUpClass` connect no longer errors, and the class counts as skipped. It is also skipped when `data/history.db` is missing, so the tests are no longer errors in a checkout without that file.
 - `scanner/pg/db.py` `dsn()`: raises RuntimeError when `POSTGRES_DSN` user or database differs from `POSTGRES_USER` or `POSTGRES_DB` (names only, no password or host). Tests in `tests/test_pg_dsn.py`.
 - `handoff.md`: ruflo cleanup closed. Decisions recorded under "Questions closed this session", item 8.

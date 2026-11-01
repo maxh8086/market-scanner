@@ -15,6 +15,8 @@ stack are history.
 
 **Postgres preflight.** `scripts/ensure_postgres.ps1` starts the project Postgres and waits until healthy; `start.ps1` calls it first. Tests are not meant to start containers.
 
+**Backend defaults (no silent local fallback).** Unset `MARKETDATA_BACKEND` means Postgres and unset `DOCSTORE_BACKEND` means Mongo; sqlite and tinydb run only when set explicitly, and an outage fails loudly. Nothing copies local-file data back. Follow-ups: `intensity.load_announcements` still reads `factors.db` directly, and `fetch_metadata` and `pull_log` have no Postgres table.
+
 **Test counts:** `tests/test_import_sqlite.py` skips (counted as skipped) unless Postgres is reachable and `data/history.db` exists.
 
 ## Architecture (settled 2026-09-28)

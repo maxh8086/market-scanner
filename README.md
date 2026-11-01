@@ -210,6 +210,8 @@ crashing the run.
 
 ## Caching
 
+> Correction: Postgres is the live store for candles and market data (`MARKETDATA_BACKEND` defaults to `postgres`). The SQLite files under `data/` are importer input, Upstox staging, and offline test fixtures, not the live store.
+
 - `data/ind_niftytotalmarket_list.csv` — the NSE constituent list (re-downloaded on `--rebuild` or if missing). This is also the instrument source: its `ISIN Code` column becomes the Upstox `instrument_key`, so there is no separate broker instrument dump to download or keep fresh.
 - `data/history.db` — SQLite, one `candles` row per symbol/day plus a `symbol_stats` table caching each symbol's `ath_high`/`ath_date`/`ath_close`/`first_date`/`last_date` so repeat runs only fetch new days.
 

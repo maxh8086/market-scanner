@@ -13,19 +13,21 @@ from scanner import docstore
 
 
 class BackendSelectionTests(unittest.TestCase):
-    def test_tinydb_backend_default(self):
-        """TinyDB is the default backend when DOCSTORE_BACKEND is not set."""
-        with tempfile.TemporaryDirectory() as tmp:
-            tinydb_path = Path(tmp) / "test.json"
-            # Ensure DOCSTORE_BACKEND is not set for TinyDB default
-            with mock.patch.dict(os.environ, {"DOCSTORE_BACKEND": ""}, clear=False):
-                db = docstore.open_db(tinydb_path)
-                self.assertIsNotNone(db)
-                # TinyDB returns a TinyDB instance
-                from tinydb import TinyDB
-                self.assertIsInstance(db, TinyDB)
-                db.close()
-                self.assertTrue(tinydb_path.exists())
+    def test_mongo_is_default_when_unset(self):
+        """Mongo is the default when DOCSTORE_BACKEND is unset or empty.
+
+        scanner.mongo.open_db is mocked, so no connection is made.
+        """
+        for value in ("", None):
+            env = {} if value is None else {"DOCSTORE_BACKEND": value}
+            with self.subTest(value=value):
+                with mock.patch.dict(os.environ, env, clear=False):
+                    if value is None:
+                        os.environ.pop("DOCSTORE_BACKEND", None)
+                    with mock.patch("scanner.mongo.open_db") as open_mongo:
+                        open_mongo.return_value = "mongo-sentinel"
+                        self.assertEqual(docstore.open_db(), "mongo-sentinel")
+                        open_mongo.assert_called_once_with()
 
     def test_tinydb_backend_explicit(self):
         """TinyDB backend can be explicitly selected."""
