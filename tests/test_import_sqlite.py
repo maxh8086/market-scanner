@@ -5,26 +5,20 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-# Only run these tests if Postgres is available
+# Only run these tests if Postgres is reachable: available() only checks that it is configured
 try:
     from scanner.pg.db import available, connect
     POSTGRES_AVAILABLE = available()
+    if POSTGRES_AVAILABLE:
+        with connect() as conn:
+            conn.execute("SELECT 1")  # Verify connection works
 except Exception:
     POSTGRES_AVAILABLE = False
 
 
-@unittest.skipUnless(POSTGRES_AVAILABLE, "Postgres not available")
+@unittest.skipUnless(POSTGRES_AVAILABLE, "Postgres is not reachable")
 class TestImportSQLiteToPostgres(unittest.TestCase):
     """Tests for idempotent SQLite to Postgres import."""
-
-    @classmethod
-    def setUpClass(cls):
-        """Create a test schema in Postgres."""
-        if not POSTGRES_AVAILABLE:
-            return
-        with connect() as conn:
-            # Apply migration 010 (and prereq 001 if not already applied)
-            conn.execute("SELECT 1")  # Verify connection works
 
     def test_import_candles_idempotent(self):
         """Importing twice inserts same number of rows."""

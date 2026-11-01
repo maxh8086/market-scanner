@@ -178,6 +178,9 @@ if ($WithLaya) {
 }
 
 Write-Stage "Databases (Postgres, MongoDB, Neo4j)"
+# Postgres first: start it and wait until healthy before anything else uses it.
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'scripts\ensure_postgres.ps1')
+if ($LASTEXITCODE -ne 0) { Stop-Pipeline "Postgres is not healthy (see the messages above)." }
 $code = Invoke-Docker @('compose', 'up', '-d', '--wait', 'scanner-postgres', 'scanner-mongo', 'scanner-neo4j')
 if ($code -ne 0) { Stop-Pipeline "Could not start the project databases (see the messages above)." }
 

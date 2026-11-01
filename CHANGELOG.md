@@ -15,6 +15,7 @@ All notable changes to this project are recorded here. Newest first.
 - Wireframe: Actions pane on phones (640px and below). Ask AI, Size this position and Connect Broker move into a collapsed right-side "Actions" pane, opened from a handle on the right edge. It closes on Escape, an outside tap, Close or any action.
 - Wireframe: Bucket column sort cycles A to Z, Z to A, verdict rank, then default (alphabetical).
 - `docs/wireframe-review-2026-11-01.md`: full text of the five review-page sections removed from `#/review` on 2026-11-01.
+- `scripts/ensure_postgres.ps1`: checks Docker is up, starts `scanner-postgres` (`docker compose up -d`, a no-op if running) and waits up to 60 seconds until it is healthy. `start.ps1` calls it before the databases stage.
 
 ### Decisions
 - 2026-10-31, initial brief: Written by the brainstorm and Goldfish review (six lenses plus synthesizer). Covers one glossary file, one entry per column, formula checks, build warning, and the open questions.
@@ -26,6 +27,7 @@ All notable changes to this project are recorded here. Newest first.
 - 2026-11-01, decision 10 reversed: the wireframe uses a simple 200-day moving average (200 DMA) and a 50-day exponential average (50 EMA). There is no 200 EMA anywhere. Glossary keys `ema200`, `cross50_200` and `exit_rule_ema` keep their names, but their text says 200 DMA. The technical vote list counts EMAs 10, 20, 50 and 100 only. Checked: the backend computes a simple 200-day average only.
 
 ### Changed
+- `tests/test_import_sqlite.py`: the reachability probe (`SELECT 1`) moved to module level, and the class is skipped with `@unittest.skipUnless` when Postgres is unreachable. The unguarded `setUpClass` connect no longer errors, and the class counts as skipped.
 - `scanner/pg/db.py` `dsn()`: raises RuntimeError when `POSTGRES_DSN` user or database differs from `POSTGRES_USER` or `POSTGRES_DB` (names only, no password or host). Tests in `tests/test_pg_dsn.py`.
 - `handoff.md`: ruflo cleanup closed. Decisions recorded under "Questions closed this session", item 8.
 - Wireframe fixes (commits `64da241`, `05cbd3e`, `7b24ac9`): contrast, unique heading ids, info buttons outside labels, visible theme toggle text, no sideways page scroll, chart and stock tab bar unhidden, review screen text overlap fixed, glossary wording (item 8) applied except `fd_cfo`, duplicate Decided by you items merged to 8.
