@@ -16,7 +16,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
+import traceback
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -27,6 +29,55 @@ from scanner.upstox import QUOTE_BATCH_SIZE, UpstoxClient, instrument_key
 
 IST = timezone(timedelta(hours=5, minutes=30))
 MARKET_CLOSE_HOUR, MARKET_CLOSE_MINUTE = 15, 30
+EXIT_BACKEND = 3
+_BACKEND_HINT = (
+    "Start Postgres with scripts/ensure_postgres.ps1, "
+    "or set MARKETDATA_BACKEND=sqlite for an offline run."
+)
+_CONFIG_FILES = ("scanner/pg/db.py", "scanner/mongo.py")
+
+
+def _backend_line(prefix: str, exc: BaseException) -> str:
+    """One stderr line for a backend failure. Only the class name and the first
+    line of the message are shown, with any password or URL credentials redacted."""
+    first = (str(exc).splitlines() or [""])[0]
+    first = re.sub(r"(password|pwd)\s*=\s*\S+", r"\1=***", first, flags=re.IGNORECASE)
+    first = re.sub(r"://[^@/\s]+@", "://***@", first)
+    return f"{prefix}: {type(exc).__name__}: {first}. {_BACKEND_HINT}"
+
+
+def _check_backend() -> str | None:
+    """Return an error line if the Postgres backend is unusable, else None.
+    The sqlite backend is not checked here."""
+    from scanner.marketdata import get_backend
+    try:
+        if get_backend() != "postgres":
+            return None
+    except ValueError as exc:
+        return _backend_line("Backend check failed", exc)
+    try:
+        from scanner.pg import db
+        with db.connect() as conn:
+            conn.execute("SELECT 1").fetchone()
+    except Exception as exc:  # noqa: BLE001
+        return _backend_line("Backend check failed", exc)
+    return None
+
+
+def _is_backend_failure(exc: Exception) -> bool:
+    """True for infrastructure errors that would hit every symbol: a dropped or
+    refused Postgres connection, or a configuration error raised from the
+    Postgres or Mongo connection code. Per-symbol errors return False."""
+    try:
+        import psycopg
+    except ImportError:
+        psycopg = None
+    if psycopg is not None and isinstance(exc, psycopg.OperationalError):
+        return True
+    if isinstance(exc, RuntimeError):
+        frames = traceback.extract_tb(exc.__traceback__)
+        return any(f.filename.replace("\\", "/").endswith(_CONFIG_FILES) for f in frames)
+    return False
 
 
 def parse_args() -> argparse.Namespace:
@@ -65,6 +116,11 @@ def main() -> int:
     refresh_symbols = set(
         s.strip().upper() for s in args.refresh_history.split(",")
     ) if args.refresh_history else set()
+
+    backend_error = _check_backend()
+    if backend_error:
+        print(backend_error, file=sys.stderr)
+        return EXIT_BACKEND
 
     print("Connecting to Upstox market data...")
     client = UpstoxClient()
@@ -159,6 +215,10 @@ def main() -> int:
                 today=today,
             )
         except Exception as exc:  # noqa: BLE001
+            if _is_backend_failure(exc):
+                # Every remaining symbol would fail the same way: stop the run.
+                print(_backend_line("Backend failure mid-run", exc), file=sys.stderr)
+                return EXIT_BACKEND
             skipped.append({"symbol": sym, "company": info["company"], "reason": f"history fetch failed: {exc}"})
             continue
 
