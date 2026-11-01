@@ -25,12 +25,19 @@ def _first_run(client):
 
 @unittest.skipUnless(_PG, "Postgres is not reachable")
 class UIApiContractTests(unittest.TestCase):
+    skip_reason = None
+
     @classmethod
     def setUpClass(cls):
         cls.client = TestClient(app)
         cls.latest = _first_run(cls.client)
+        # Raising SkipTest here would drop the class's tests from "Ran N"; setUp skips each test instead.
         if cls.latest is None:
-            raise unittest.SkipTest("no completed run in Postgres")
+            cls.skip_reason = "no completed run in Postgres"
+
+    def setUp(self):
+        if self.skip_reason:
+            self.skipTest(self.skip_reason)
 
     def test_health(self):
         r = self.client.get("/api/health")
@@ -138,10 +145,12 @@ class UIApiContractTests(unittest.TestCase):
         self.assertIn(self.latest["run_id"], by_id)
         self.assertEqual(by_id[self.latest["run_id"]]["in_range"], self.latest["in_range"])
 
-    def test_config_lists_all_five_sources(self):
+    def test_config_lists_the_five_core_sources(self):
+        # Extra sources in the live collector_settings table (e.g. index_eod, gov_feeds, exchange_results) are allowed.
+        expected = {"candles_eod", "announcements", "corporate_actions", "filings", "fundamentals"}
         sources = {s["source"] for s in self.client.get("/api/config").json()["sources"]}
-        self.assertEqual(sources, {"candles_eod", "announcements", "corporate_actions",
-                                   "filings", "fundamentals"})
+        missing = expected - sources
+        self.assertFalse(missing, f"missing sources: {sorted(missing)}")
 
     def test_responses_do_not_leak_credentials(self):
         for path in ("/api/runs", "/api/config", "/api/cost"):
