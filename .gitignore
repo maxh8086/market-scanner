@@ -1,3 +1,26 @@
+.env
+.kite_token
+__pycache__/
+*.pyc
+data/
+output/
+logs/
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.env.*
+!.env.example
+
+output_backup_*/
+.codebase-memory/
+
+.env.local
+.env.*.local
+node_modules
+
 # Cloned on first start; each has its own repo.
-/infra/
 /app/
+
+# Local tooling state (not project source)
+.claude/

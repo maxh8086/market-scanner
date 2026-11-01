@@ -1,13 +1,54 @@
 <#
 .SYNOPSIS
-Stop Market Scanner. Add -Infra to also stop the shared infra (databases, vLLM). Data is never deleted.
+Shut the Market Scanner Docker setup down.
+
+.DESCRIPTION
+Stops and removes every container of this project (including the optional laya service, the UI
+and the collector, which run until you stop them, and this project's Postgres, MongoDB and Neo4j).
+Your data/, output/ and logs/ folders are bind mounts and are never touched by this script.
+
+.PARAMETER Prune       Also remove the images built for this project.
+.PARAMETER PurgeModels Also delete this project's named volumes (the Laya model cache, ~800 MB, re-downloaded on the next -WithLaya start). The TimesFM weights are in data\huggingface and are not touched.
 #>
-param([switch]$Infra)
-$ErrorActionPreference = 'Continue'  # native tools write progress to stderr; exit codes are checked explicitly
+param(
+    [switch]$Prune,
+    [switch]$PurgeModels
+)
+
+$ErrorActionPreference = 'Stop'
 Set-Location -Path $PSScriptRoot
-$InfraDir = if ($env:MARKET_INFRA_DIR) { $env:MARKET_INFRA_DIR } else { Join-Path $PSScriptRoot 'infra' }
-$env:MARKET_INFRA_DIR = $InfraDir
-if (Test-Path (Join-Path $PSScriptRoot 'app\docker-compose.yml')) {
-    & docker compose --profile laya down --remove-orphans
+
+# docker writes ordinary progress to stderr; see the note in start.ps1.
+function Invoke-Docker {
+    param([string[]]$DockerArgs)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & docker @DockerArgs | Out-Host
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previous
+    }
 }
-if ($Infra -and (Test-Path (Join-Path $InfraDir 'down.ps1'))) { & (Join-Path $InfraDir 'down.ps1') -Llm; & (Join-Path $InfraDir 'down.ps1') }
+
+Write-Host "=== Stopping the Market Scanner setup ===" -ForegroundColor Cyan
+
+$down = @('compose', '--profile', 'laya', 'down', '--remove-orphans')
+if ($Prune) { $down += @('--rmi', 'local') }
+if ($PurgeModels) {
+    $down += '--volumes'   # the only named volume left is the Laya model cache
+    Write-Host "Removing the Laya model cache volume." -ForegroundColor Yellow
+}
+
+$code = Invoke-Docker $down
+if ($code -ne 0) {
+    Write-Host "Error: docker compose down failed (exit $code)." -ForegroundColor Red
+    exit 1
+}
+
+Write-Host ""
+Write-Host "Still running for this project:" -ForegroundColor Cyan
+$left = & docker compose --profile laya ps --format '{{.Name}}  {{.Status}}' 2>$null
+if ($left) { $left | ForEach-Object { Write-Host "  $_" } } else { Write-Host "  nothing" }
+Write-Host ""
+Write-Host "data/, output/ and logs/ are untouched." -ForegroundColor Green

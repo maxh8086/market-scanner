@@ -1,10 +1,210 @@
-name: market-scanner
-
-# Market Scanner: the application stack. The databases and the LLM server are NOT here; they
-# live in the shared infra repo (cloned to ./infra by start.ps1, run as its own compose project
-# `market-infra`) so other projects can reuse them. The app source is cloned to ./app.
+# One image per component. Everything here is a one-shot job except `laya`:
+#   docker compose run --rm scanner --symbols INFY,TCS
+# start.ps1 drives the whole sequence; stop.ps1 tears it down.
+# `ui` and `collector` are the two long-running services; everything else is a one-shot job.
 #
-#   ./start.ps1                      clone what is missing, start infra, start the app
-#   docker compose up -d --build     the app only (infra must already be up)
-include:
-  - ./app/docker-compose.yml
+# The databases (Postgres, MongoDB, Neo4j) are this project's own services (scanner-postgres,
+# scanner-mongo, scanner-neo4j) on the project's `market-scanner` network. The LLM server is
+# NOT started by this project: it is an OpenAI-compatible endpoint given by URL (start.ps1 passes
+# LLM_URL to enrich; conclude reads CONCLUDE_URL). Nothing here depends on another compose project.
+#
+# Components hand off through the bind-mounted data/, output/ and logs/ folders
+# (SQLite caches, TinyDB store, CSV/XLSX outputs).
+#
+# Secrets reach containers ONLY at runtime, through `env_file` (compose reads the
+# file; no image, build arg or log ever contains it). The single secrets file is .env
+# (Upstox/Kite and this project's database logins); a service gets it only if it needs it.
+x-persist: &persist
+  - ./data:/app/data
+  - ./output:/app/output
+  - ./logs:/app/logs
+
+# Container-side database hosts. Inside a container 127.0.0.1 is the container itself, so each
+# host is this project's service name on the project network. Logins still come from .env.
+# Host scripts read SCANNER_MONGO_HOST and POSTGRES_* from .env (127.0.0.1 and the published ports).
+x-scanner-db-env: &scanner-db-env
+  SCANNER_MONGO_HOST: scanner-mongo:27017
+  POSTGRES_HOST: scanner-postgres
+  POSTGRES_PORT: "5432"
+  NEO4J_URI: bolt://scanner-neo4j:7687
+
+services:
+  scanner:
+    build: {context: ., dockerfile: docker/scanner/Dockerfile}
+    env_file:
+      - .env
+    environment:
+      <<: *scanner-db-env
+      RUN_ID: ${RUN_ID:-}
+    volumes: *persist
+    restart: "no"
+
+  enrich:
+    image: ath-enrich
+    build: {context: ., dockerfile: docker/enrich/Dockerfile}
+    env_file:
+      - .env
+    environment:
+      <<: *scanner-db-env
+      RUN_ID: ${RUN_ID:-}
+    volumes: &persist-config
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    restart: "no"
+
+  enrich-timesfm:        # enrich + TimesFM forecaster (torch, CPU)
+    build: {context: ., dockerfile: docker/timesfm/Dockerfile}
+    env_file:                            # database logins, for reading candles and filings
+      - .env
+    environment:
+      <<: *scanner-db-env
+      HF_HUB_OFFLINE: "1"                # weights are fetched once into ./data/huggingface, then read offline
+      RUN_ID: ${RUN_ID:-}
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - ./data/huggingface:/home/appuser/.cache/huggingface   # TimesFM weights, project-owned
+      - ./config:/app/config:ro
+    restart: "no"
+
+  crosscheck:            # independent of Upstox by design: no credentials
+    build: {context: ., dockerfile: docker/crosscheck/Dockerfile}
+    volumes: *persist
+    restart: "no"
+
+  portfolio:             # read-only Kite holdings overlay
+    build: {context: ., dockerfile: docker/portfolio/Dockerfile}
+    env_file: .env
+    volumes: *persist
+    restart: "no"
+
+
+
+  graph:                 # loads the document store into neo4j, reads graph facts, purges expired data
+    image: ath-enrich
+    build: {context: ., dockerfile: docker/enrich/Dockerfile}
+    entrypoint: ["python", "graph_sync.py"]
+    env_file:                            # NEO4J_URI / NEO4J_AUTH from .env
+      - .env
+    environment:
+      <<: *scanner-db-env
+    volumes: *persist-config
+    restart: "no"
+
+  report:                # final workbook: every stock in sheet 1, summary in sheet 2
+    image: ath-enrich
+    build: {context: ., dockerfile: docker/enrich/Dockerfile}
+    entrypoint: ["python", "final_report.py"]
+    volumes: *persist
+    restart: "no"
+
+  conclude:              # per-stock conclusions from the stored insights; same image as enrich
+    image: ath-enrich
+    build: {context: ., dockerfile: docker/enrich/Dockerfile}
+    entrypoint: ["python", "conclude.py"]
+    env_file:                            # MONGO_URI for conclusions, PG_* to record LLM calls (from .env)
+      - .env
+    environment:
+      <<: *scanner-db-env
+      CONCLUDE_URL: http://host.docker.internal:11434  # the host's own Ollama API, not a container
+      RUN_ID: ${RUN_ID:-}
+    volumes: *persist
+    restart: "no"
+
+  collector:             # keeps candles, announcements, corporate actions, filings and fundamentals current
+    image: ath-enrich                    # schedule and mode come from the UI (Master configuration)
+    build: {context: ., dockerfile: docker/enrich/Dockerfile}
+    entrypoint: ["python", "collect.py", "serve"]
+    env_file:
+      - .env
+    environment:
+      <<: *scanner-db-env
+      MARKETDATA_BACKEND: postgres
+      DOCSTORE_BACKEND: mongo
+    volumes: *persist-config
+    restart: always
+
+  ui:                    # runs, cost metrics and stock dashboards on http://127.0.0.1:8080
+    build: {context: ., dockerfile: docker/ui/Dockerfile}
+    env_file:
+      - .env
+    environment:
+      <<: *scanner-db-env
+    ports:
+      - "127.0.0.1:8080:8080"            # loopback only: the UI has no login
+    restart: always
+
+  scanner-mongo:         # this project's MongoDB, data kept in ./data/mongo
+    image: mongo:7
+    container_name: market-scanner-mongo
+    # --auth: connections need the login from .env (SCANNER_MONGO_USER / SCANNER_MONGO_PASSWORD).
+    command: ["--auth", "--wiredTigerCacheSizeGB", "0.5", "--bind_ip_all"]
+    volumes:
+      - ./data/mongo:/data/db            # bind mount: the database files stay in this project folder
+    ports:
+      - "127.0.0.1:${SCANNER_MONGO_PORT:-27018}:27017"   # 27017 belongs to the tokenfrugal Mongo on this machine
+    restart: unless-stopped
+
+  # This project's Postgres and Neo4j, data kept in ./data. Logins come from .env.
+  scanner-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: market-scanner-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:?set POSTGRES_ADMIN_USER in .env (the role that owns ./data/postgres)}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?set POSTGRES_ADMIN_PASSWORD in .env}
+      POSTGRES_DB: postgres
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${SCANNER_POSTGRES_PORT:-5433}:5432"   # host port 5433, so a Postgres on host port 5432 is not affected
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  scanner-neo4j:
+    image: neo4j:5-community
+    container_name: market-scanner-neo4j
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH:?set NEO4J_AUTH (user/password) in .env}
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1g
+      NEO4J_server_memory_pagecache_size: 512m
+    volumes:
+      - ./data/neo4j/data:/data
+      - ./data/neo4j/logs:/logs
+    ports:
+      - "127.0.0.1:${SCANNER_NEO4J_HTTP_PORT:-7475}:7474"
+      - "127.0.0.1:${SCANNER_NEO4J_BOLT_PORT:-7688}:7687"   # host port 7688, so a Neo4j on host port 7687 is not affected
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$${NEO4J_AUTH#*/}\" 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
+
+  laya:                  # decision-model service; profile `laya` (start.ps1 -WithLaya). Not wired into ranking.
+    build: {context: ., dockerfile: docker/laya/Dockerfile}
+    container_name: ath-laya
+    # No env_file: Laya needs none of the broker/data credentials. To require a
+    # bearer key, set LAYA_API_KEY in the shell that runs start.ps1.
+    environment:
+      - LAYA_API_KEY
+    volumes:
+      - huggingface_cache:/home/appuser/.cache/huggingface   # weights download once
+    ports:
+      - "127.0.0.1:8000:8000"            # loopback only: laya-serve has no auth by default
+    profiles: ["laya"]
+    restart: "no"
+
+volumes:
+  huggingface_cache:
+
+networks:
+  default:
+    name: market-scanner                 # this project's own network; no external network is needed

@@ -1,0 +1,13 @@
+[project]
+name = "market-scanner"
+version = "0.1.0"
+description = "Market scanner for NSE stocks, with conclusions, workbook export and UI."
+requires-python = ">=3.13"
+
+# Build gate. Run from the repo root with the project venv:
+#   .venv\Scripts\python.exe -m pytest
+# The glossary coverage, formula and forbidden-term checks are added here when
+# the glossary loader exists (see docs/designs/shared-glossary.md).
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

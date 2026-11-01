@@ -1,0 +1,31 @@
+kiteconnect>=4.2.0
+pandas>=2.0.0
+openpyxl>=3.1.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+rich>=13.0.0
+
+# Enrichment (enrich.py). Not needed for the daily ath_scan.py run.
+tinydb>=4.8.0          # document store for filings, fundamentals, extractions
+neo4j>=5.20.0          # graph store (Neo4j service); imported lazily by scanner/graph.py
+pypdf>=4.0.0           # text layer out of NSE filing PDFs
+
+# Optional. scanner/forecast.py works without these -- the empirical backend
+# has no dependencies, and load_timesfm() reports absence instead of raising.
+# timesfm[torch]>=1.2.0
+
+# Optional. scanner/layaclf.py (Laya decision model). `pip install laya` pulls
+# transformers + tokenizers; weights (~808 MB English) download on first use,
+# never at install time.
+# laya>=0.3.21
+
+# Database clients (this project's own Postgres and MongoDB) and the UI service
+psycopg[binary]>=3.2   # Postgres: runs, snapshots, market data, settings
+pymongo>=4.8           # MongoDB: filings, extractions, conclusions, fundamentals
+fastapi>=0.115         # ui/ service
+uvicorn>=0.30
+croniter>=2.0          # collector schedules
+tzdata
+httpx>=0.27            # screener.in client (scanner/screener.py)
+beautifulsoup4>=4.12   # screener.in page parsers
+lxml>=5.0
