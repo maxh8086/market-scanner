@@ -6062,7 +6062,7 @@ function renderStock(sym){
   // timeline: the API gives the run date, stance, LTP and distance; only the current run is shown here
   $("#st-fil").innerHTML=`<div><span><span class="mono" style="color:var(--faint)">${esc(frun)}</span><br>Stance: ${e.stance?esc(e.stance):"TBD"}</span><span class="num">LTP ${IN2(e.px)}<br>${e.below<=0.05?"At high":e.below.toFixed(1)+"% below high"}</span></div>`;
   $("#st-stance").innerHTML=e.stance?`<span class="pill ${e.stance}">${e.stance[0].toUpperCase()+e.stance.slice(1)}</span>`:`<span class="gp na">${ic("minus")}Not available</span>`;
-  chs.e=e; chs.cur=null; chs.sel=null;
+  chs.e=e; chs.cur=null; chs.sel=null; initStockExtras(e);
   return e;
 }
 
