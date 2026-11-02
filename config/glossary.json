@@ -67,7 +67,7 @@
     "label": "Score",
     "tooltip": "How many of the three momentum rules the stock meets today.",
     "derivation_kind": "formula",
-    "formula": "Price at its all-time high, profit at its high, and 52-week return ahead of both indexes. Each is met or not met. A rule that could not be checked is shown as not assessed and does not count as met.",
+    "formula": "Price within 5% of its all-time high (see the crit_ath rule), profit at its high, and 52-week return ahead of both indexes. Each is met or not met. A rule that could not be checked is shown as not assessed and does not count as met.",
     "provisional": false,
     "wording_status": "draft"
   },
@@ -137,10 +137,10 @@
       "ui"
     ],
     "label": "Below all-time high",
-    "tooltip": "How far the latest close is under the highest close on record.",
+    "tooltip": "How far the latest price is under the highest price on record, as a percentage.",
     "derivation_kind": "producer",
     "producer": "scanner.ath.distance_pct",
-    "explanation": "(All-time high close minus latest close) divided by all-time high close. Within 2% counts as at the high.",
+    "explanation": "(All-time high minus latest price) divided by the all-time high, times 100. Shown as a percentage and never below 0. The all-time high is the highest daily high on record.",
     "provisional": false,
     "wording_status": "draft"
   },
@@ -221,10 +221,10 @@
     "visibility": [
       "ui"
     ],
-    "label": "Price at all-time high",
-    "tooltip": "Whether the stock is trading at the highest price it has ever closed at.",
+    "label": "Price within 5% of all-time high",
+    "tooltip": "Whether the stock is trading within 5% of the highest price it has ever reached.",
     "derivation_kind": "formula",
-    "formula": "Latest close within 2% of the all-time high close. The tolerance is 2%.",
+    "formula": "Distance below the all-time high is 5% or less, where distance = (all-time high minus latest price) divided by the all-time high, times 100. This is the same 0-5% bucket the scan uses. The tolerance is 5%, not 2%.",
     "provisional": false,
     "wording_status": "draft"
   },

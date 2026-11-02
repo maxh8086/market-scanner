@@ -9,6 +9,7 @@ from unittest import mock
 
 from scanner import glossary
 from scanner.glossary import entry_for, load_glossary
+from scripts.build_wireframe_glossary import build_block
 
 SAMPLE_ENTRY = {
     "key": "ath_distance_pct",
@@ -53,6 +54,20 @@ class GlossaryLoaderTests(unittest.TestCase):
         entries = load_glossary(glossary.GLOSSARY_PATH)
         self.assertIn("verdict", entries)
         self.assertTrue(all(e["wording_status"] == "draft" for e in entries.values()))
+
+    def test_wireframe_glossary_matches_file(self) -> None:
+        block = build_block(load_glossary(glossary.GLOSSARY_PATH))
+        wireframe = Path(glossary.GLOSSARY_PATH).resolve().parent.parent / "ui" / "wireframes" / "strategy.html"
+        html = wireframe.read_text(encoding="utf-8")
+        begin_marker = "/* glossary:begin */"
+        end_marker = "/* glossary:end */"
+        begin = html.index(begin_marker) + len(begin_marker)
+        end = html.index(end_marker)
+        self.assertEqual(
+            html[begin:end].strip("\r\n"),
+            block,
+            "wireframe glossary is stale; run .venv/Scripts/python.exe scripts/build_wireframe_glossary.py",
+        )
 
     def test_empty_file_loads(self) -> None:
         self.assertEqual(load_glossary(self._write({})), {})

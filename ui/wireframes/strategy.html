@@ -2702,32 +2702,33 @@ const ic=(n,c="")=>`<svg class="${c}" aria-hidden="true"><use href="#i-${n}"/></
 
 /* ==== src/gloss.js ==== */
 /* ---------------- glossary (label, meaning, derivation) ---------------- */
+/* glossary:begin */
 const G={
  universe:["Universe","The stocks the strategy looks at: India's 750 largest companies by market value.","Ranked by market capitalisation from exchange data. Refreshed at each weekly review."],
  verdict:["Verdict","The single call for a stock: BUY, HOLD, EXIT or REJECT. For a stock you do not own, HOLD and EXIT both mean it is not a buy.","REJECT if any governance point is Bad. Otherwise from the score: 3 of 3 is BUY (only when the required governance points are assessed), 2 of 3 is HOLD, 0 or 1 is EXIT. Below the 200 DMA while behind the Nifty 500 is also EXIT."],
  verdict_buy:["Buy","All three momentum rules are met and governance passed, so new money may go in.","Score 3 of 3, no Bad governance grade, and governance points 4, 5 and 18 assessed."],
  verdict_hold:["Hold","Keep it if you own it, but add nothing. If you do not own it, it is not a buy.","Score 2 of 3. Also shown for 3 of 3 when a required governance point is not assessed, with the reason."],
  verdict_reject:["Rejected","Governance failed, so the stock is out however strong its price is.","At least one of the 18 governance points is graded Bad."],
- score:["Score","How many of the three momentum rules the stock meets today.","Price at its all-time high, profit at its high, and 52-week return ahead of both indexes. Each is met or not met. A rule that could not be checked is shown as not assessed and does not count as met."],
+ score:["Score","How many of the three momentum rules the stock meets today.","Price within 5% of its all-time high (see the crit_ath rule), profit at its high, and 52-week return ahead of both indexes. Each is met or not met. A rule that could not be checked is shown as not assessed and does not count as met."],
  run:["Run date","The date of the scan run these results come from.","Prices and profits are as of that day's close. Every row in the list shows the run date selected above the table."],
  rank:["Rank","Position by 52-week return among the stocks in the chosen index that pass the first two momentum checks. 1 is the strongest. Worked out again on every scan. Stocks that do not qualify show a dash.","The first two momentum checks are price at its all-time high and profit at its high. Stocks that pass both are ordered by 52-week return, highest first, within the index chosen in the Indices drop-down."],
  ret52:["52-week return","How much the price rose or fell over the last 52 weeks.","Closing price today divided by the closing price 52 weeks ago, minus 1. Adjusted for splits and bonuses."],
  alpha_n:["Alpha vs Nifty 500","How far the stock's 52-week return is ahead of, or behind, the Nifty 500.","Stock 52-week return minus Nifty 500 52-week return, in percentage points. Exchange index data."],
  alpha_s:["Alpha vs sector","How far the stock's 52-week return is ahead of, or behind, its own sector index.","Stock 52-week return minus the 52-week return of the sector index the stock is mapped to, in percentage points. Blank when the index data is missing."],
- below_ath:["Below all-time high","How far the latest close is under the highest close on record.","(All-time high close minus latest close) divided by all-time high close. Within 2% counts as at the high."],
+ below_ath:["Below all-time high","How far the latest price is under the highest price on record, as a percentage.","(All-time high minus latest price) divided by the all-time high, times 100. Shown as a percentage and never below 0. The all-time high is the highest daily high on record."],
  pat_chg:["Adjusted profit change","Change in the last twelve months of profit after tax against the twelve months before, with one-off items taken out.","Last twelve months profit after tax minus exceptional items (land sales, stake sales), compared with the same figure a year earlier. Company financials."],
  gov:["Governance","How many of the 18 governance points have evidence, and the worst grade among them.","Each point is graded Good, Neutral or Bad from filings and company financials. Points without evidence are Not assessed."],
  gov_grade:["Governance grade","The grade for one governance point.","Good: no concern found. Neutral: some concern, not disqualifying. Bad: disqualifying, which rejects the stock. Not assessed: no evidence yet."],
  gov_required:["Required for buy","Debt, pledged shares and exceptional items must be assessed before a buy is allowed.","Points 4, 5 and 18. While any of them is Not assessed the verdict cannot be BUY, and the screen says why."],
  not_assessed:["Not assessed","The data needed to grade this point or check this rule is missing. It is never treated as good.","Shown in words wherever the data is missing. Not assessed governance points do not count as passed; a rule that could not be checked does not count as met."],
  reason:["Verdict reason","A one-line reason for the verdict. Hover to read the full text.","Chosen by the rules in order: governance Bad, exit trigger, missing data that blocks a buy, then the first rule not met."],
- crit_ath:["Price at all-time high","Whether the stock is trading at the highest price it has ever closed at.","Latest close within 2% of the all-time high close. The tolerance is 2%."],
+ crit_ath:["Price within 5% of all-time high","Whether the stock is trading within 5% of the highest price it has ever reached.","Distance below the all-time high is 5% or less, where distance = (all-time high minus latest price) divided by the all-time high, times 100. This is the same 0-5% bucket the scan uses. The tolerance is 5%, not 2%."],
  crit_pat:["Profit at its high","Whether the last twelve months of profit after tax are the highest in the data window, with one-offs removed.","Last twelve months profit after tax minus exceptional items, compared with every earlier last-twelve-months figure in the data window (about 13 quarters and 12 years). It is the highest within the data window, not lifetime."],
  crit_alpha:["Ahead of both indexes","Whether the 52-week return beats both the Nifty 500 and the stock's own sector index.","Stock 52-week return greater than the Nifty 500 return and greater than the sector index return. Ahead of only one does not count."],
  data_window:["Data window","The stretch of history the profit and price checks can see.","About 13 quarters of quarterly profit and 12 years of yearly profit. Highs are highs within this window."],
  exchange_index:["Exchange index data","Index levels published by the exchange, used for the Nifty 500 and sector comparisons.","Daily index closes stored in our own database."],
  one_offs:["One-off items","Profit that will not repeat, such as a property sale or the sale of a stake.","Exceptional items reported by the company are subtracted from profit after tax before the high is tested."],
- ema200:["200 DMA","The simple average of the last 200 daily closing prices. It is the long-term trend line, and the exit line is worked out from it.","Simple moving average of the last 200 daily closes: their sum divided by 200. It stays 200 days on weekly and monthly charts."],
+ sma200:["200 DMA","The simple average of the last 200 daily closing prices. It is the long-term trend line, and the exit line is worked out from it.","Simple moving average of the last 200 daily closes: their sum divided by 200. It stays 200 days on weekly and monthly charts."],
  exit_rule_ema:["Moving-average exit","A hard exit when the price is below its 200 DMA and the stock is behind the Nifty 500.","Both must be true: latest close under the 200 DMA, and 52-week return under the Nifty 500 return."],
  exit_trigger:["Exit trigger","A rule that says to exit a holding, in plain words.","Score of 1 of 3 or lower, or below the 200 DMA while behind the Nifty 500."],
  analyst_stance:["Analyst stance (context)","The older six-pillar read of the company: Constructive, Mixed or Cautious.","From the earlier scorecard on filings and financials. It is context and no longer drives ranking."],
@@ -2751,6 +2752,7 @@ const G={
  change_entry:["Change since entry","How much the price has moved since your average cost.","(Last price minus average price) divided by average price."],
  exit_watch:["Exit watch","Holdings currently triggering an exit rule.","Count of loaded holdings with at least one exit trigger."]
 };
+/* glossary:end */
 const tip=k=>`<span class="tipm" data-tip="${k}"></span>`;
 
 
@@ -5753,7 +5755,7 @@ function phRender(e){
   const out=!!e.out;
   const checks=
     tri("Score now","score",out?`<span class="gp na">${ic("minus")}Not scored</span>`:e.score<=1?trg:clear,out?"Outside the scan universe, so there is no score.":`${e.score} of 3${e.na?`, ${e.na} not assessed`:""}. Exit at 1 or lower.`)+
-    tri("200 DMA","ema200",e.emaBelow?`<span class="gp flag">${ic("warn")}Below it</span>`:clear,`Close <b>${IN2(e.px)}</b> against the 200 DMA <b>${IN2(e.ema)}</b>: ${e.emaBelow?"below":"above"}.`)+
+    tri("200 DMA","sma200",e.emaBelow?`<span class="gp flag">${ic("warn")}Below it</span>`:clear,`Close <b>${IN2(e.px)}</b> against the 200 DMA <b>${IN2(e.ema)}</b>: ${e.emaBelow?"below":"above"}.`)+
     tri("52-week alpha vs Nifty 500","alpha_n",e.behind?`<span class="gp flag">${ic("warn")}Behind</span>`:clear,`Stock <b>${pct(e.r)}</b> against Nifty 500 <b>${pct(NIFTY.r)}</b>: <b>${pp(e.aN)}</b>.`);
   const anyTrig=(!out&&e.score<=1)||e.emaTrig;
   const sumLine=`<div class="ph-sum2">${e.emaTrig?trg:clear}<span><b>Moving-average exit${tip("exit_rule_ema")}</b>. Needs both: below the 200 DMA and behind the Nifty 500.${e.emaTrig?" Both are true.":" At most one is true."}</span></div>`;
@@ -6041,7 +6043,7 @@ function renderStock(sym){
    kpi("Below high","below_ath",e.below<=0.05?"At high":e.below.toFixed(1)+"%","High "+IN2(e.ath)+", date TBD")+
    kpi("1-year return","ret52",pct(e.r),"Index comparison TBD")+
    kpi("Adj. profit change","pat_chg","TBD","Not in the API")+
-   kpi("200 DMA","ema200","TBD","Not in the API");
+   kpi("200 DMA","sma200","TBD","Not in the API");
   // phases: only the fields the API gives are shown; the rest is TBD
   const tbdPh=(n,title,sum)=>`<li class="phase"><span class="pn" aria-hidden="true">${n}</span><div class="ph-head"><h2>${title}</h2><span class="gp plain">TBD</span></div><p class="ph-sum">${sum}</p></li>`;
   const p1=tbdPh(1,`Phase 1. Governance ${tip("gov")}`,"Governance points are not in the API. TBD.");
@@ -6053,7 +6055,7 @@ function renderStock(sym){
    <div class="ph-head"><h2>Phase 4. Hold or exit</h2></div>
    <p class="ph-sum">Exit checks below. Only the stance score is in the API; the 200 DMA and alpha checks are TBD.</p>
    ${tri("Stance score","score",out?`<span class="gp na">${ic("minus")}Not scored</span>`:`<span class="gp plain">Stance ${e.score}</span>`,out?"Outside the scan universe, so there is no score.":`Stance score ${e.score} from the latest run.`)}
-   ${tri("200 DMA","ema200",tbdSt,"TBD. Not in the API.")}
+   ${tri("200 DMA","sma200",tbdSt,"TBD. Not in the API.")}
    ${tri("52-week alpha vs Nifty 500","alpha_n",tbdSt,"TBD. Index return not in the API.")}
    ${tri("Moving-average exit","exit_rule_ema",tbdSt,"TBD. Needs the 200 DMA.")}</li>`;
   $("#phases").innerHTML=p1+p2+p3+p4;
@@ -6684,7 +6686,7 @@ $("#dl-sym").innerHTML=BUYS.map(e=>`<option value="${e.s}">${esc(e.n)}</option>`
 $("#c-chips").innerHTML=`<span class="cl">Buy candidates</span>`+BUYS.map(e=>`<button type="button" class="chip" data-sym="${esc(e.s)}" aria-pressed="false">${esc(e.s)}</button>`).join("");
 $("#c-chips").addEventListener("click",e=>{const b=e.target.closest(".chip"); if(!b) return; $(F.sym).value=b.dataset.sym; symPick(); runCalc();});
 function symPick(){const e=EM[$(F.sym).value.trim().toUpperCase()]; if(e&&!e.out){const pr=propExit(e.px,e.ema); setF("buy",e.px); setF("exit",pr.exit); if(e.held){setF("held",e.held[0]);setF("avg",e.held[1]);} propNote(e);} }
-function propNote(e){const p=$("#c-prop"); e=e||EM[$(F.sym).value.trim().toUpperCase()]; if(!e||e.out){p.textContent="";return;} const pr=propExit(e.px,e.ema); p.innerHTML=`<b>Proposed exit for ${esc(e.s)}: ${IN2(pr.exit)}.</b> The lower of the <span>200 DMA</span>${tip("ema200")} (${IN2(e.ema)}) and 80% of the buy price, within 5% to 30% risk. It is filled in for you; overwrite it with your own.`;}
+function propNote(e){const p=$("#c-prop"); e=e||EM[$(F.sym).value.trim().toUpperCase()]; if(!e||e.out){p.textContent="";return;} const pr=propExit(e.px,e.ema); p.innerHTML=`<b>Proposed exit for ${esc(e.s)}: ${IN2(pr.exit)}.</b> The lower of the <span>200 DMA</span>${tip("sma200")} (${IN2(e.ema)}) and 80% of the buy price, within 5% to 30% risk. It is filled in for you; overwrite it with your own.`;}
 
 /* worked examples: the active one is marked until any field is edited */
 function szMarkPreset(exit){[["#pre1",80],["#pre2",70]].forEach(([s,v])=>$(s).setAttribute("aria-pressed",String(exit===v)));}
