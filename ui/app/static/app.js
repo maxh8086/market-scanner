@@ -648,16 +648,24 @@ async function renderSetup() {
   const requiredRows = st.fields.filter(f => f.required && !isKite(f)).map(field).join("");
   const kiteRows = st.fields.filter(isKite).map(field).join("");
   const otherRows = st.fields.filter(f => !f.required && !isKite(f)).map(field).join("");
-  const kiteFormFields = ["Type (choose Personal)", "App name", "Redirect URL", "Postback URL", "Description"]
-    .map(x => `<li>${esc(x)}</li>`).join("");
+  const kiteFormFields = [
+    ["Type", "choose Personal (free). Connect is a paid tier; Publisher has no API access."],
+    ["App name", "any name you like, for example Market_scanner."],
+    ["Zerodha Client ID", "your Zerodha client ID. It is not stored by this app."],
+    ["App icon", "optional, leave it empty."],
+    ["Redirect URL (required)", "an https address you control. Zerodha sends the login token there after login."],
+    ["Postback URL", "optional. Leave it blank unless you want order updates posted to a URL."],
+    ["Description (required)", "one short line, for example \"Personal portfolio overlay for Market Scanner\"."]
+  ].map(([opt, hint]) => `<li><b>${esc(opt)}</b>: ${esc(hint)}</li>`).join("");
   return `<div class="sect"><header><h2>Setup: API keys and secrets</h2></header>
     <p>${st.needs_setup ? "Enter the required keys (*) to start. " : ""}Keys are stored on this machine in the data volume, never in git or the image. Change them here at any time.</p>
     ${requiredRows}
-    <details style="margin-bottom:16px">
-      <summary style="font-weight:600;cursor:pointer">Kite app settings</summary>
+    <details style="border:1px solid rgba(128,128,128,.35);border-radius:6px;padding:8px 12px;margin-bottom:16px">
+      <summary style="cursor:pointer;font-weight:600">Kite app settings <span style="font-weight:400;opacity:.7">${esc("(click to show what to enter in the Zerodha form)")}</span></summary>
       <div style="margin-top:12px">
-        <p style="font-weight:600;margin:0 0 6px">Zerodha 'Create a new app' form fields</p>
+        <p style="font-weight:600;margin:0 0 6px">${esc("Zerodha 'Create a new app' form")}</p>
         <ul style="margin:0 0 16px">${kiteFormFields}</ul>
+        <p style="margin:0 0 12px">${esc("After the app is created, copy API_KEY and API_SECRET from Zerodha into the two fields below. The access token is new each day, from the Kite login.")}</p>
         ${kiteRows}
       </div>
     </details>

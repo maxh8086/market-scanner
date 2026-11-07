@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -14,6 +14,14 @@ app = FastAPI(title="Market Scanner UI", docs_url=None, redoc_url=None, openapi_
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# Browsers must revalidate static JS/CSS so an updated app.js is not served from cache.
+@app.middleware("http")
+async def no_cache_static(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 # Include API routes
 app.include_router(api.router, prefix="/api")

@@ -18,11 +18,11 @@ FIELDS: dict[str, dict] = {
         "required": True, "secret": True},
     "KITE_API_KEY": {
         "label": "Kite Connect API key",
-        "help": "Portfolio overlay only. Leave blank to use a holdings file instead.",
+        "help": "API_KEY from your Zerodha app (Kite Connect developer console). Portfolio overlay only; leave blank to use a holdings file instead.",
         "required": False, "secret": False},
     "KITE_API_SECRET": {
         "label": "Kite Connect API secret",
-        "help": "Portfolio overlay only.", "required": False, "secret": True},
+        "help": "API_SECRET from the same Zerodha app. Portfolio overlay only.", "required": False, "secret": True},
     "KITE_ACCESS_TOKEN": {
         "label": "Kite access token",
         "help": "Daily token from the Kite login; optional.", "required": False, "secret": True},
