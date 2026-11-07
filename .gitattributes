@@ -1,0 +1,2 @@
+# Store text files as LF in git; check out with the platform's line endings
+* text=auto

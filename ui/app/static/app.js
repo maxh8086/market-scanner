@@ -6,6 +6,7 @@
 const fmt = n => n.toLocaleString("en-IN");
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 // Router
 const ROUTES = {
@@ -18,6 +19,7 @@ const ROUTES = {
   "/cost": "cost",
   "/report": "report",
   "/config": "config",
+  "/setup": "setup",
 };
 
 let currentRoute = "home";
@@ -63,6 +65,7 @@ function updateBreadcrumb(view, args) {
     else if (view === "cost") html += `<span>/</span><b>Cost center</b>`;
     else if (view === "report") html += `<span>/</span><b>Report dashboard</b>`;
     else if (view === "config") html += `<span>/</span><b>Master configuration</b>`;
+    else if (view === "setup") html += `<span>/</span><b>Setup</b>`;
 
     trail.innerHTML = html;
     document.title = `${view.charAt(0).toUpperCase() + view.slice(1)} | Market Scanner`;
@@ -99,6 +102,9 @@ async function renderView(view, args) {
         break;
       case "config":
         html = await renderConfig();
+        break;
+      case "setup":
+        html = await renderSetup();
         break;
       default:
         html = "<div class='empty'>View not found</div>";
@@ -627,6 +633,53 @@ function runNow(source) {
     .catch(e => alert("Error: " + e));
 }
 
+async function renderSetup() {
+  const st = await (await fetch("/api/secrets")).json();
+  const field = f => `
+    <div style="margin-bottom:16px">
+      <label for="sec-${f.key}" style="display:block;font-weight:600">${esc(f.label)}${f.required ? " *" : ""}
+        <span style="font-weight:400;opacity:.7">${f.set ? " (saved)" : ""}</span></label>
+      <input id="sec-${f.key}" data-key="${f.key}" type="${f.secret ? "password" : "text"}" autocomplete="off"
+        value="${esc(f.value)}" placeholder="${f.set && f.secret ? "Saved. Type to replace, or - to clear" : ""}"
+        style="width:100%;max-width:520px">
+      <div style="font-size:.85em;opacity:.7">${esc(f.help)}</div>
+    </div>`;
+  const isKite = f => f.key.startsWith("KITE_");
+  const requiredRows = st.fields.filter(f => f.required && !isKite(f)).map(field).join("");
+  const kiteRows = st.fields.filter(isKite).map(field).join("");
+  const otherRows = st.fields.filter(f => !f.required && !isKite(f)).map(field).join("");
+  const kiteFormFields = ["Type (choose Personal)", "App name", "Redirect URL", "Postback URL", "Description"]
+    .map(x => `<li>${esc(x)}</li>`).join("");
+  return `<div class="sect"><header><h2>Setup: API keys and secrets</h2></header>
+    <p>${st.needs_setup ? "Enter the required keys (*) to start. " : ""}Keys are stored on this machine in the data volume, never in git or the image. Change them here at any time.</p>
+    ${requiredRows}
+    <details style="margin-bottom:16px">
+      <summary style="font-weight:600;cursor:pointer">Kite app settings</summary>
+      <div style="margin-top:12px">
+        <p style="font-weight:600;margin:0 0 6px">Zerodha 'Create a new app' form fields</p>
+        <ul style="margin:0 0 16px">${kiteFormFields}</ul>
+        ${kiteRows}
+      </div>
+    </details>
+    ${otherRows}
+    <button class="btn" onclick="saveSecrets()">Save</button> <span id="sec-msg"></span></div>`;
+}
+
+async function saveSecrets() {
+  const values = {};
+  $$("input[data-key]").forEach(i => { values[i.dataset.key] = i.value; });
+  const res = await fetch("/api/secrets", {method: "PUT", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({values})});
+  const msg = $("#sec-msg");
+  if (!res.ok) { msg.textContent = "Save failed"; return; }
+  const st = await res.json();
+  msg.textContent = st.needs_setup ? "Saved. Still missing: " + st.missing.join(", ") : "Saved.";
+  if (!st.needs_setup) setTimeout(() => { location.hash = "#/"; }, 600);
+}
+
 // Route on hash change and load
 addEventListener("hashchange", () => router());
+fetch("/api/secrets").then(r => r.json()).then(st => {
+  if (st.needs_setup && !location.hash.startsWith("#/setup")) location.hash = "#/setup";
+}).catch(() => {});
 router();
