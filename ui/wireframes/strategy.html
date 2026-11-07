@@ -310,6 +310,7 @@ textarea{width:100%;min-height:110px;border-radius:10px;border:1px solid var(--l
   .btn.menu-btn{display:inline-flex}
 }
 @media (max-width:767px){
+  .top .wrap{gap:8px}
   .strip{display:grid;grid-template-columns:1fr 1fr}
   .strip>div,.strip>div+div{margin:0;padding:12px 12px 12px 0;border-left:0;border-bottom:1px solid var(--line);min-width:0}
   .strip>div:nth-child(even){padding-left:16px;border-left:1px solid var(--line)}
@@ -6062,7 +6063,7 @@ function renderStock(sym){
   // timeline: the API gives the run date, stance, LTP and distance; only the current run is shown here
   $("#st-fil").innerHTML=`<div><span><span class="mono" style="color:var(--faint)">${esc(frun)}</span><br>Stance: ${e.stance?esc(e.stance):"TBD"}</span><span class="num">LTP ${IN2(e.px)}<br>${e.below<=0.05?"At high":e.below.toFixed(1)+"% below high"}</span></div>`;
   $("#st-stance").innerHTML=e.stance?`<span class="pill ${e.stance}">${e.stance[0].toUpperCase()+e.stance.slice(1)}</span>`:`<span class="gp na">${ic("minus")}Not available</span>`;
-  chs.e=e; chs.cur=null; chs.sel=null;
+  chs.e=e; chs.cur=null; chs.sel=null; initStockExtras(e);
   return e;
 }
 

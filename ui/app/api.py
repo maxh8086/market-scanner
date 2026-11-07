@@ -9,6 +9,7 @@ from croniter import croniter
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from scanner import secrets_store
 from scanner.pg import db
 from scanner.collect import settings as collector_settings
 from ui.app import queries
@@ -401,6 +402,25 @@ async def request_manual_run(source: str):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ---- SECRETS / API KEYS (first-run setup and later changes) ----
+class SecretsUpdate(BaseModel):
+    values: Dict[str, str]
+
+@router.get("/secrets")
+async def get_secrets():
+    """Which keys are set. Secret values are never returned."""
+    return secrets_store.status()
+
+@router.put("/secrets")
+async def put_secrets(body: SecretsUpdate):
+    """Save entered keys. Blank leaves a key unchanged; '-' clears it."""
+    unknown = [k for k in body.values if k not in secrets_store.FIELDS]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown keys: {unknown}")
+    secrets_store.save(body.values)
+    return secrets_store.status()
+
 
 # ---- HELPERS ----
 def _describe_cron(cron_str: str) -> str:
