@@ -653,8 +653,8 @@ async function renderSetup() {
     ["App name", "any name you like, for example Market_scanner."],
     ["Zerodha Client ID", "your Zerodha client ID. It is not stored by this app."],
     ["App icon", "optional, leave it empty."],
-    ["Redirect URL (required)", "an https address you control. Zerodha sends the login token there after login."],
-    ["Postback URL", "optional. Leave it blank unless you want order updates posted to a URL."],
+    ["Redirect URL (required)", "any https address you control, for example https://127.0.0.1/. Zerodha sends you there after you log in. This app never receives that redirect, so the page may show an error. Copy the request_token value from the address bar and paste it when the app asks."],
+    ["Postback URL", "leave blank. This app has no endpoint that receives postbacks."],
     ["Description (required)", "one short line, for example \"Personal portfolio overlay for Market Scanner\"."]
   ].map(([opt, hint]) => `<li><b>${esc(opt)}</b>: ${esc(hint)}</li>`).join("");
   return `<div class="sect"><header><h2>Setup: API keys and secrets</h2></header>

@@ -124,6 +124,7 @@ services:
       <<: *scanner-db-env
       MARKETDATA_BACKEND: postgres
       DOCSTORE_BACKEND: mongo
+      POSTGRES_DSN: ${POSTGRES_DSN_CONTAINER}
     volumes: *persist-config
     restart: always
 

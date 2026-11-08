@@ -1,6 +1,7 @@
 """Download, cache, and clean the Nifty Total Market constituent list."""
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -10,6 +11,7 @@ PRIMARY_URL = "https://nsearchives.nseindia.com/content/indices/ind_niftytotalma
 FALLBACK_URL = "https://www.niftyindices.com/IndexConstituent/ind_niftytotalmarket_list.csv"
 
 CACHE_PATH = Path("data/ind_niftytotalmarket_list.csv")
+MAX_CACHE_AGE_DAYS = 30
 
 HEADERS = {
     "User-Agent": (
@@ -36,6 +38,10 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
 def load_constituents(override_path: str | None = None, refresh: bool = False) -> pd.DataFrame:
     """Return a cleaned DataFrame of Nifty Total Market constituents.
 
+    The cached CSV is used as-is while it is younger than MAX_CACHE_AGE_DAYS
+    (30 days). It is refreshed from NSE when it is older than 30 days or when
+    refresh=True. If both downloads fail, a stale cache is still returned.
+
     Columns: Company Name, Industry, Symbol, Series, ISIN Code
     """
     if override_path:
@@ -44,7 +50,8 @@ def load_constituents(override_path: str | None = None, refresh: bool = False) -
 
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    if CACHE_PATH.exists() and not refresh:
+    cache_age_days = (time.time() - CACHE_PATH.stat().st_mtime) / 86400 if CACHE_PATH.exists() else None
+    if cache_age_days is not None and cache_age_days < MAX_CACHE_AGE_DAYS and not refresh:
         df = pd.read_csv(CACHE_PATH)
         return _clean(df)
 
