@@ -29,6 +29,16 @@ REQUEST_INTERVAL_SECONDS = 3
 MAX_CONSECUTIVE_FAILURES = 3
 
 
+def _nse_session() -> requests.Session:
+    """Return a session with NSE cookies. A failed warm-up is logged, not fatal."""
+    session = requests.Session()
+    try:
+        session.get("https://www.nseindia.com", headers=UA, timeout=30)
+    except Exception as e:  # noqa: BLE001 - the API call itself will report the real failure
+        print(f"  Warning: NSE cookie warm-up failed: {e}")
+    return session
+
+
 def _parse_date_str(date_str: str) -> date | None:
     """Parse an NSE date string to a date object."""
     if not date_str:
@@ -253,9 +263,7 @@ def fetch_announcements_pg(
         return _load_cached_announcements_pg(from_date, to_date)
 
     if session is None:
-        session = requests.Session()
-        # NSE rejects API calls from a cold client; warm the cookie jar first.
-        session.get("https://www.nseindia.com", headers=UA, timeout=30)
+        session = _nse_session()
 
     all_rows = []
     consecutive_failures = 0
@@ -313,10 +321,15 @@ def fetch_corporate_actions_pg(
         return _load_cached_corporate_actions_pg(from_date, to_date)
 
     if session is None:
-        session = requests.Session()
+        session = _nse_session()
 
     all_rows = []
+    consecutive_failures = 0
     for gap_from, gap_to in gaps:
+        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+            print(f"  Stopping corporate actions fetch after {consecutive_failures} consecutive failures")
+            break
+        time.sleep(REQUEST_INTERVAL_SECONDS)  # pace requests; NSE rate-limits bursts
         try:
             print(f"  Fetching corporate actions gap ({gap_from} to {gap_to})...")
             url = "https://www.nseindia.com/api/corporates-corporateActions"
@@ -339,7 +352,9 @@ def fetch_corporate_actions_pg(
                 record_coverage(conn, "corporate_actions", gap_from, gap_to)
 
             print(f"    Fetched {len(rows)} corporate action rows")
+            consecutive_failures = 0
         except Exception as e:
+            consecutive_failures += 1
             print(f"  Error fetching corporate actions gap ({gap_from} to {gap_to}): {e}")
             # Try to return what we've cached so far instead of failing completely
             cached = _load_cached_corporate_actions_pg(gap_from, gap_to)
