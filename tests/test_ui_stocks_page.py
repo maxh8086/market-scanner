@@ -45,7 +45,11 @@ class UIStocksPageContractTests(unittest.TestCase):
             "renderStock should call the /api/stocks/ detail endpoint")
 
     def test_stock_detail_has_no_invented_sample_labels(self):
-        body = "\n".join(line for line in function_section(APP_JS, "renderStock").splitlines() if "TBD" not in line)
+        # Lines bound to snapshot.metrics (EMA 50 / SMA 200 from scanner/indicators.py) are real computed values, not sample labels.
+        # Lines calling rsHtml( render relative-strength values computed from the relative_strength table, not sample labels.
+        body = "\n".join(line for line in function_section(APP_JS, "renderStock").splitlines()
+                         if "TBD" not in line and "maPosition(snapshot.metrics" not in line
+                         and "rsHtml" not in line)
         for label in ["EMA", "Rel", "relative strength", "Governance", "Holdings", "Sizing", "Review"]:
             with self.subTest(label=label):
                 self.assertNotIn(label, body,

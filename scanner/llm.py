@@ -54,7 +54,7 @@ KIND_GUIDANCE = "guidance_v1"
 
 # Bumped when a prompt changes, so an old extraction is recognisably old rather
 # than silently mixed with new ones.
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 
 
 @dataclass
@@ -82,7 +82,7 @@ _ORDER_SCHEMA = """{
   "currency": "INR" | "USD" | "EUR" | "other",   // currency of order_amount
   "inr_amount": number or null,        // ONLY if a foreign-currency value is followed by a stated INR equivalent
   "inr_unit": "rupees" | "thousand" | "lakh" | "crore" | null,
-  "value_basis": "stated" | "computed" | "withheld" | "absent",
+  "value_basis": "stated" | "withheld" | "absent",
   "counterparty": string or null,      // who placed the order, verbatim
   "counterparty_type": "government" | "psu" | "private" | "foreign" | "unknown",
   "execution_months": number or null,  // completion timeline, if stated
@@ -100,9 +100,15 @@ Rules:
 - If several orders are listed and a total is stated, use the stated total. Otherwise leave order_amount null.
 - If the value is given in a foreign currency, set currency accordingly, keep the figure as written, and use "million" or "billion" for the scale word.
 - If the filing ALSO states an INR equivalent ("USD 7.6 Mn (Rs. 67.16 Cr approximately)"), copy that stated INR figure into inr_amount and inr_unit ("67.16", "crore"). Never work one out yourself; if no INR figure is stated, leave both null.
-- If the company says the value is confidential, set value_basis "withheld" and order_amount null.
+- value_basis: "stated" when the filing gives the figure; "withheld" when the company says it is confidential (order_amount null); "absent" when the filing gives no order value (order_amount null).
 - Do NOT use a figure that is the company's revenue, market size, paid-up capital, or a past order. If unsure, set order_amount null and say why in notes.
 - counterparty is the customer awarding the order, not the filing company.
+
+Examples (input -> output fields):
+- "Broad consideration ... (in INR): Rs. 7.99 Crores" -> order_amount 7.99, order_unit "crore", value_basis "stated".
+- "Rs. 21,57,48,840/-" -> order_amount 215748840, order_unit "rupees", value_basis "stated".
+- "USD 7.6 Mn (Rs. 67.16 Cr approximately)" -> currency "USD", order_amount 7.6, order_unit "million", inr_amount 67.16, inr_unit "crore".
+- "The value is confidential" -> value_basis "withheld", order_amount null.
 
 Schema:
 {schema}
@@ -118,7 +124,7 @@ _CAPACITY_SCHEMA = """{
   "existing_capacity": string or null,   // verbatim, with unit, e.g. "1.2 MTPA"
   "proposed_capacity": string or null,   // verbatim, with unit
   "capacity_unit": string or null,
-  "capacity_multiple": number or null,   // proposed / existing, if both known
+  "capacity_multiple": number or null,   // only if the filing itself states the multiple, e.g. "2x"
   "capex_amount": number or null,        // figure as written, not converted
   "capex_unit": "rupees" | "thousand" | "lakh" | "crore" | "million" | "billion" | null,
   "commissioning_target": string or null,
@@ -131,7 +137,7 @@ _CAPACITY_PROMPT = """You extract facts from an Indian stock exchange filing abo
 Rules:
 - existing_capacity and proposed_capacity must be quoted with their units exactly as the filing states them.
 - If the filing gives only a post-expansion total, put it in proposed_capacity and leave existing_capacity null.
-- capacity_multiple only when BOTH figures are known and in the same unit. Otherwise null.
+- capacity_multiple: copy it only if the filing states the multiple itself (e.g. "doubling", "2x"). Never divide one capacity by another; otherwise null.
 - capex_amount and capex_unit as written, with no arithmetic ("Rs. 300 crore" is capex_amount 300, capex_unit "crore").
 - is_planned is false when the filing only says the board is "evaluating" or "exploring".
 - Never infer a number the filing does not state.
@@ -165,13 +171,18 @@ Rules:
 - Guidance is a forward TARGET management commits to or projects. It is NOT a past result.
 - "Revenue grew 22% last year" is a RESULT, not guidance. has_guidance false.
 - "We expect to reach Rs 1,200 crore revenue in FY27" is guidance: target_amount 1200, target_unit "crore", period "FY27".
-- "We guide to 18-20% growth" is guidance: growth_pct 19 (midpoint), and say in notes that it was a range.
+- "We guide to 18-20% growth" is guidance, but a range: growth_pct null, and notes quotes the range ("18-20% growth"). Set growth_pct only for a single stated figure. Never compute a midpoint.
 - direction: RAISED if the filing says the earlier target has been increased; LOWERED if cut; REAFFIRMED if restated unchanged; NEW if given for the first time; WITHDRAWN if management has pulled it.
 - If the filing does not say whether it revises an earlier target, use NEW.
 - Copy target_amount and target_unit as written; do no arithmetic.
 - is_management_statement false if the number comes from an analyst, a broker note, or a newspaper quoted in the filing. Only the company's own words count.
 - verbatim must be copied from the text, not paraphrased. If you cannot quote it, has_guidance is false.
 - Never infer a target from an order book, a capex plan, or a capacity figure. Those are different disclosures.
+
+Examples (input -> output fields):
+- "Revenue grew 22% last year" -> has_guidance false, direction "NONE".
+- "We expect Rs 1,200 crore revenue in FY27" -> has_guidance true, direction "NEW", target_amount 1200, target_unit "crore", period "FY27", growth_pct null.
+- "We guide to 18-20% growth" -> has_guidance true, direction "NEW", growth_pct null, notes "range 18-20% growth".
 
 Schema:
 {schema}
@@ -246,7 +257,7 @@ SCHEMAS: dict[str, dict] = {
         "currency": {"enum": ["INR", "USD", "EUR", "other"]},
         "inr_amount": _NUM,
         "inr_unit": {"enum": ["rupees", "thousand", "lakh", "crore", None]},
-        "value_basis": {"enum": ["stated", "computed", "withheld", "absent"]},
+        "value_basis": {"enum": ["stated", "withheld", "absent"]},
         "counterparty": _STR,
         "counterparty_type": {"enum": ["government", "psu", "private", "foreign", "unknown"]},
         "execution_months": _NUM,
@@ -430,8 +441,8 @@ def extract(cfg: LLMConfig, text: str, kind: str = KIND_ORDER,
     if not text or not text.strip():
         return LLMResult(error="no text to extract from")
 
-    # Truncating from the front: the mandated disclosure table is near the top
-    # of an order filing, and the tail is boilerplate and signatures.
+    # Keep the front of the text (text[:limit]): the mandated disclosure table is near
+    # the top of an order filing, and the tail is boilerplate and signatures.
     limit = cfg.max_input_chars
     if cfg.api != "ollama":
         limit = min(limit, OPENAI_MAX_INPUT_CHARS)

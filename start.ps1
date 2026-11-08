@@ -152,6 +152,20 @@ function Invoke-Graph([string]$Name, [string[]]$GraphArgs) {
     }
 }
 
+# Run a host python script from the project venv. Same relaxed-error pattern as Invoke-Docker.
+# Non-critical callers log a warning on non-zero exit and carry on.
+function Invoke-HostPython([string[]]$PyArgs) {
+    if (-not (Test-Path -LiteralPath '.venv\Scripts\python.exe')) { return 127 }
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & .venv\Scripts\python.exe @PyArgs | Out-Host
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 Write-Stage "Preflight"
 $code = Invoke-Docker @('info', '--format', '{{.ServerVersion}}')
 if ($code -ne 0) { Stop-Pipeline "Docker is not responding. Start Docker Desktop and retry." }
@@ -215,6 +229,43 @@ if ($RecordRun) {
     }
 } else {
     Write-Host "Subset run (-Symbols): not recorded in Postgres." -ForegroundColor Yellow
+}
+
+# Schema migrations: apply any pending db/migrations/*.sql before the steps that read the new tables.
+# Same ENTRYPOINT override as the steps below. Reported as a warning, not a stop, so a migration
+# problem does not block the rest of the run (check the message and re-run once it is fixed).
+Write-Stage "Database: apply pending migrations"
+$code = Invoke-Docker @('compose', 'run', '--rm', '--entrypoint', 'python', 'scanner', '-m', 'scanner.pg.migrate')
+if ($code -ne 0) {
+    Write-Host "Migrations failed (exit $code) -- a warning; the schema may be behind until this is fixed." -ForegroundColor Yellow
+}
+
+# Index constituents: non-critical. A failure leaves the last good CSVs and the last loaded rows in place.
+Write-Stage "Constituents: refresh index CSVs on the host (non-critical)"
+$code = Invoke-HostPython @('scripts\fetch_index_constituents.py')
+if ($code -ne 0) {
+    Write-Host "Constituent CSV refresh failed (exit $code) -- a warning; the last good CSVs stay in place." -ForegroundColor Yellow
+}
+
+Write-Stage "Constituents: load into Postgres (non-critical)"
+# The scanner image's ENTRYPOINT is `python ath_scan.py`, so override it the same way Invoke-Python does for enrich.
+$code = Invoke-Docker @('compose', 'run', '--rm', '--entrypoint', 'python', 'scanner', '-m', 'scanner.constituent_membership')
+if ($code -ne 0) {
+    Write-Host "Constituent load failed (exit $code) -- a warning, not a failure." -ForegroundColor Yellow
+}
+
+# Index candles: incremental refresh, non-critical. Same ENTRYPOINT override as the constituent load above.
+Write-Stage "Index candles: incremental refresh (non-critical)"
+$code = Invoke-Docker @('compose', 'run', '--rm', '--entrypoint', 'python', 'scanner', '-m', 'scanner.index_candles', '--incremental')
+if ($code -ne 0) {
+    Write-Host "Index candle refresh failed (exit $code) -- a warning, not a failure." -ForegroundColor Yellow
+}
+
+# Relative strength reads the index candles and constituent_membership, so it runs after both.
+Write-Stage "Relative strength: 12-month RS against each stock's index (non-critical)"
+$code = Invoke-Docker @('compose', 'run', '--rm', '--entrypoint', 'python', 'scanner', '-m', 'scanner.relative_strength')
+if ($code -ne 0) {
+    Write-Host "Relative strength failed (exit $code) -- a warning, not a failure." -ForegroundColor Yellow
 }
 
 if ($NoStocks) {

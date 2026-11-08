@@ -9,6 +9,8 @@ from typing import Optional
 import pytz
 import requests
 
+from scanner.mongo import _redact
+
 
 def _collect_each(symbols, fetch) -> tuple[int, int, str]:
     """Run fetch(symbol) for every symbol; one bad symbol must not stop the others.
@@ -23,7 +25,7 @@ def _collect_each(symbols, fetch) -> tuple[int, int, str]:
             result = fetch(symbol)
         except Exception as exc:
             failed += 1
-            first_error = first_error or f"{type(exc).__name__}: {exc}"
+            first_error = first_error or _redact(f"{type(exc).__name__}: {exc}")
             continue
         fetched += result.get("fetched", 0)
         new += result.get("new", 0)
@@ -159,7 +161,7 @@ class CandlesEOD(Source):
         except Exception as e:
             return {
                 "fetched": 0, "new": 0, "from": None, "to": None,
-                "message": f"{type(e).__name__}: {e}"
+                "message": _redact(f"{type(e).__name__}: {e}")
             }
 
     def plan(self, params: dict, now: Optional[datetime] = None) -> dict:
@@ -221,7 +223,7 @@ class Announcements(Source):
         except Exception as e:
             return {
                 "fetched": 0, "new": 0, "from": None, "to": None,
-                "message": f"{type(e).__name__}: {e}"
+                "message": _redact(f"{type(e).__name__}: {e}")
             }
 
     def plan(self, params: dict, now: Optional[datetime] = None) -> dict:
@@ -265,7 +267,7 @@ class CorporateActions(Source):
         except Exception as e:
             return {
                 "fetched": 0, "new": 0, "from": None, "to": None,
-                "message": f"{type(e).__name__}: {e}"
+                "message": _redact(f"{type(e).__name__}: {e}")
             }
 
     def plan(self, params: dict, now: Optional[datetime] = None) -> dict:
@@ -340,7 +342,7 @@ class Filings(Source):
         except Exception as e:
             return {
                 "fetched": 0, "new": 0, "from": None, "to": None,
-                "message": f"{type(e).__name__}: {e}"
+                "message": _redact(f"{type(e).__name__}: {e}")
             }
 
     def plan(self, params: dict, now: Optional[datetime] = None) -> dict:
@@ -416,7 +418,7 @@ class Fundamentals(Source):
         except Exception as e:
             return {
                 "fetched": 0, "new": 0, "from": None, "to": None,
-                "message": f"{type(e).__name__}: {e}"
+                "message": _redact(f"{type(e).__name__}: {e}")
             }
 
     def plan(self, params: dict, now: Optional[datetime] = None) -> dict:
