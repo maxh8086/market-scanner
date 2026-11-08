@@ -238,7 +238,7 @@ def _connect() -> sqlite3.Connection:
             isin TEXT NOT NULL,
             symbol TEXT NOT NULL,
             an_dt TEXT NOT NULL,
-            desc TEXT,
+            "desc" TEXT,
             attchmnt_text TEXT,
             sort_date TEXT,
             -- Schema 3. attchmnt_file is the filing PDF's direct URL, which is
@@ -248,7 +248,7 @@ def _connect() -> sqlite3.Connection:
             seq_id TEXT,
             attchmnt_file TEXT,
             att_file_size INTEGER,
-            PRIMARY KEY (isin, an_dt, desc)
+            PRIMARY KEY (isin, an_dt, "desc")
         )
         """
     )
@@ -495,7 +495,7 @@ def _save_announcements(rows: list[dict]) -> None:
         conn.executemany(
             """
             INSERT INTO announcements
-                (isin, symbol, an_dt, desc, attchmnt_text, sort_date,
+                (isin, symbol, an_dt, "desc", attchmnt_text, sort_date,
                  seq_id, attchmnt_file, att_file_size)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             -- Backfill rather than DO NOTHING. These three columns arrived with
@@ -510,7 +510,7 @@ def _save_announcements(rows: list[dict]) -> None:
             -- served fully before -- leaves the good stored value alone instead of
             -- overwriting it with nothing. So repeated runs can only ever add
             -- information here.
-            ON CONFLICT(isin, an_dt, desc) DO UPDATE SET
+            ON CONFLICT(isin, an_dt, "desc") DO UPDATE SET
                 seq_id = COALESCE(NULLIF(excluded.seq_id, ''), seq_id),
                 attchmnt_file =
                     COALESCE(NULLIF(excluded.attchmnt_file, ''), attchmnt_file),
@@ -559,7 +559,7 @@ def _load_cached_announcements(from_date: date, to_date: date) -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT isin, symbol, an_dt, desc, attchmnt_text, sort_date,
+            SELECT isin, symbol, an_dt, "desc", attchmnt_text, sort_date,
                    seq_id, attchmnt_file, att_file_size
             FROM announcements
             WHERE sort_date >= ? AND sort_date <= ?

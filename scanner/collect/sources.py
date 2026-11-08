@@ -138,10 +138,17 @@ class CandlesEOD(Source):
 
             # Get symbols from constituents
             cons = constituents.load_constituents()
-            symbols = cons["Symbol"].tolist()
+            # Instrument key per symbol, built from the constituents ISIN. Symbols
+            # without an ISIN cannot be fetched, so they are skipped.
+            keys = {}
+            for _, crow in cons.iterrows():
+                isin = crow.get("ISIN Code")
+                if isinstance(isin, str) and isin.strip():
+                    keys[str(crow["Symbol"]).strip()] = upstox.instrument_key(isin)
+            symbols = list(keys)
 
             fetched, new, message = _collect_each(
-                symbols, lambda symbol: history.collect_eod(client, token, symbol, today))
+                symbols, lambda symbol: history.collect_eod(client, keys[symbol], symbol, today))
             return {
                 "fetched": fetched,
                 "new": new,

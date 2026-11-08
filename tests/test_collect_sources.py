@@ -10,7 +10,7 @@ import pytz
 from scanner.collect.sources import CandlesEOD, Announcements, SOURCES
 
 
-ONE_SYMBOL = pd.DataFrame({"Symbol": ["AAA"]})
+ONE_SYMBOL = pd.DataFrame({"Symbol": ["AAA"], "ISIN Code": ["INE000000001"]})
 
 
 def _stub_world():
