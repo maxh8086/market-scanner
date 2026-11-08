@@ -25,6 +25,14 @@ FACTS_PATH = Path("data/graph_facts.json")
 
 
 def _all(db, table: str) -> list[dict]:
+    """Every row of a docstore table as a plain dict, on either backend.
+
+    MongoDB collections have no .all() (that is TinyDB) and add an _id ObjectId
+    that the Neo4j loaders must not receive.
+    """
+    from scanner import mongo
+    if isinstance(db, mongo.MongoDB):
+        return [{k: v for k, v in d.items() if k != "_id"} for d in db.table(table).find()]
     return [dict(d) for d in db.table(table).all()]
 
 

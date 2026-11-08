@@ -56,6 +56,14 @@ class BackendSelectionTests(unittest.TestCase):
                 self.fail("mongo module should be importable")
 
 
+def _mongo_store(coll, name="fundamentals"):
+    """A MongoDB store (no __init__, no connection) whose table `name` is `coll`."""
+    from scanner import mongo
+    store = object.__new__(mongo.MongoDB)
+    store.db = {name: coll}
+    return store
+
+
 class FundamentalsMongoDispatchTests(unittest.TestCase):
     """Fundamentals helpers must use the Mongo implementation for a MongoDB store.
 
@@ -66,10 +74,7 @@ class FundamentalsMongoDispatchTests(unittest.TestCase):
     """
 
     def _store(self, coll):
-        from scanner import mongo
-        store = object.__new__(mongo.MongoDB)
-        store.db = {"fundamentals": coll}
-        return store
+        return _mongo_store(coll, "fundamentals")
 
     def test_get_fundamentals_uses_find_one_on_mongo(self):
         coll = mock.MagicMock()
@@ -95,6 +100,46 @@ class FundamentalsMongoDispatchTests(unittest.TestCase):
         coll.find.return_value = [{"symbol": "A"}, {"symbol": "B"}]
         out = docstore.all_fundamentals(self._store(coll))
         self.assertEqual([d["symbol"] for d in out], ["A", "B"])
+
+
+class FilingsMongoDispatchTests(unittest.TestCase):
+    """Filings helpers must use the Mongo implementation for a MongoDB store.
+
+    Same regression as FundamentalsMongoDispatchTests, for the filings table.
+    """
+
+    def _store(self, coll):
+        return _mongo_store(coll, "filings")
+
+    def test_get_filing_uses_find_one_on_mongo(self):
+        coll = mock.MagicMock()
+        coll.find_one.return_value = {"seq_id": "S1", "symbol": "RELIANCE"}
+        doc = docstore.get_filing(self._store(coll), "S1")
+        coll.find_one.assert_called_once_with({"seq_id": "S1"})
+        self.assertEqual(doc["symbol"], "RELIANCE")
+
+    def test_has_filing_text_false_when_absent_on_mongo(self):
+        coll = mock.MagicMock()
+        coll.find_one.return_value = None
+        self.assertFalse(docstore.has_filing_text(self._store(coll), "S1"))
+
+    def test_has_filing_text_true_when_text_present_on_mongo(self):
+        coll = mock.MagicMock()
+        coll.find_one.return_value = {"seq_id": "S1", "raw_text": "hello"}
+        self.assertTrue(docstore.has_filing_text(self._store(coll), "S1"))
+
+    def test_put_filing_upserts_on_mongo(self):
+        coll = mock.MagicMock()
+        docstore.put_filing(self._store(coll), {"seq_id": "S1", "symbol": "RELIANCE"})
+        coll.update_one.assert_called_once()
+        self.assertEqual(coll.update_one.call_args.args[0], {"seq_id": "S1"})
+        self.assertTrue(coll.update_one.call_args.kwargs.get("upsert"))
+
+    def test_all_filings_reads_collection_on_mongo(self):
+        coll = mock.MagicMock()
+        coll.find.return_value = [{"seq_id": "S1"}, {"seq_id": "S2"}]
+        out = docstore.all_filings(self._store(coll))
+        self.assertEqual([d["seq_id"] for d in out], ["S1", "S2"])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """API routes for the Market Scanner UI."""
 
 import json
+import re
 import uuid
 from typing import Optional, Dict, Any
 from datetime import datetime, date
@@ -11,6 +12,7 @@ from pydantic import BaseModel
 
 from scanner import secrets_store
 from scanner.pg import db
+from scanner.mongo import _redact
 from scanner.collect import settings as collector_settings
 from ui.app import queries
 
@@ -28,6 +30,23 @@ def safe_connection():
     except Exception:
         return None
 
+_RUN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+def resolve_run_id(conn, value: str) -> Optional[str]:
+    """Accept a run UUID or a run date (YYYY-MM-DD) and return the run UUID.
+
+    The home page links by run_date, but the run tables key on run_id (uuid).
+    A date resolves to that date's current run, newest first.
+    """
+    if not _RUN_DATE_RE.match(value):
+        return value
+    row = conn.execute(
+        "SELECT run_id FROM runs WHERE run_date = %s "
+        "ORDER BY is_current DESC, started_at DESC LIMIT 1",
+        (value,),
+    ).fetchone()
+    return str(row["run_id"]) if row else None
+
 def serialize_row(row):
     """Convert a row dict with date/datetime objects to JSON-serializable format."""
     if not row:
@@ -40,6 +59,14 @@ def serialize_row(row):
             result[key] = value
         else:
             result[key] = value
+    return result
+
+def serialize_run(row):
+    """serialize_row for a collector run, with credentials masked in its message."""
+    result = serialize_row(row)
+    if isinstance(result, dict) and isinstance(result.get("message"), str):
+        result["message"] = _redact(result["message"])
+        result["message"] = re.sub(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://\S+", "<redacted-uri>", result["message"])
     return result
 
 # ---- HOME / RUNS ----
@@ -64,7 +91,8 @@ async def get_run(run_id: str):
         return {"error": "Database unavailable"}
 
     try:
-        run = conn.execute(queries.RUN_BY_ID, (run_id,)).fetchone()
+        run_id = resolve_run_id(conn, run_id)
+        run = conn.execute(queries.RUN_BY_ID, (run_id,)).fetchone() if run_id else None
         if not run:
             raise HTTPException(status_code=404, detail="Run not found")
 
@@ -81,6 +109,39 @@ async def get_run(run_id: str):
         conn.close()
 
 # ---- RESULTS TABLE ----
+# Sort keys the results table may request, mapped to SQL expressions. Anything else falls back to symbol.
+RESULT_SORT_COLUMNS = {
+    "symbol": "ss.symbol",
+    "industry": "ss.industry",
+    "ltp": "ss.ltp",
+    "distance_pct": "ss.distance_pct",
+    "ath_date": "ss.ath_date",
+    "rs_ratio_pct": "rs.rs_ratio_pct",
+    "stance": "ss.stance",
+    "company": "ss.company",
+    "bucket": "ss.bucket",
+}
+
+# Latest relative-strength row per symbol. Used by both the row and the count query so filters on rs.* count correctly.
+RS_LATERAL_JOIN = """
+            LEFT JOIN LATERAL (
+              SELECT r.rs_gap_pct, r.index_name, r.as_of,
+                (
+                  SELECT c.close FROM candles c
+                  WHERE c.symbol = ss.symbol AND c.date <= r.as_of
+                  ORDER BY c.date DESC LIMIT 1
+                ) / NULLIF((
+                  SELECT ci.close FROM candles ci
+                  WHERE ci.symbol = 'IDX:' || UPPER(r.index_name) AND ci.date <= r.as_of
+                  ORDER BY ci.date DESC LIMIT 1
+                ), 0) * 100 AS rs_ratio_pct
+              FROM relative_strength r
+              WHERE r.symbol = ss.symbol
+              ORDER BY r.as_of DESC
+              LIMIT 1
+            ) rs ON true
+"""
+
 @router.get("/runs/{run_id}/results")
 async def get_results(
     run_id: str,
@@ -91,6 +152,15 @@ async def get_results(
     bucket: Optional[str] = None,
     stance: Optional[str] = None,
     search: Optional[str] = None,
+    industry: Optional[str] = None,
+    ltp_min: Optional[float] = None,
+    ltp_max: Optional[float] = None,
+    distance_min: Optional[float] = None,
+    distance_max: Optional[float] = None,
+    ath_from: Optional[str] = None,
+    ath_to: Optional[str] = None,
+    rs_min: Optional[float] = None,
+    rs_max: Optional[float] = None,
 ):
     """Get paginated results table with sorting and filtering."""
     conn = safe_connection()
@@ -98,6 +168,9 @@ async def get_results(
         return {"error": "Database unavailable", "results": [], "total": 0}
 
     try:
+        run_id = resolve_run_id(conn, run_id)
+        if not run_id:
+            return {"error": "Run not found", "results": [], "total": 0}
         where_parts = ["ss.run_id = %s"]
         params = [run_id]
 
@@ -114,15 +187,39 @@ async def get_results(
             search_param = f"%{search}%"
             params.extend([search_param, search_param])
 
+        if industry:
+            where_parts.append("ss.industry ILIKE %s")
+            params.append(f"%{industry}%")
+
+        # (SQL expression, lower bound, upper bound). A NULL value never passes a bound.
+        for expr, lo, hi in (
+            ("ss.ltp", ltp_min, ltp_max),
+            ("ss.distance_pct", distance_min, distance_max),
+            ("rs.rs_ratio_pct", rs_min, rs_max),
+        ):
+            if lo is not None:
+                where_parts.append(f"{expr} >= %s")
+                params.append(lo)
+            if hi is not None:
+                where_parts.append(f"{expr} <= %s")
+                params.append(hi)
+
+        if ath_from:
+            where_parts.append("ss.ath_date >= %s")
+            params.append(ath_from)
+        if ath_to:
+            where_parts.append("ss.ath_date <= %s")
+            params.append(ath_to)
+
         where_clause = " AND ".join(where_parts)
 
-        allowed_cols = ["symbol", "company", "ltp", "distance_pct", "stance", "bucket"]
-        sort_col = sort if sort in allowed_cols else "symbol"
+        sort_expr = RESULT_SORT_COLUMNS.get(sort, RESULT_SORT_COLUMNS["symbol"])
         order_dir = "ASC" if order.lower() == "asc" else "DESC"
 
-        order_by = f"ss.{sort_col} {order_dir}"
+        # Nulls always go last so missing values never lead the table.
+        order_by = f"{sort_expr} {order_dir} NULLS LAST, ss.symbol ASC"
 
-        count_query = f"SELECT COUNT(*) as total FROM stock_snapshots ss WHERE {where_clause}"
+        count_query = f"SELECT COUNT(*) as total FROM stock_snapshots ss {RS_LATERAL_JOIN} WHERE {where_clause}"
         count_result = conn.execute(count_query, params).fetchone()
         total = count_result["total"] if count_result else 0
 
@@ -131,8 +228,10 @@ async def get_results(
             SELECT
               ss.symbol, ss.company, ss.industry, ss.ltp, ss.distance_pct,
               ss.ath_date, ss.one_year_return_pct, ss.order_pct_of_sales,
-              ss.stance, ss.bucket
+              ss.stance, ss.bucket,
+              rs.rs_ratio_pct AS rs_ratio_pct, rs.index_name AS rs_index_name, rs.as_of AS rs_as_of
             FROM stock_snapshots ss
+            {RS_LATERAL_JOIN}
             WHERE {where_clause}
             ORDER BY {order_by}
             LIMIT %s OFFSET %s
@@ -168,10 +267,21 @@ async def get_stock(symbol: str):
         timeline = conn.execute(queries.STOCK_TIMELINE, (symbol,)).fetchall()
         changes = conn.execute(queries.SNAPSHOT_CHANGES, (run_id, symbol)).fetchall()
 
+        # Relative strength is optional: a missing table or DB error must not fail the stock page.
+        try:
+            rs_row = conn.execute(queries.RELATIVE_STRENGTH_LATEST, (symbol,)).fetchone()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            rs_row = None
+
         return {
             "snapshot": serialize_row(snapshot),
             "timeline": [serialize_row(r) for r in timeline],
             "changes": [serialize_row(c) for c in changes],
+            "relative_strength": serialize_row(rs_row) if rs_row else None,
         }
     finally:
         conn.close()
@@ -318,7 +428,7 @@ async def get_config():
                 "params": setting.get("params", {}),
                 "updated_at": setting.get("updated_at").isoformat() if setting.get("updated_at") else None,
                 "next_due": next_due,
-                "last_runs": [serialize_row(r) for r in runs],
+                "last_runs": [serialize_run(r) for r in runs],
             })
 
         coverage = None
@@ -365,7 +475,7 @@ async def get_config_source(source: str):
             "cron": setting.get("cron", ""),
             "cron_human": _describe_cron(setting.get("cron", "")),
             "params": setting.get("params", {}),
-            "last_runs": [serialize_row(r) for r in runs],
+            "last_runs": [serialize_run(r) for r in runs],
         }
     except HTTPException:
         raise

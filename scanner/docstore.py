@@ -112,6 +112,9 @@ def schema_version(db: TinyDB) -> int:
 def put_filing(db: TinyDB, filing: dict) -> None:
     """Upsert one filing document. `seq_id` is NSE's own id, so this is
     idempotent across re-runs and across overlapping date windows."""
+    m = _mongo_module(db)
+    if m is not None:
+        return m.put_filing(db, filing)
     seq_id = str(filing.get("seq_id") or "")
     if not seq_id:
         raise ValueError("filing needs a seq_id")
@@ -121,6 +124,9 @@ def put_filing(db: TinyDB, filing: dict) -> None:
 
 
 def get_filing(db: TinyDB, seq_id: str) -> Optional[Document]:
+    m = _mongo_module(db)
+    if m is not None:
+        return m.get_filing(db, seq_id)
     return db.table(FILINGS).get(Query().seq_id == str(seq_id))
 
 
@@ -130,18 +136,30 @@ def has_filing_text(db: TinyDB, seq_id: str) -> bool:
     Used to skip the download on a re-run. A row that exists but recorded a
     fetch error returns False so the next run retries it.
     """
+    m = _mongo_module(db)
+    if m is not None:
+        return m.has_filing_text(db, seq_id)
     doc = get_filing(db, seq_id)
     return bool(doc and doc.get("raw_text"))
 
 
 def filings_for(db: TinyDB, symbol: str) -> list[Document]:
+    m = _mongo_module(db)
+    if m is not None:
+        return m.filings_for(db, symbol)
     return db.table(FILINGS).search(Query().symbol == symbol)
 
 def filings_by_kind(db: TinyDB, kind: str) -> list[Document]:
+    m = _mongo_module(db)
+    if m is not None:
+        return m.filings_by_kind(db, kind)
     return db.table(FILINGS).search(Query().kind == kind)
 
 
 def all_filings(db: TinyDB) -> list[Document]:
+    m = _mongo_module(db)
+    if m is not None:
+        return m.all_filings(db)
     return db.table(FILINGS).all()
 
 
@@ -204,6 +222,9 @@ def fundamentals_age_days(db: TinyDB, symbol: str) -> Optional[float]:
 # --------------------------------------------------------------------------
 
 def put_extraction(db: TinyDB, seq_id: str, kind: str, payload: dict) -> None:
+    m = _mongo_module(db)
+    if m is not None:
+        return m.put_extraction(db, seq_id, kind, payload)
     doc = dict(payload, seq_id=str(seq_id), kind=kind, stored_at=_now())
     doc["expires_at"] = _expiry(doc["stored_at"])
     q = Query()
@@ -211,11 +232,17 @@ def put_extraction(db: TinyDB, seq_id: str, kind: str, payload: dict) -> None:
 
 
 def get_extraction(db: TinyDB, seq_id: str, kind: str) -> Optional[Document]:
+    m = _mongo_module(db)
+    if m is not None:
+        return m.get_extraction(db, seq_id, kind)
     q = Query()
     return db.table(EXTRACTIONS).get((q.seq_id == str(seq_id)) & (q.kind == kind))
 
 
 def extractions_by_kind(db: TinyDB, kind: str) -> list[Document]:
+    m = _mongo_module(db)
+    if m is not None:
+        return m.extractions_by_kind(db, kind)
     return db.table(EXTRACTIONS).search(Query().kind == kind)
 
 
@@ -224,6 +251,9 @@ def extractions_by_kind(db: TinyDB, kind: str) -> list[Document]:
 # --------------------------------------------------------------------------
 
 def put_conclusion(db: TinyDB, symbol: str, as_of: str, payload: dict) -> None:
+    m = _mongo_module(db)
+    if m is not None:
+        return m.put_conclusion(db, symbol, as_of, payload)
     doc = dict(payload, symbol=symbol, as_of=as_of, stored_at=_now())
     doc["expires_at"] = _expiry(as_of)
     q = Query()
@@ -231,11 +261,17 @@ def put_conclusion(db: TinyDB, symbol: str, as_of: str, payload: dict) -> None:
 
 
 def get_conclusion(db: TinyDB, symbol: str, as_of: str) -> Optional[Document]:
+    m = _mongo_module(db)
+    if m is not None:
+        return m.get_conclusion(db, symbol, as_of)
     q = Query()
     return db.table(CONCLUSIONS).get((q.symbol == symbol) & (q.as_of == as_of))
 
 
 def conclusions_for(db: TinyDB, as_of: str) -> list[Document]:
+    m = _mongo_module(db)
+    if m is not None:
+        return m.conclusions_for(db, as_of)
     return db.table(CONCLUSIONS).search(Query().as_of == as_of)
 
 

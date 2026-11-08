@@ -3,7 +3,7 @@
  * Hash-based routing with data fetching from REST API
  */
 
-const fmt = n => n.toLocaleString("en-IN");
+const fmt = n => (n == null || Number.isNaN(Number(n))) ? "—" : Number(n).toLocaleString("en-IN");
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -261,6 +261,182 @@ async function renderRun(runId) {
   `;
 }
 
+// Sortable columns of the All results table. numeric columns start descending on first click.
+const RESULT_COLUMNS = [
+  { key: "symbol", label: "Stock", numeric: false, cls: "" },
+  { key: "industry", label: "Industry", numeric: false, cls: "hide-sm" },
+  { key: "ltp", label: "Price", numeric: true, cls: "r" },
+  { key: "distance_pct", label: "Below ATH", numeric: true, cls: "r" },
+  { key: "ath_date", label: "ATH date", numeric: true, cls: "r hide-sm" },
+  { key: "rs_ratio_pct", label: "RS %", numeric: true, cls: "r" },
+  { key: "stance", label: "Stance", numeric: false, cls: "" },
+];
+let resultsSort = { key: "symbol", order: "asc" };
+// Current page of the All results table. Reset when the run or the sort changes.
+let resultsPage = { runId: null, page: 1 };
+
+function setResultsSort(key) {
+  const col = RESULT_COLUMNS.find(c => c.key === key);
+  if (!col) return;
+  if (resultsSort.key === key) {
+    resultsSort = { key, order: resultsSort.order === "asc" ? "desc" : "asc" };
+  } else {
+    resultsSort = { key, order: col.numeric ? "desc" : "asc" };
+  }
+  resultsPage = { runId: resultsPage.runId, page: 1 };
+  router();
+}
+
+// Page numbers to show: first, last, and a window around the current page, with "…" for gaps.
+function pageNumbers(page, pages) {
+  const wanted = [...new Set([1, pages, page - 1, page, page + 1])]
+    .filter(n => n >= 1 && n <= pages)
+    .sort((a, b) => a - b);
+  const out = [];
+  wanted.forEach((n, i) => {
+    if (i && n - wanted[i - 1] > 1) out.push("…");
+    out.push(n);
+  });
+  return out;
+}
+
+function setResultsPage(page) {
+  resultsPage = { runId: resultsPage.runId, page };
+  router();
+}
+
+// Column filters for the All results table. Each entry lists the API query params its inputs map to, in order.
+const COLUMN_FILTERS = {
+  symbol:       { type: "text",   label: "Stock or company contains", params: ["search"] },
+  industry:     { type: "text",   label: "Industry contains", params: ["industry"] },
+  ltp:          { type: "range",  label: "Price", params: ["ltp_min", "ltp_max"] },
+  distance_pct: { type: "range",  label: "Below ATH %", params: ["distance_min", "distance_max"] },
+  ath_date:     { type: "dates",  label: "ATH date", params: ["ath_from", "ath_to"] },
+  rs_ratio_pct: { type: "range",  label: "RS %", params: ["rs_min", "rs_max"] },
+  stance:       { type: "select", label: "Stance", params: ["stance"], options: ["constructive", "mixed", "cautious"] },
+};
+// Filter state: column key -> array of input values, one per param.
+let resultsFilters = {};
+let colFilterOpen = null;
+
+const FILTER_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4 2v-8z" fill="currentColor"/></svg>`;
+
+function hasColFilter(key) {
+  return (resultsFilters[key] || []).some(v => v !== "" && v != null);
+}
+
+function activeFilterCount() {
+  return Object.keys(resultsFilters).filter(hasColFilter).length;
+}
+
+function filterQueryString() {
+  const parts = [];
+  for (const key of Object.keys(resultsFilters)) {
+    if (!hasColFilter(key)) continue;
+    COLUMN_FILTERS[key].params.forEach((param, i) => {
+      const v = resultsFilters[key][i];
+      if (v !== "" && v != null) parts.push(`${param}=${encodeURIComponent(v)}`);
+    });
+  }
+  return parts.join("&");
+}
+
+function colFilterInputsHtml(key) {
+  const spec = COLUMN_FILTERS[key];
+  const cur = resultsFilters[key] || [];
+  if (spec.type === "text") {
+    return `<input id="cf-0" type="text" value="${esc(cur[0] || "")}" placeholder="Type to match">`;
+  }
+  if (spec.type === "select") {
+    const options = spec.options.map(o => `<option value="${o}"${cur[0] === o ? " selected" : ""}>${o.charAt(0).toUpperCase() + o.slice(1)}</option>`).join("");
+    return `<select id="cf-0"><option value="">Any</option>${options}</select>`;
+  }
+  if (spec.type === "dates") {
+    return `<label>From<input id="cf-0" type="date" value="${cur[0] || ""}"></label>
+            <label>To<input id="cf-1" type="date" value="${cur[1] || ""}"></label>`;
+  }
+  return `<label>Min<input id="cf-0" type="number" step="any" value="${cur[0] ?? ""}"></label>
+          <label>Max<input id="cf-1" type="number" step="any" value="${cur[1] ?? ""}"></label>`;
+}
+
+function closeColFilter() {
+  const pop = document.getElementById("col-filter");
+  if (pop) pop.remove();
+  colFilterOpen = null;
+}
+
+function openColFilter(event, key) {
+  event.stopPropagation();
+  if (colFilterOpen === key) { closeColFilter(); return; }
+  closeColFilter();
+  colFilterOpen = key;
+  const pop = document.createElement("div");
+  pop.id = "col-filter";
+  pop.className = "col-filter-pop";
+  pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-label", `Filter ${COLUMN_FILTERS[key].label}`);
+  pop.innerHTML = `
+    <div class="cf-title">${COLUMN_FILTERS[key].label}</div>
+    ${colFilterInputsHtml(key)}
+    <div class="cf-actions">
+      <button type="button" class="btn" onclick="clearColFilter('${key}')">Clear</button>
+      <button type="button" class="btn primary" onclick="applyColFilter('${key}')">Apply</button>
+    </div>`;
+  pop.addEventListener("click", e => e.stopPropagation());
+  pop.addEventListener("keydown", e => {
+    if (e.key === "Enter") applyColFilter(key);
+    if (e.key === "Escape") closeColFilter();
+  });
+  document.body.appendChild(pop);
+  const r = event.currentTarget.getBoundingClientRect();
+  const left = Math.max(8, Math.min(window.scrollX + r.right - 240, window.scrollX + document.documentElement.clientWidth - 260));
+  pop.style.top = `${window.scrollY + r.bottom + 6}px`;
+  pop.style.left = `${left}px`;
+  const first = pop.querySelector("input, select");
+  if (first) first.focus();
+}
+
+function applyColFilter(key) {
+  const pop = document.getElementById("col-filter");
+  if (!pop) return;
+  const vals = [...pop.querySelectorAll("[id^=cf-]")].map(el => el.value.trim());
+  if (vals.some(v => v !== "")) resultsFilters[key] = vals;
+  else delete resultsFilters[key];
+  closeColFilter();
+  resultsPage = { runId: resultsPage.runId, page: 1 };
+  router();
+}
+
+function clearColFilter(key) {
+  delete resultsFilters[key];
+  closeColFilter();
+  resultsPage = { runId: resultsPage.runId, page: 1 };
+  router();
+}
+
+function clearAllColFilters() {
+  resultsFilters = {};
+  closeColFilter();
+  resultsPage = { runId: resultsPage.runId, page: 1 };
+  router();
+}
+
+document.addEventListener("click", e => {
+  if (colFilterOpen && !e.target.closest("#col-filter") && !e.target.closest(".col-filter-btn")) closeColFilter();
+});
+
+function resultsHeaderHtml() {
+  return RESULT_COLUMNS.map(c => {
+    const active = resultsSort.key === c.key;
+    const arrow = active ? (resultsSort.order === "asc" ? " ▲" : " ▼") : "";
+    const aria = active ? (resultsSort.order === "asc" ? "ascending" : "descending") : "none";
+    const filterBtn = COLUMN_FILTERS[c.key]
+      ? `<button type="button" class="col-filter-btn${hasColFilter(c.key) ? " on" : ""}" aria-label="Filter ${c.label}" title="Filter ${c.label}" onclick="openColFilter(event,'${c.key}')" onkeydown="event.stopPropagation()">${FILTER_ICON}</button>`
+      : "";
+    return `<th class="${c.cls} sortable${active ? " sorted" : ""}" aria-sort="${aria}" tabindex="0" onclick="setResultsSort('${c.key}')" onkeydown="if(event.key==='Enter')setResultsSort('${c.key}')">${c.label}${arrow}${filterBtn}</th>`;
+  }).join("");
+}
+
 async function renderResults(runId) {
   if (!runId) {
     const res = await fetch("/api/runs?limit=1");
@@ -270,39 +446,68 @@ async function renderResults(runId) {
 
   if (!runId) return `<div class="empty">No run specified</div>`;
 
-  const res = await fetch(`/api/runs/${runId}/results?limit=20`);
+  if (resultsPage.runId !== runId) resultsPage = { runId, page: 1 };
+  const perPage = 20;
+  const filterQuery = filterQueryString();
+  const res = await fetch(`/api/runs/${runId}/results?page=${resultsPage.page}&per_page=${perPage}&sort=${resultsSort.key}&order=${resultsSort.order}${filterQuery ? "&" + filterQuery : ""}`);
   const data = await res.json();
   const results = data.results || [];
   const total = data.total || 0;
+  const pages = Math.max(1, data.pages || 1);
 
-  const rows = results.map(r => `
+  // The page can fall past the end after the data shrinks; clamp and reload once.
+  if (resultsPage.page > pages) {
+    resultsPage = { runId, page: pages };
+    return renderResults(runId);
+  }
+  const page = resultsPage.page;
+  const from = total ? (page - 1) * perPage + 1 : 0;
+  const to = from ? from + results.length - 1 : 0;
+
+  const rows = results.map(r => {
+    const rsRatio = r.rs_ratio_pct != null ? Number(r.rs_ratio_pct) : null;
+    const rsCell = rsRatio == null || Number.isNaN(rsRatio)
+      ? "—"
+      : `<span title="${esc(`stock / ${r.rs_index_name || "index"} price x 100, as of ${r.rs_as_of || ""}`)}">${rsRatio.toFixed(4)}</span>`;
+    return `
     <tr class="link" tabindex="0" onclick="location.hash='#/stock/${r.symbol}'">
       <td><div class="sym">${r.symbol}</div><div class="nm">${r.company || ""}</div></td>
       <td class="hide-sm">${r.industry || ""}</td>
       <td class="r num">${fmt(r.ltp)}</td>
       <td class="r num">${r.distance_pct ? r.distance_pct.toFixed(1) + "%" : "—"}</td>
       <td class="r num hide-sm">${r.ath_date || "—"}</td>
+      <td class="r num">${rsCell}</td>
       <td><span class="pill ${r.stance}">${r.stance ? r.stance.charAt(0).toUpperCase() + r.stance.slice(1) : "—"}</span></td>
-    </tr>
-  `).join("");
+    </tr>`;
+  }).join("");
 
   return `
     <div class="head">
       <div>
         <div class="eyebrow">Run of ${runId}</div>
         <h1>All results</h1>
-        <p class="sub">Showing ${results.length} of ${total} stocks in range.</p>
+        <p class="sub">Showing ${from}–${to} of ${total} stocks in range.
+          ${activeFilterCount() ? `<button type="button" class="btn ghost" style="min-height:32px;padding:0 8px" onclick="clearAllColFilters()">Clear ${activeFilterCount()} filter${activeFilterCount() > 1 ? "s" : ""}</button>` : ""}</p>
       </div>
     </div>
 
     <div class="tbl-wrap">
       <table>
         <thead><tr>
-          <th>Stock</th><th class="hide-sm">Industry</th><th class="r">Price</th><th class="r">Below ATH</th><th class="r hide-sm">ATH date</th><th>Stance</th>
+          ${resultsHeaderHtml()}
         </tr></thead>
-        <tbody>${rows || '<tr><td colspan="6"><div class="empty">No results</div></td></tr>'}</tbody>
+        <tbody>${rows || '<tr><td colspan="7"><div class="empty">No results</div></td></tr>'}</tbody>
       </table>
     </div>
+
+    <nav class="results-pager" aria-label="Results pages" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:flex-end;margin-top:12px">
+      <button type="button" class="btn" onclick="setResultsPage(${page - 1})" ${page <= 1 ? "disabled" : ""}>‹ Prev</button>
+      ${pageNumbers(page, pages).map(n => n === "…"
+        ? `<span class="sub" style="margin:0 4px">…</span>`
+        : `<button type="button" class="btn" style="min-width:44px;justify-content:center;padding:0 10px${n === page ? ";font-weight:700;border-color:var(--accent);color:var(--accent)" : ""}" ${n === page ? 'aria-current="page"' : ""} onclick="setResultsPage(${n})">${n}</button>`
+      ).join("")}
+      <button type="button" class="btn" onclick="setResultsPage(${page + 1})" ${page >= pages ? "disabled" : ""}>Next ›</button>
+    </nav>
   `;
 }
 
@@ -341,6 +546,14 @@ async function renderStocks() {
   `;
 }
 
+// Moving average value with its above/below flag, e.g. "1,074.5 · above".
+function maPosition(metrics, valueKey, flagKey) {
+  const value = metrics ? metrics[valueKey] : null;
+  if (value == null) return "—";
+  const side = metrics[flagKey] === true ? "above" : metrics[flagKey] === false ? "below" : "";
+  return side ? `${fmt(value)} · ${side}` : fmt(value);
+}
+
 async function renderStock(symbol) {
   if (!symbol) return `<div class="empty">No symbol specified</div>`;
 
@@ -353,6 +566,24 @@ async function renderStock(symbol) {
   const timeline = data.timeline || [];
 
   if (!snapshot) return `<div class="empty">Stock not found</div>`;
+
+  const rs = data.relative_strength;
+  const rsGap = rs && rs.rs_gap_pct != null ? Number(rs.rs_gap_pct) : null;
+  const rsHtml = rsGap == null || Number.isNaN(rsGap)
+    ? "TBD"
+    : `<span title="${esc(`stock ${fmt(rs.stock_return_3m)}% / index ${fmt(rs.index_return_3m)}% (3m)`)}">${esc((rsGap >= 0 ? "+" : "") + rsGap.toFixed(1) + " vs " + (rs.index_name || "index") + " (3m)")}</span>`;
+
+  // 3-month price return from the relative_strength table, same basis as the RS gap above.
+  const ret12 = rs && rs.stock_return_3m != null ? Number(rs.stock_return_3m) : null;
+  const ret12Html = ret12 == null || Number.isNaN(ret12)
+    ? "—"
+    : (ret12 >= 0 ? "+" : "") + ret12.toFixed(1) + "%";
+  const ret12Cls = ret12 == null || Number.isNaN(ret12) ? "" : (ret12 >= 0 ? "up" : "down");
+  // one_year_return_pct holds the latest-quarter YoY sales/profit growth (scanner/significance.py), not a price return.
+  const yoyGrowth = snapshot.one_year_return_pct != null ? Number(snapshot.one_year_return_pct) : null;
+  const yoyHtml = yoyGrowth == null || Number.isNaN(yoyGrowth)
+    ? "—"
+    : (yoyGrowth >= 0 ? "+" : "") + yoyGrowth.toFixed(1) + "%";
 
   const timelineHtml = timeline.slice(0, 5).map(t => `
     <li><div class="when"><b>${t.run_date}</b><span class="pill ${t.stance}">${t.stance || "—"}</span><span class="num">${t.ltp} · ${t.distance_pct ? t.distance_pct.toFixed(1) + "%" : "—"} below ATH</span></div></li>
@@ -374,7 +605,7 @@ async function renderStock(symbol) {
     <div class="strip" style="margin-bottom:32px">
       <div><div class="k">Price</div><div class="v">${fmt(snapshot.ltp)}</div><div class="d">as of ${snapshot.run_date}</div></div>
       <div><div class="k">Below ATH</div><div class="v">${snapshot.distance_pct ? snapshot.distance_pct.toFixed(1) + "%" : "—"}</div><div class="d mono">ATH ${fmt(snapshot.ath_high)} on ${snapshot.ath_date}</div></div>
-      <div><div class="k">1Y return</div><div class="v ${snapshot.one_year_return_pct >= 0 ? 'up' : 'down'}">${snapshot.one_year_return_pct ? (snapshot.one_year_return_pct >= 0 ? "+" : "") + snapshot.one_year_return_pct.toFixed(1) + "%" : "—"}</div></div>
+      <div><div class="k">3M return</div><div class="v ${ret12Cls}">${ret12Html}</div><div class="d mono">${rs && rs.as_of ? `as of ${rs.as_of}` : "—"}</div></div>
     </div>
 
     <div class="grid">
@@ -392,8 +623,10 @@ async function renderStock(symbol) {
             <span>Latest price</span><span>${fmt(snapshot.ltp)}</span>
             <span>Stance</span><span>${snapshot.stance || "—"}</span>
             <span>Bucket</span><span>${snapshot.bucket || "—"}</span>
-            <span>EMA</span><span>TBD</span>
-            <span>Relative strength</span><span>TBD</span>
+            <span>EMA 50 (Daily)</span><span>${maPosition(snapshot.metrics, "ema50", "above_ema50")}</span>
+            <span>SMA 200 (Daily)</span><span>${maPosition(snapshot.metrics, "sma200", "above_sma200")}</span>
+            <span>Relative strength (%)</span><span>${rsHtml}</span>
+            <span>YoY growth (latest qtr)</span><span>${yoyHtml}</span>
           </div>
         </div>
       </aside>

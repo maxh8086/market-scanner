@@ -129,6 +129,8 @@ ORDER BY r.run_date DESC
 LIMIT 1
 """
 
+RELATIVE_STRENGTH_LATEST = "SELECT symbol, as_of, stock_return_3m, index_name, index_return_3m, rs_gap_pct, tier FROM relative_strength WHERE symbol = %s ORDER BY as_of DESC LIMIT 1"
+
 STOCK_TIMELINE = """
 SELECT
   ss.run_id,
