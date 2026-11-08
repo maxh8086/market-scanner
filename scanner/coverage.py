@@ -125,14 +125,20 @@ def record_coverage(conn, feed: str, from_date: date, to_date: date) -> None:
     ).fetchall()
 
     if len(overlapping) > 1:
-        # There are overlaps to merge (including our newly inserted row)
-        min_from = min(row[0] for row in overlapping)
-        max_to = max(row[1] for row in overlapping)
+        # There are overlaps to merge (including our newly inserted row).
+        # Postgres rows are dicts (scanner.pg.db), tests may use tuples.
+        bounds = [
+            (row["from_date"], row["to_date"]) if isinstance(row, dict) else tuple(row)
+            for row in overlapping
+        ]
+        min_from = min(b[0] for b in bounds)
+        max_to = max(b[1] for b in bounds)
 
-        # Delete all overlapping windows
+        # Delete all overlapping windows. ANY(%s) takes the list as one array
+        # parameter; "IN (%s)" with a list does not compare date to date[].
         conn.execute(
-            "DELETE FROM feed_coverage WHERE feed = %s AND from_date IN (%s)",
-            (feed, [row[0] for row in overlapping]),
+            "DELETE FROM feed_coverage WHERE feed = %s AND from_date = ANY(%s)",
+            (feed, [b[0] for b in bounds]),
         )
 
         # Insert the merged window
