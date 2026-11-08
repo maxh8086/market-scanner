@@ -155,9 +155,9 @@ def _save_announcements_pg(rows: list[dict]) -> None:
                      seq_id, attchmnt_file, att_file_size)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (isin, an_dt, "desc") DO UPDATE SET
-                    seq_id = COALESCE(NULLIF(excluded.seq_id, ''), seq_id),
-                    attchmnt_file = COALESCE(NULLIF(excluded.attchmnt_file, ''), attchmnt_file),
-                    att_file_size = COALESCE(excluded.att_file_size, att_file_size)
+                    seq_id = COALESCE(NULLIF(excluded.seq_id, ''), announcements.seq_id),
+                    attchmnt_file = COALESCE(NULLIF(excluded.attchmnt_file, ''), announcements.attchmnt_file),
+                    att_file_size = COALESCE(excluded.att_file_size, announcements.att_file_size)
                 """,
                 data,
             )
