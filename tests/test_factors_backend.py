@@ -131,7 +131,8 @@ class AnnouncementCachePostgresTest(unittest.TestCase):
         self.assertEqual((isin, symbol, seq, fname), ("INE1", "ACME", "123", "a.pdf"))
         self.assertEqual(size, int(1.5 * 1024 * 1024))
         # One-way backfill is kept, and "desc" is quoted in the upsert.
-        self.assertIn("COALESCE(NULLIF(excluded.seq_id, ''), seq_id)", sql)
+        # Target columns are table-qualified: a bare seq_id is ambiguous against excluded.seq_id.
+        self.assertIn("COALESCE(NULLIF(excluded.seq_id, ''), announcements.seq_id)", sql)
         self.assertIn('ON CONFLICT (isin, an_dt, "desc") DO UPDATE', sql)
 
     def test_load_returns_iso_strings_and_quotes_desc(self):
