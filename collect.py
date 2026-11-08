@@ -6,7 +6,7 @@ Subcommands:
         Run one source immediately (ignoring schedule)
 
     serve [--once] [--dry-run]
-        Loop every 60 seconds: reload settings, run due sources, claim requests
+        Loop every 60 seconds: first-run watcher, reload settings, run due sources, claim requests
         --once: single pass then exit
         --dry-run: report what would happen without fetching
 
@@ -27,7 +27,7 @@ import psycopg
 import pytz
 
 from scanner.collect import sources as sources_module
-from scanner.collect import scheduler, settings
+from scanner.collect import first_run, scheduler, settings
 from scanner.pg import db
 
 
@@ -91,10 +91,25 @@ def cmd_serve(args) -> int:
 
     signal.signal(signal.SIGTERM, handle_sigterm)
 
+    # Register any new source from SOURCES in collector_settings (no migration needed).
+    try:
+        added = settings.ensure_sources()
+        if added:
+            print(f"registered sources: {', '.join(added)}")
+    except Exception as e:
+        print(f"could not register sources (will retry on the next start): {e}", file=sys.stderr)
+
     iteration = 0
     while True:
         iteration += 1
         now = datetime.now(pytz.UTC)
+
+        # First-run watcher: queue the one-time first ATH scan once API details exist.
+        # It never raises; a failure is logged and retried on the next pass.
+        try:
+            first_run.tick(now)
+        except Exception as e:
+            print(f"[{now:%Y-%m-%d %H:%M:%S}] first-run watcher error: {e}", file=sys.stderr)
 
         # Load Postgres; if it's down, log and wait
         try:
