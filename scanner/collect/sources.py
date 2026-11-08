@@ -419,6 +419,61 @@ class Fundamentals(Source):
         }
 
 
+class AthScan(Source):
+    """The ATH scan (ath_scan.py), run in-process so the collector can queue it.
+
+    Queued by the UI "Run now" button and by the first-run watcher (scanner/collect/first_run.py),
+    both through collector_settings.request_run. It calls ath_scan.main() with the default
+    full-universe arguments and writes output/ath_scan_<date>.csv, as the scanner image does.
+    A non-zero exit code from ath_scan.main() raises, so the run is recorded as failed.
+    """
+
+    def __init__(self):
+        super().__init__("ath_scan")
+
+    def run(self, params: dict, now: Optional[datetime] = None,
+            dry_run: bool = False) -> dict:
+        if dry_run:
+            return self.plan(params, now)
+
+        import glob
+        import sys
+        from pathlib import Path
+
+        import ath_scan  # /app/ath_scan.py in the collector image
+
+        out_dir = Path("output")
+        before = set(glob.glob(str(out_dir / "ath_scan_*.csv")))
+        saved_argv = sys.argv
+        sys.argv = ["ath_scan.py", "--output-dir", str(out_dir)]
+        try:
+            code = ath_scan.main()  # progress prints go to the collector log
+        finally:
+            sys.argv = saved_argv
+
+        if code:
+            raise RuntimeError(f"ath_scan exited with code {code}")
+
+        written = sorted(set(glob.glob(str(out_dir / "ath_scan_*.csv"))) - before)
+        if not written:
+            written = sorted(glob.glob(str(out_dir / "ath_scan_*.csv")))[-1:]
+        if not written:
+            raise RuntimeError("ath_scan finished but wrote no output/ath_scan_*.csv")
+
+        import pandas as pd
+        rows = len(pd.read_csv(written[-1], keep_default_na=False))
+        return {
+            "fetched": rows, "new": rows, "from": None, "to": None,
+            "message": f"wrote {written[-1]}",
+        }
+
+    def plan(self, params: dict, now: Optional[datetime] = None) -> dict:
+        return {
+            "fetched": 0, "new": 0, "from": None, "to": None,
+            "message": "dry-run: would run the full ATH scan (ath_scan.py)"
+        }
+
+
 # Registry of all sources
 SOURCES = {
     "candles_eod": CandlesEOD(),
@@ -426,4 +481,5 @@ SOURCES = {
     "corporate_actions": CorporateActions(),
     "filings": Filings(),
     "fundamentals": Fundamentals(),
+    "ath_scan": AthScan(),
 }

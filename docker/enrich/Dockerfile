@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY scanner/ ./scanner/
-COPY enrich.py conclude.py final_report.py graph_sync.py collect.py record_run.py ./
+COPY enrich.py conclude.py final_report.py graph_sync.py collect.py record_run.py ath_scan.py ./
 COPY config/ ./config/
 COPY db/ ./db/
 
