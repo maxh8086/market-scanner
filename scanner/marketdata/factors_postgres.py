@@ -23,10 +23,65 @@ UA = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-# NSE announcements pacing: pause before each window, and give up after
-# repeated failures instead of hammering a broken endpoint.
+# NSE pacing: pause before each request, and a longer pause before a retry.
 REQUEST_INTERVAL_SECONDS = 3
-MAX_CONSECUTIVE_FAILURES = 3
+RETRY_BACKOFF_SECONDS = 10
+
+
+def _month_windows(start: date, end: date) -> list[tuple[date, date]]:
+    """Split [start, end] into calendar-month windows so each NSE request is bounded."""
+    windows = []
+    current = start
+    while current <= end:
+        next_month = (current.replace(day=28) + timedelta(days=4)).replace(day=1)
+        window_end = min(next_month - timedelta(days=1), end)
+        windows.append((current, window_end))
+        current = window_end + timedelta(days=1)
+    return windows
+
+
+def _fetch_nse_feed(*, feed, gaps, url, save_fn, cached_fn, session, label) -> list[dict]:
+    """Fetch every missing month of each gap from NSE.
+
+    A month is recorded in feed_coverage only after it saves successfully, so a
+    failed month is retried on the next run. A failed month is retried once after
+    a backoff; the loop never aborts, so the whole window is attempted.
+    """
+    all_rows: list[dict] = []
+    for gap_from, gap_to in gaps:
+        for win_from, win_to in _month_windows(gap_from, gap_to):
+            rows = None
+            for attempt in (1, 2):
+                time.sleep(REQUEST_INTERVAL_SECONDS if attempt == 1 else RETRY_BACKOFF_SECONDS)
+                try:
+                    print(f"  Fetching {label}s ({win_from} to {win_to}), attempt {attempt}...")
+                    params = {
+                        "index": "equities",
+                        "from_date": win_from.strftime("%d-%m-%Y"),
+                        "to_date": win_to.strftime("%d-%m-%Y"),
+                    }
+                    resp = session.get(url, params=params, headers=UA, timeout=30)
+                    resp.raise_for_status()
+                    rows = resp.json()
+                    if not isinstance(rows, list):
+                        rows = []
+                    break
+                except Exception as e:
+                    print(f"  Error fetching {label}s ({win_from} to {win_to}), attempt {attempt}: {e}")
+            if rows is None:
+                all_rows.extend(cached_fn(win_from, win_to))
+                continue
+            try:
+                save_fn(rows)
+                with connect() as conn:
+                    record_coverage(conn, feed, win_from, win_to)
+            except Exception as e:
+                print(f"  Error saving {label}s ({win_from} to {win_to}): {e}")
+                all_rows.extend(cached_fn(win_from, win_to))
+                continue
+            all_rows.extend(rows)
+            print(f"    Fetched {len(rows)} {label} rows")
+    return all_rows
 
 
 def _nse_session() -> requests.Session:
@@ -265,45 +320,16 @@ def fetch_announcements_pg(
     if session is None:
         session = _nse_session()
 
-    all_rows = []
-    consecutive_failures = 0
-    for gap_from, gap_to in gaps:
-        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-            print(f"  Stopping announcements fetch after {consecutive_failures} consecutive failures")
-            break
-        time.sleep(REQUEST_INTERVAL_SECONDS)  # pace requests; NSE rate-limits bursts
-        try:
-            print(f"  Fetching announcements gap ({gap_from} to {gap_to})...")
-            # /api/announcements now returns an HTML 404; the corporate-announcements path returns JSON.
-            url = "https://www.nseindia.com/api/corporate-announcements"
-            params = {
-                "index": "equities",
-                "from_date": gap_from.strftime("%d-%m-%Y"),
-                "to_date": gap_to.strftime("%d-%m-%Y"),
-            }
-            resp = session.get(url, params=params, headers=UA, timeout=30)
-            resp.raise_for_status()
-            rows = resp.json()
-            if not isinstance(rows, list):
-                rows = []
-
-            _save_announcements_pg(rows)
-            all_rows.extend(rows)
-
-            # Record this gap as fetched
-            with connect() as conn:
-                record_coverage(conn, "announcements", gap_from, gap_to)
-
-            print(f"    Fetched {len(rows)} announcement rows")
-            consecutive_failures = 0
-        except Exception as e:
-            consecutive_failures += 1
-            print(f"  Error fetching announcements gap ({gap_from} to {gap_to}): {e}")
-            # Try to return what we've cached so far instead of failing completely
-            cached = _load_cached_announcements_pg(gap_from, gap_to)
-            all_rows.extend(cached)
-
-    return all_rows
+    # /api/announcements now returns an HTML 404; the corporate-announcements path returns JSON.
+    return _fetch_nse_feed(
+        feed="announcements",
+        gaps=gaps,
+        url="https://www.nseindia.com/api/corporate-announcements",
+        save_fn=_save_announcements_pg,
+        cached_fn=_load_cached_announcements_pg,
+        session=session,
+        label="announcement",
+    )
 
 
 def fetch_corporate_actions_pg(
@@ -323,44 +349,15 @@ def fetch_corporate_actions_pg(
     if session is None:
         session = _nse_session()
 
-    all_rows = []
-    consecutive_failures = 0
-    for gap_from, gap_to in gaps:
-        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-            print(f"  Stopping corporate actions fetch after {consecutive_failures} consecutive failures")
-            break
-        time.sleep(REQUEST_INTERVAL_SECONDS)  # pace requests; NSE rate-limits bursts
-        try:
-            print(f"  Fetching corporate actions gap ({gap_from} to {gap_to})...")
-            url = "https://www.nseindia.com/api/corporates-corporateActions"
-            params = {
-                "index": "equities",
-                "from_date": gap_from.strftime("%d-%m-%Y"),
-                "to_date": gap_to.strftime("%d-%m-%Y"),
-            }
-            resp = session.get(url, params=params, headers=UA, timeout=30)
-            resp.raise_for_status()
-            rows = resp.json()
-            if not isinstance(rows, list):
-                rows = []
-
-            _save_corporate_actions_pg(rows)
-            all_rows.extend(rows)
-
-            # Record this gap as fetched
-            with connect() as conn:
-                record_coverage(conn, "corporate_actions", gap_from, gap_to)
-
-            print(f"    Fetched {len(rows)} corporate action rows")
-            consecutive_failures = 0
-        except Exception as e:
-            consecutive_failures += 1
-            print(f"  Error fetching corporate actions gap ({gap_from} to {gap_to}): {e}")
-            # Try to return what we've cached so far instead of failing completely
-            cached = _load_cached_corporate_actions_pg(gap_from, gap_to)
-            all_rows.extend(cached)
-
-    return all_rows
+    return _fetch_nse_feed(
+        feed="corporate_actions",
+        gaps=gaps,
+        url="https://www.nseindia.com/api/corporates-corporateActions",
+        save_fn=_save_corporate_actions_pg,
+        cached_fn=_load_cached_corporate_actions_pg,
+        session=session,
+        label="corporate action",
+    )
 
 
 def collect_announcements(

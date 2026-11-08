@@ -149,17 +149,32 @@ def all_filings(db: TinyDB) -> list[Document]:
 # fundamentals
 # --------------------------------------------------------------------------
 
+def _mongo_module(db):
+    """Return scanner.mongo when db is a MongoDB store, else None."""
+    from scanner import mongo
+    return mongo if isinstance(db, mongo.MongoDB) else None
+
+
 def put_fundamentals(db: TinyDB, symbol: str, payload: dict) -> None:
+    m = _mongo_module(db)
+    if m is not None:
+        return m.put_fundamentals(db, symbol, payload)
     doc = dict(payload, symbol=symbol, stored_at=_now())
     doc["expires_at"] = _expiry(doc["stored_at"])
     db.table(FUNDAMENTALS).upsert(doc, Query().symbol == symbol)
 
 
 def get_fundamentals(db: TinyDB, symbol: str) -> Optional[Document]:
+    m = _mongo_module(db)
+    if m is not None:
+        return m.get_fundamentals(db, symbol)
     return db.table(FUNDAMENTALS).get(Query().symbol == symbol)
 
 
 def all_fundamentals(db: TinyDB) -> list[Document]:
+    m = _mongo_module(db)
+    if m is not None:
+        return m.all_fundamentals(db)
     return db.table(FUNDAMENTALS).all()
 
 
@@ -169,6 +184,9 @@ def fundamentals_age_days(db: TinyDB, symbol: str) -> Optional[float]:
     Market cap moves daily, so callers refresh on age rather than assuming a
     cached row is good forever.
     """
+    m = _mongo_module(db)
+    if m is not None:
+        return m.fundamentals_age_days(db, symbol)
     doc = get_fundamentals(db, symbol)
     if not doc or not doc.get("stored_at"):
         return None

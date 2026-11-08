@@ -56,5 +56,46 @@ class BackendSelectionTests(unittest.TestCase):
                 self.fail("mongo module should be importable")
 
 
+class FundamentalsMongoDispatchTests(unittest.TestCase):
+    """Fundamentals helpers must use the Mongo implementation for a MongoDB store.
+
+    Regression: docstore called TinyDB-only methods (db.table(...).get/upsert)
+    on a MongoDB object, failing with "'Collection' object is not callable".
+    No connection is made: the store is built without __init__ and its
+    fundamentals collection is a mock.
+    """
+
+    def _store(self, coll):
+        from scanner import mongo
+        store = object.__new__(mongo.MongoDB)
+        store.db = {"fundamentals": coll}
+        return store
+
+    def test_get_fundamentals_uses_find_one_on_mongo(self):
+        coll = mock.MagicMock()
+        coll.find_one.return_value = {"symbol": "RELIANCE", "stored_at": "2026-11-01T00:00:00+00:00"}
+        doc = docstore.get_fundamentals(self._store(coll), "RELIANCE")
+        coll.find_one.assert_called_once()
+        self.assertEqual(coll.find_one.call_args.args[0], {"symbol": "RELIANCE"})
+        self.assertEqual(doc["symbol"], "RELIANCE")
+
+    def test_put_fundamentals_upserts_on_mongo(self):
+        coll = mock.MagicMock()
+        docstore.put_fundamentals(self._store(coll), "RELIANCE", {"market_cap": 1})
+        coll.update_one.assert_called_once()
+        self.assertTrue(coll.update_one.call_args.kwargs.get("upsert"))
+
+    def test_age_days_is_none_when_absent_on_mongo(self):
+        coll = mock.MagicMock()
+        coll.find_one.return_value = None
+        self.assertIsNone(docstore.fundamentals_age_days(self._store(coll), "NOPE"))
+
+    def test_all_fundamentals_reads_collection_on_mongo(self):
+        coll = mock.MagicMock()
+        coll.find.return_value = [{"symbol": "A"}, {"symbol": "B"}]
+        out = docstore.all_fundamentals(self._store(coll))
+        self.assertEqual([d["symbol"] for d in out], ["A", "B"])
+
+
 if __name__ == "__main__":
     unittest.main()
