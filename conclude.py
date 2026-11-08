@@ -81,8 +81,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--symbols", help="comma-separated symbols only")
     p.add_argument("--limit", type=int, help="cap number of stocks (trial runs)")
     p.add_argument("--force", action="store_true", help="re-conclude even if unchanged")
-    p.add_argument("--url", default=os.environ.get("CONCLUDE_URL", "http://localhost:8000"),
-                   help="model server base URL (default: $CONCLUDE_URL or localhost:8000)")
+    p.add_argument("--url", default=os.environ.get("CONCLUDE_URL", "http://localhost:11434"),
+                   help="model server base URL (default: $CONCLUDE_URL or localhost:11434)")
     p.add_argument("--model", default=conclude.DEFAULT_MODEL, help="served model name")
     p.add_argument("--workers", type=int, default=4, help="concurrent requests")
     p.add_argument("--timeout", type=int, default=300)
@@ -100,12 +100,12 @@ def main(argv: list[str] | None = None) -> int:
         print("Nothing to conclude (no matching symbols).")
         return 0
 
-    cfg = llm.LLMConfig(base_url=args.url, model=args.model, api="openai",
+    cfg = llm.LLMConfig(base_url=args.url, model=args.model, api="ollama",
                         timeout=args.timeout)
     reachable, detail = llm.health(cfg)
     print(f"Model server {args.url}: {detail}")
     if not reachable:
-        print("Start your OpenAI-compatible LLM server at that URL (or pass --url / set CONCLUDE_URL).")
+        print("Start the Ollama server (ollama serve) at that URL (or pass --url / set CONCLUDE_URL).")
         return 1
 
     db = docstore.open_db()

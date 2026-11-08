@@ -21,8 +21,8 @@ answer and none of them trusts the model:
 The conclusion never changes the ranking. It is a reading aid stored beside the
 data, keyed by (symbol, as_of), and it is not investment advice.
 
-Backend: an OpenAI-compatible chat endpoint. A vLLM server serving
-Qwen/Qwen3-4B-Instruct-2507 works that way, as does any such server.
+Backend: Ollama's native /api/chat (cfg.api == "ollama") or any OpenAI-compatible
+chat endpoint, such as a vLLM server. The request shape is chosen in _request_body.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from typing import Any, Mapping, Optional
 from . import llm
 
 PROMPT_VERSION = 3
-DEFAULT_MODEL = "qwen3-4b"            # the served name, see docker-compose.yml
+DEFAULT_MODEL = "hf.co/unsloth/Qwen3.5-4B-GGUF:Q6_K"  # the Ollama model tag, see docker-compose.yml
 STANCES = ("CONSTRUCTIVE", "MIXED", "CAUTIOUS")
 MAX_FILINGS = 5
 
@@ -470,6 +470,19 @@ def validate(symbol: str, data: dict, packet: Mapping[str, Any]) -> Conclusion:
 # --------------------------------------------------------------------------
 
 def _request_body(cfg: llm.LLMConfig, user: str, max_tokens: int, keys=None) -> dict:
+    messages = [{"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user}]
+    if cfg.api == "ollama":
+        # Native /api/chat: stream must be off or resp.json() fails, thinking must be
+        # off or content comes back empty, and Ollama takes the schema as `format`.
+        return {
+            "model": cfg.model,
+            "messages": messages,
+            "stream": False,
+            "think": False,
+            "format": response_schema(keys),
+            "options": {"temperature": cfg.temperature, "num_ctx": cfg.num_ctx},
+        }
     return {
         "model": cfg.model,
         "messages": [{"role": "system", "content": SYSTEM_PROMPT},

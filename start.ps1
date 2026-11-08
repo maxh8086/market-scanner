@@ -25,7 +25,7 @@ Credentials: .env (Upstox/Kite and the database logins) is read by docker compos
 this script only checks that it exists and never opens it.
 
 The LLM server is not started by this project. It is an OpenAI-compatible endpoint given by the
-LLM_URL environment variable (default http://host.docker.internal:8000, the host's port 8000).
+LLM_URL environment variable (default http://host.docker.internal:11434, the host's Ollama server on port 11434).
 Set LLM_URL before running this script if the server is elsewhere. Enrichment stops with a
 clear message if the endpoint is unreachable.
 
@@ -59,9 +59,9 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-Location -Path $PSScriptRoot
 
-$ModelName = 'qwen3-4b'                 # model name the external OpenAI-compatible LLM server serves
+$ModelName = 'hf.co/unsloth/Qwen3.5-4B-GGUF:Q6_K'  # Ollama model tag served on the host
 # External LLM endpoint (not part of this project). Override with LLM_URL in the shell.
-$VllmUrl   = if ($env:LLM_URL) { $env:LLM_URL } else { 'http://host.docker.internal:8000' }
+$VllmUrl   = if ($env:LLM_URL) { $env:LLM_URL } else { 'http://host.docker.internal:11434' }
 $RunId     = [guid]::NewGuid().ToString()
 $env:RUN_ID = $RunId                    # docker-compose.yml passes it to scanner, enrich and conclude
 $RecordRun = -not $Symbols              # a subset run must not replace the day's full run
@@ -224,7 +224,7 @@ if ($NoStocks) {
 } else {
     Write-Stage "Enrich (filings, fundamentals, AI extraction on the LLM server at $VllmUrl)"
     $enrichArgs = @('compose', 'run', '--rm', 'enrich', '--all',
-                    '--llm-url', $VllmUrl, '--llm-model', $ModelName, '--llm-api', 'openai', '--llm-workers', '4')
+                    '--llm-url', $VllmUrl, '--llm-model', $ModelName, '--llm-api', 'ollama', '--llm-workers', '4')
     $code = Measure-Stage 'enrich' { Invoke-Docker $enrichArgs }
     if ($code -ne 0) { Stop-Pipeline "Enrichment failed (exit $code)." }
 

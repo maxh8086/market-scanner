@@ -345,6 +345,7 @@ def _payload(cfg: LLMConfig, prompt: str, kind: Optional[str] = None) -> dict:
             "messages": messages,
             "stream": False,
             "format": "json",  # Ollama constrains decoding to valid JSON
+            "think": False,  # thinking models return empty content unless thinking is off
             "options": {"temperature": cfg.temperature, "num_ctx": cfg.num_ctx},
         }
     body = {
