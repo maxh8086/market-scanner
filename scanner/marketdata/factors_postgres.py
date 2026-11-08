@@ -4,6 +4,7 @@ Uses feed_coverage to track fetched windows and only fetch gaps from NSE.
 """
 from __future__ import annotations
 
+import time
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -21,6 +22,11 @@ UA = {
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "en-US,en;q=0.9",
 }
+
+# NSE announcements pacing: pause before each window, and give up after
+# repeated failures instead of hammering a broken endpoint.
+REQUEST_INTERVAL_SECONDS = 3
+MAX_CONSECUTIVE_FAILURES = 3
 
 
 def _parse_date_str(date_str: str) -> date | None:
@@ -248,12 +254,20 @@ def fetch_announcements_pg(
 
     if session is None:
         session = requests.Session()
+        # NSE rejects API calls from a cold client; warm the cookie jar first.
+        session.get("https://www.nseindia.com", headers=UA, timeout=30)
 
     all_rows = []
+    consecutive_failures = 0
     for gap_from, gap_to in gaps:
+        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+            print(f"  Stopping announcements fetch after {consecutive_failures} consecutive failures")
+            break
+        time.sleep(REQUEST_INTERVAL_SECONDS)  # pace requests; NSE rate-limits bursts
         try:
             print(f"  Fetching announcements gap ({gap_from} to {gap_to})...")
-            url = "https://www.nseindia.com/api/announcements"
+            # /api/announcements now returns an HTML 404; the corporate-announcements path returns JSON.
+            url = "https://www.nseindia.com/api/corporate-announcements"
             params = {
                 "index": "equities",
                 "from_date": gap_from.strftime("%d-%m-%Y"),
@@ -273,7 +287,9 @@ def fetch_announcements_pg(
                 record_coverage(conn, "announcements", gap_from, gap_to)
 
             print(f"    Fetched {len(rows)} announcement rows")
+            consecutive_failures = 0
         except Exception as e:
+            consecutive_failures += 1
             print(f"  Error fetching announcements gap ({gap_from} to {gap_to}): {e}")
             # Try to return what we've cached so far instead of failing completely
             cached = _load_cached_announcements_pg(gap_from, gap_to)
