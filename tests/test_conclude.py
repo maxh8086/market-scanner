@@ -184,6 +184,13 @@ class _Resp:
         return {"choices": [{"message": {"content": self._c}}]}
 
 
+class _OllamaResp(_Resp):
+    """Native Ollama /api/chat reply: the content sits under 'message'."""
+
+    def json(self):
+        return {"message": {"content": self._c}}
+
+
 class TestCall(unittest.TestCase):
     cfg = llm.LLMConfig(base_url="http://vllm:8000", model="phi-4-mini", api="openai")
 
@@ -283,7 +290,7 @@ class TestCli(unittest.TestCase):
             "stance": "CONSTRUCTIVE", "conclusion": "At a high.",
             "positives": [{"point": "New high", "evidence": ["price.bucket"]}],
             "concerns": [], "data_gaps": []})
-        with mock.patch("requests.post", return_value=_Resp(answer)) as post, \
+        with mock.patch("requests.post", return_value=_OllamaResp(answer)) as post, \
                 mock.patch("scanner.llm.health", return_value=(True, "ok")):
             code = cli.main(list(argv))
         return code, post.call_count

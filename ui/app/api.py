@@ -1,6 +1,7 @@
 """API routes for the Market Scanner UI."""
 
 import json
+import logging
 import re
 import uuid
 from typing import Optional, Dict, Any
@@ -444,8 +445,9 @@ async def get_config():
             "sources": result,
             "coverage": serialize_row(coverage) if coverage else None,
         }
-    except Exception as e:
-        return {"error": str(e), "sources": []}
+    except Exception:
+        logging.getLogger(__name__).exception("config status failed")
+        return {"error": "Could not read source status. See server logs.", "sources": []}
 
 @router.get("/config/{source}")
 async def get_config_source(source: str):
