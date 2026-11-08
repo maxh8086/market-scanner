@@ -32,6 +32,29 @@ def get_settings() -> dict:
         return {}
 
 
+def ensure_sources() -> list[str]:
+    """Insert a collector_settings row for every SOURCES key that has none yet.
+
+    New sources therefore need no migration. A new row is manual with a placeholder
+    cron, so it runs only when requested; existing rows are never changed.
+    Returns the names that were added.
+    """
+    with db.connect() as conn:
+        existing = {r["source"] for r in conn.execute("SELECT source FROM collector_settings").fetchall()}
+        added = []
+        for name in sorted(SOURCES):
+            if name in existing:
+                continue
+            conn.execute(
+                "INSERT INTO collector_settings (source, mode, cron, params) "
+                "VALUES (%s, 'manual', '0 0 1 1 *', '{}') ON CONFLICT (source) DO NOTHING",
+                (name,),
+            )
+            added.append(name)
+        conn.commit()
+    return added
+
+
 def update_setting(source: str, mode: Optional[str] = None,
                    cron: Optional[str] = None, params: Optional[dict] = None) -> None:
     """Update one source's collector_settings.

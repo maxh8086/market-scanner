@@ -91,6 +91,14 @@ def cmd_serve(args) -> int:
 
     signal.signal(signal.SIGTERM, handle_sigterm)
 
+    # Register any new source from SOURCES in collector_settings (no migration needed).
+    try:
+        added = settings.ensure_sources()
+        if added:
+            print(f"registered sources: {', '.join(added)}")
+    except Exception as e:
+        print(f"could not register sources (will retry on the next start): {e}", file=sys.stderr)
+
     iteration = 0
     while True:
         iteration += 1
