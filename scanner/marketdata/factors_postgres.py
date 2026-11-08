@@ -4,6 +4,7 @@ Uses feed_coverage to track fetched windows and only fetch gaps from NSE.
 """
 from __future__ import annotations
 
+import functools
 import time
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -250,19 +251,36 @@ def _save_corporate_actions_pg(rows: list[dict]) -> None:
         conn.commit()
 
 
-def _load_cached_announcements_pg(from_date: date, to_date: date) -> list[dict]:
-    """Load cached announcements from Postgres."""
+def _load_cached_announcements_pg(
+    from_date: date, to_date: date, symbol: str | None = None
+) -> list[dict]:
+    """Load cached announcements from Postgres.
+
+    When symbol is given, only that symbol's rows are returned.
+    """
     with connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT isin, symbol, an_dt, "desc", attchmnt_text, sort_date,
-                   seq_id, attchmnt_file, att_file_size
-            FROM announcements
-            WHERE sort_date >= %s AND sort_date <= %s
-            ORDER BY sort_date
-            """,
-            (from_date, to_date),
-        ).fetchall()
+        if symbol is None:
+            rows = conn.execute(
+                """
+                SELECT isin, symbol, an_dt, "desc", attchmnt_text, sort_date,
+                       seq_id, attchmnt_file, att_file_size
+                FROM announcements
+                WHERE sort_date >= %s AND sort_date <= %s
+                ORDER BY sort_date
+                """,
+                (from_date, to_date),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT isin, symbol, an_dt, "desc", attchmnt_text, sort_date,
+                       seq_id, attchmnt_file, att_file_size
+                FROM announcements
+                WHERE sort_date >= %s AND sort_date <= %s AND symbol = %s
+                ORDER BY sort_date
+                """,
+                (from_date, to_date, symbol),
+            ).fetchall()
 
     return [
         {
@@ -304,18 +322,22 @@ def _load_cached_corporate_actions_pg(from_date: date, to_date: date) -> list[di
 
 
 def fetch_announcements_pg(
-    from_date: date, to_date: date, session: requests.Session | None = None
+    from_date: date,
+    to_date: date,
+    session: requests.Session | None = None,
+    symbol: str | None = None,
 ) -> list[dict]:
     """Fetch announcements from NSE using only gaps from feed_coverage.
 
-    Returns list of announcement dicts.
+    Returns list of announcement dicts. When symbol is given, only that
+    symbol's rows are returned from cache.
     """
     with connect() as conn:
         gaps = missing_windows(conn, "announcements", from_date, to_date)
 
     if not gaps:
         # Entire window is covered, load from cache
-        return _load_cached_announcements_pg(from_date, to_date)
+        return _load_cached_announcements_pg(from_date, to_date, symbol)
 
     if session is None:
         session = _nse_session()
@@ -326,7 +348,7 @@ def fetch_announcements_pg(
         gaps=gaps,
         url="https://www.nseindia.com/api/corporate-announcements",
         save_fn=_save_announcements_pg,
-        cached_fn=_load_cached_announcements_pg,
+        cached_fn=functools.partial(_load_cached_announcements_pg, symbol=symbol),
         session=session,
         label="announcement",
     )
@@ -395,7 +417,7 @@ def collect_announcements(
         ).fetchone()["cnt"]
 
     # Fetch gaps
-    rows = fetch_announcements_pg(from_date, today, session)
+    rows = fetch_announcements_pg(from_date, today, session, symbol=symbol)
 
     # Count after
     with connect() as conn:
