@@ -1,6 +1,7 @@
 """API routes for the Market Scanner UI."""
 
 import json
+import re
 import uuid
 from typing import Optional, Dict, Any
 from datetime import datetime, date
@@ -27,6 +28,23 @@ def safe_connection():
         return db.connect()
     except Exception:
         return None
+
+_RUN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+def resolve_run_id(conn, value: str) -> Optional[str]:
+    """Accept a run UUID or a run date (YYYY-MM-DD) and return the run UUID.
+
+    The home page links by run_date, but the run tables key on run_id (uuid).
+    A date resolves to that date's current run, newest first.
+    """
+    if not _RUN_DATE_RE.match(value):
+        return value
+    row = conn.execute(
+        "SELECT run_id FROM runs WHERE run_date = %s "
+        "ORDER BY is_current DESC, started_at DESC LIMIT 1",
+        (value,),
+    ).fetchone()
+    return str(row["run_id"]) if row else None
 
 def serialize_row(row):
     """Convert a row dict with date/datetime objects to JSON-serializable format."""
@@ -64,7 +82,8 @@ async def get_run(run_id: str):
         return {"error": "Database unavailable"}
 
     try:
-        run = conn.execute(queries.RUN_BY_ID, (run_id,)).fetchone()
+        run_id = resolve_run_id(conn, run_id)
+        run = conn.execute(queries.RUN_BY_ID, (run_id,)).fetchone() if run_id else None
         if not run:
             raise HTTPException(status_code=404, detail="Run not found")
 
@@ -98,6 +117,9 @@ async def get_results(
         return {"error": "Database unavailable", "results": [], "total": 0}
 
     try:
+        run_id = resolve_run_id(conn, run_id)
+        if not run_id:
+            return {"error": "Run not found", "results": [], "total": 0}
         where_parts = ["ss.run_id = %s"]
         params = [run_id]
 
