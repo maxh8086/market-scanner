@@ -40,6 +40,10 @@ The LLM receives only the extracted passages used for guidance, never whole docu
 - Test that a scanned PDF sets `needs_ocr` and stores no text.
 - A live run for NEOGEN over the 12-month window, row counts reported against the 14 XBRL rows in the CSV.
 
+## Summary step (added 2026-11-08)
+
+After the fetch and parse steps, a summary step writes the concall overview, summary, Q&A, and annual report summary into `concall_summaries`. It uses the local LLM through tokenfrugal, with the prompt, schema, and checks in `docs/designs/concall-summary-template.md`. The UI reads only from the database.
+
 ## Open questions
 
 1. Do you want transcripts and presentations both, or transcripts only?
