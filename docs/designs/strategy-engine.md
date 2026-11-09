@@ -70,8 +70,9 @@ Each strategy is one JSON file under `strategies/` (path to be confirmed in the 
   "on_missing": "fail",
   "rank": {"field": "factors.factors_matched", "order": "desc"},
   "outcome": {
-    "horizons_trading_days": [20, 60],
-    "benchmark": "NIFTY 500",
+    "track_until_trading_days": 756,
+    "report_at_trading_days": [20, 60, 252, 756],
+    "benchmark": "NIFTY 750 TOTAL MKT",
     "success": "excess_return_pct > 0"
   },
   "panel": {
@@ -86,6 +87,8 @@ Each strategy is one JSON file under `strategies/` (path to be confirmed in the 
 **Combining rules.** `all` (AND) and `any` (OR), nested at most two levels deep. No other syntax.
 
 **Missing facts.** `on_missing` decides what happens when a fact is null for a stock. `fail` (the default) counts the rule as not passed. `unknown` leaves the stock out and reports it in the counts. Either way the rule trace records that the value was missing. A missing value is never treated as a pass.
+
+**Outcome settings.** `track_until_trading_days` is the longest period an outcome is followed. It is 756 (about 3 years) in the example. `report_at_trading_days` lists the points where the panel shows a figure. Both are set per strategy, not fixed by the engine. The benchmark is an index name from the list in `scanner/index_candles.py`.
 
 **Validation.** The loader checks the field names against the fact snapshot schema, the operators, the types and the nesting depth. A spec that fails validation is rejected whole. A partly valid spec never runs.
 
@@ -112,11 +115,12 @@ Proposed Postgres schema `strategy` (consistent with the fundamentals move to Po
 | `strategy.fact_snapshot` | `run_date, symbol` | The facts used, as they were at the end of the run. Needed so results can be reproduced. |
 | `strategy.run` | `run_id` | Strategy, version, run date, universe count, matched count, unknown count, status, start and end time. |
 | `strategy.result` | `strategy_id, version, run_date, symbol` | `matched`, `score`, `rule_trace` (jsonb), `unknown_rules`. |
-| `strategy.outcome` | `strategy_id, version, run_date, symbol, horizon_days` | `entry_close`, `exit_close`, `return_pct`, `benchmark_return_pct`, `excess_return_pct`, `max_drawdown_pct`, `status` (pending, complete, no_data). |
+| `strategy.outcome_path` | `strategy_id, version, run_date, symbol, trading_day` | One row per trading day after the run date: `adj_close`, `benchmark_close`, `return_pct`, `excess_return_pct`, `running_max_drawdown_pct`. Written as each day closes. |
+| `strategy.outcome` | `strategy_id, version, run_date, symbol, report_at_trading_days` | Summary at each reporting point: `entry_close`, `exit_close`, `return_pct`, `excess_return_pct`, `max_drawdown_pct`, `status` (open, reached_report_point, reached_cap, no_data). Derived from `outcome_path`. |
 
 **Outcome rules.**
 - **Entry.** The close on the run date. Runs happen after the market closes (15:30 IST), so the entry uses a close that was known at the time of the run. Intraday runs are not part of this design (decision 2 in section 10).
-- **Exit.** The close N trading days after the run date, using the exchange trading calendar.
+- **Exit.** Open-ended. Each trading day after the run date adds one `outcome_path` row, using the exchange trading calendar. The outcome is `open` until a report point or the cap is reached. Once the cap (`track_until_trading_days`) is reached, the outcome is closed as `reached_cap`. A stock that stops trading (delisted or suspended) is closed as `no_data` at its last close, with the reason recorded.
 - **Prices must be adjusted** for bonus issues, splits and demergers. Without adjustment, a bonus or demerger shows as a fall. The adjusted price source is an open item (section 11).
 - **Benchmark.** The index return over the same days. An index EOD source already exists (`db/migrations/041_index_eod_source.sql`). Whether it covers the benchmark index needs checking.
 - **Pending.** Outcomes stay `pending` until the horizon date is reached. A missing price gives `no_data`, not zero.
@@ -156,21 +160,23 @@ Each step gets the EGM brainstorm and user approval before any task is dispatche
 
 1. **Fact snapshot.** Write each scan run's facts to `strategy.fact_snapshot` in Postgres. No Excel output for strategy data.
 2. **Spec loader and engine.** Pure Python, no I/O. Tests cover the operators, missing-fact handling, nesting limits, and the 39-name acceptance test.
-3. **Run job.** After the EOD data is ready, run every active spec and write `strategy.run`, `strategy.result`.
+3. **Run job.** Started manually or at end of day, whenever the system is up. Runs every active spec and writes `strategy.run`, `strategy.result`. A missed day is not backfilled from later data (see section 11).
 4. **Outcome job.** Adjusted prices, benchmark, horizons, `pending`, `no_data`, metrics.
 5. **API.** The four read endpoints in section 7.
 6. **First panel.** The shortlist as strategy 1, using the registry entry.
 
 Tests: `.venv/Scripts/python.exe -m unittest discover -s tests -t . -q`.
 
-## 10. Decisions needed from you
+## 10. Decisions
 
-1. **Spec format.** Recommended: declarative JSON, as in section 4, with no code in specs. The alternative is one Python class per strategy, which is more flexible but needs a code change for each new strategy.
-2. **Run timing.** Recommended: end of day only, after 15:30 IST. The alternative is intraday runs, which needs a different entry price rule.
-3. **Horizons.** Recommended: 20 and 60 trading days. Confirm.
-4. **Benchmark.** Recommended: NIFTY 500. I have not checked that the index EOD source covers it.
-5. **Scorecard.** Recommended: keep it as a system fact, usable by strategies. The alternative is to make it a strategy.
-6. **Fact snapshot storage. Decided 2026-11-09: Postgres only.** Strategy results and the fact snapshot are not sent to Excel. The Excel workbook was designed before the database existed, and it is not a record for strategies.
+Resolved on 2026-11-09:
+
+1. **Spec format: declarative JSON, no code in specs.** Agreed.
+2. **Run timing: manual, or at end of day when the system is up.** The system may not run every day, so no run is assumed for any date. Intraday runs are out of scope.
+3. **Outcome horizons: open-ended, tracked up to 3 years (756 trading days).** Some outcomes take years to play out. The engine stores the daily path, and the panel shows report points (20, 60, 252, 756 trading days). The 20 and 60 day points are not the only measure. Report points are per strategy.
+4. **Benchmark: NIFTY 750 TOTAL MKT (Nifty Total Market), the index the scan universe is drawn from.** It is in the index list in `scanner/index_candles.py` (`NIFTY 750 TOTAL MKT`, mapped to `NSE_INDEX|NIFTY TOTAL MKT`), and daily closes are stored in Postgres. Depth of history for this index has not been checked. The universe is its members, so each stock is part of its own benchmark (see section 11).
+5. **Scorecard: a system fact that strategies can use.** Agreed.
+6. **Fact snapshot storage: Postgres only.** Results and the snapshot are not sent to Excel. The Excel workbook was designed before the database existed.
 
 ## 11. Open risks
 
@@ -179,4 +185,6 @@ Tests: `.venv/Scripts/python.exe -m unittest discover -s tests -t . -q`.
 - **Look-ahead in events.** A factor must use only announcements dated on or before the run date. The factor cache joins by announcement date, so the join has to be checked for this in the build.
 - **Small samples.** A new strategy has few events for months. The minimum sample rule (section 6) prevents early claims, but the panel must still show the count.
 - **Overfitting.** Rules picked after seeing outcomes will look good. The version rule (B6) keeps every version visible. A rule change must be recorded before its outcomes are seen.
+- **Missed days.** Runs happen only when the system is up, so some dates will have no snapshot. A missed date is recorded as missing. It is never rebuilt from later prices, because that would use information that was not available on the day.
+- **Benchmark includes the stocks.** The universe is the members of NIFTY 750 TOTAL MKT, so a stock's return is part of the benchmark return. For a large stock the excess return is partly against itself. Compare with a benchmark that excludes the universe, or report both, before reading excess return as skill. This needs your decision.
 - **Shortlist not yet coded.** The 39 names come from a manual step. Until the engine runs the spec, the panel for the shortlist would be the first place the rule is applied in code.
