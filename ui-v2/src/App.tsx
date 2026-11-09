@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fetchFilterOptions, type FilterOptions } from "./api/filterOptions";
 import { fetchLatestRun, LatestRunError, type LatestRun } from "./api/latestRun";
 import { FilterBar } from "./filters/FilterBar";
@@ -7,10 +7,18 @@ import { PresetsMenu } from "./filters/PresetsMenu";
 import { AppShell } from "./shell/AppShell";
 import { StateView } from "./shell/StateView";
 import type { TabItem } from "./shell/TabStrip";
+import { StockPage } from "./stock/StockPage";
 import { ScreenerTable } from "./table/ScreenerTable";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
 const TABS: TabItem[] = [{ id: "home", label: "Home" }];
+
+/** An open stock tab. The id is the symbol, so opening the same stock twice focuses the existing tab. */
+interface StockTab {
+  id: string;
+  label: string;
+  company: string | null;
+}
 
 const NO_OPTIONS: readonly string[] = [];
 
@@ -27,10 +35,26 @@ type FilterOptionsState =
 
 export default function App() {
   const [activeTabId, setActiveTabId] = useState("home");
+  const [stockTabs, setStockTabs] = useState<StockTab[]>([]);
   const [latest, setLatest] = useState<LatestRunState>({ status: "loading" });
   const [filterOptions, setFilterOptions] = useState<FilterOptionsState>({ status: "loading" });
   const [filters, setFilters] = useState<FilterState>({});
   const clearFilters = () => setFilters({});
+
+  const tabs: TabItem[] = [...TABS, ...stockTabs.map((tab) => ({ id: tab.id, label: tab.label, closable: true }))];
+  const activeStock = stockTabs.find((tab) => tab.id === activeTabId) ?? null;
+
+  const openStock = useCallback((symbol: string, company: string | null) => {
+    setStockTabs((current) =>
+      current.some((tab) => tab.id === symbol) ? current : [...current, { id: symbol, label: symbol, company }],
+    );
+    setActiveTabId(symbol);
+  }, []);
+
+  const closeStock = useCallback((id: string) => {
+    setStockTabs((current) => current.filter((tab) => tab.id !== id));
+    setActiveTabId((current) => (current === id ? "home" : current));
+  }, []);
 
   const readyRunId = latest.status === "ready" ? latest.run.runId : null;
 
@@ -87,22 +111,38 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <AppShell tabs={TABS} activeTabId={activeTabId} onSelectTab={setActiveTabId}>
-        {latest.status === "loading" && <StateView kind="loading" message="Loading the current run." />}
-        {latest.status === "empty" && <StateView kind="empty" message="No current run." />}
-        {latest.status === "error" && <StateView kind="error" message={latest.message} />}
-        {latest.status === "ready" && (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-text-muted">Run date: {latest.run.runDate}</p>
-            <FilterBar
-              value={filters}
-              onChange={setFilters}
-              bucketOptions={bucketOptions}
-              stanceOptions={stanceOptions}
-            />
-            <PresetsMenu filters={filters} onApply={setFilters} />
-            <ScreenerTable runId={latest.run.runId} filters={filters} onClearFilters={clearFilters} />
-          </div>
+      <AppShell
+        tabs={tabs}
+        activeTabId={activeTabId}
+        onSelectTab={setActiveTabId}
+        onCloseTab={closeStock}
+      >
+        {activeStock ? (
+          <StockPage key={activeStock.id} symbol={activeStock.id} company={activeStock.company} />
+        ) : (
+          <>
+            {latest.status === "loading" && <StateView kind="loading" message="Loading the current run." />}
+            {latest.status === "empty" && <StateView kind="empty" message="No current run." />}
+            {latest.status === "error" && <StateView kind="error" message={latest.message} />}
+            {latest.status === "ready" && (
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-text-muted">Run date: {latest.run.runDate}</p>
+                <FilterBar
+                  value={filters}
+                  onChange={setFilters}
+                  bucketOptions={bucketOptions}
+                  stanceOptions={stanceOptions}
+                />
+                <PresetsMenu filters={filters} onApply={setFilters} />
+                <ScreenerTable
+                  runId={latest.run.runId}
+                  filters={filters}
+                  onClearFilters={clearFilters}
+                  onOpenStock={openStock}
+                />
+              </div>
+            )}
+          </>
         )}
       </AppShell>
     </ThemeProvider>
