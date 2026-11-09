@@ -14,7 +14,7 @@ Related: `scanner/secrets_store.py` (today's plaintext store), `docs/designs/fun
    - **Named user:** logs in to their own profile; enters and manages their own portfolio secrets and tokens. No access to app secrets, first-time configuration or the dashboard template.
 6. **Admin cannot view named users' portfolio tokens.** The admin can reset or delete them, but never read them.
 7. **Login is local.** The admin creates each account. Passwords are stored as salted hashes (argon2 or bcrypt), never in plain text.
-8. **Primary data source is an admin setting.** Choices: Upstox or screener. Upstox is the first choice to wire, per the fundamentals plan. Screener stays as a check source.
+8. **Fundamentals source order is fixed, not an admin setting.** Screener is the primary source for every fundamentals field it provides. Upstox is secondary and fills only the fields Screener does not provide, as set out in [fundamentals-upstox-secondary.md](fundamentals-upstox-secondary.md). Neither source overwrites the other.
 
 ## Data model (proposed, not built)
 
