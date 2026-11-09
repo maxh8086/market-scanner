@@ -31,7 +31,7 @@ Screen: Home, shortlist and event feed (`docs/designs/ui-redesign-spec.md` secti
 - Each relevant item becomes one event row with: event_id, source, source_url, published_at, classified_at, category, symbols, sectors, stance, reason, model_id, prompt_version, status.
 - Store the model_id and prompt_version on every row, so a later re-run can be compared with the first result.
 - Rows are kept for future use (history, review, and later back-testing). The dashboard reads only a recent window (for example the last 7 days). The window is a display setting, not a deletion rule.
-- The retention period for stored titles and links is an open question (section 7), together with the licence check for long-term storage.
+- News titles and links are not kept long term (no licence). Only critical events are kept, with their timeline and price-impact tracking. The window and the critical-event rule are in section 7.
 
 **Criteria for "relevant"**
 - A tier 1 or tier 2 event from section 1 (results, guidance, order wins, brokerage rating changes, rating-agency actions).
@@ -46,7 +46,7 @@ Screen: Home, shortlist and event feed (`docs/designs/ui-redesign-spec.md` secti
 
 **Verification before launch**
 - Build a labelled set of at least 100 items (relevant or not) from real feed output, and measure precision and recall of the LLM filter against it.
-- Set the acceptance thresholds before measuring. They are an open decision (see section 7, still to decide).
+- Set the acceptance thresholds before measuring. They are an open decision (see section 7, Still open).
 - Re-measure after any change to the prompt, the model or the criteria.
 
 **Consequences**
@@ -153,16 +153,39 @@ Tier 3 (sector terms, optional):
 
 Search string (draft): ("Letter of Award" OR "LoA" OR "LOI" OR "Work Order" OR "Bagged") AND ("Crore" OR "Lakh" OR "Contract" OR "Order")
 
-## 7. Still to decide (brainstorm questions)
+## 7. Decisions from brainstorm (answered 2026-11-09)
 
-- Q3: Freshness. Can the feed lag by one collector cycle, or must it be live?
-- Q4: What makes a stock "shortlisted"? For example, a new event in the last N days, or only events matching the scan criteria.
-- Q5: Event record fields. Suggested minimum: company, event type, time, headline, source link, tier, source name.
-- News feed licence and exchange feed terms (section 5).
-- Macro panel: Home or a separate panel (section 4.3). India CPI source (section 4.3). Confirm US CPI series IDs (section 4.3).
-- Whether the Fed and RBI feeds need a rate-decision alert or only a feed.
-- Beat/miss approach (section 5, item 1).
-- Retention period for stored news titles, links and classifications in the event tracker, and licence review for storing them long term.
+**Q3. Freshness.** Use frequent polling with a visible timestamp (option C). Each item shows when it was fetched. The RSS source is built and tested, but it stays OFF by default because the laptop is not always on. Exchange filings and the economic calendar are the default sources.
+
+**Q4. What makes a stock "shortlisted".** Use the existing ATH scanner rule, not a new one. A stock is on the Home shortlist only if all three hold:
+1. It is an ATH-scan match: a new ATH today, or its last price is within 26% of its all-time high (`scanner/ath.py`, `classify_bucket`, default `max_dist=26.0`).
+2. Its trend is UPTREND: last price is above both the 50-day EMA and the 200-day SMA (`scanner/indicators.py`, `classify_trend`).
+3. It has at least one corporate-event factor: bonus issue, demerger, order-book signal or expansion signal (`scanner/factors.py`, `factors_matched`).
+The shortlist is the intersection of these three. On the 2026-09-28 full run this gave 39 names (298 matches, of which 39 are UPTREND with at least one factor), per `handoff.md`. The event feed is separate: it lists events, and the shortlist lists stocks that pass the three rules above.
+
+**Q5. Event record fields.** Use the fields you listed: company, event type, time, headline, source link, tier, source name. The classification fields in section 2.1 (category, stance, reason, model ID, prompt version, status) are kept as well.
+
+**Macro panel.** A separate panel for the economic calendar and its outcomes (scheduled date, then actual result once published), not part of the Home event feed.
+
+**Fed and RBI.** A rate decision triggers an alert and also appears in the feed.
+
+**Beat/miss.** Do not compute a beat or miss against a consensus number. Process the news and show it as met or failed, based on the wording, as the source reports it.
+
+**Licence and retention.** There is no licence for news content, so news titles and links are not kept long term. Keep only critical events, track their progress over time on the timeline, and track their price impact over a set period. The exact window is still open (see below).
+
+**Decided on 2026-11-09:**
+- **Critical events:** tier 1 and tier 2 events. Both are kept long term and tracked.
+- **Impact window:** price impact is tracked for 30 days after each critical event.
+- **Event cap per symbol:** show at most 3 events per stock on the Home feed. This is a Home display cap only. It is not a storage limit, and it does not apply to a stock's own timeline.
+
+**Decided on 2026-11-09 (continued):**
+- **Cap rationale:** the cap of 3 events per stock applies to the Home feed only. It keeps the Home feed readable, so one stock with many filings in a week does not push other shortlisted stocks off screen. Every event for a stock is still shown on that stock's own timeline, in the event tracker. This matters because a user who opens a single stock can scan its full event history there, and the Home feed is only the entry point.
+- **News-filter acceptance targets (set on 2026-11-09):** measured on a labelled set of at least 100 items from real feed output (section 2). Precision of at least 0.85, because the dashboard shows only items marked relevant, so each false positive is visible noise. Recall of at least 0.70, because exchange filings remain the primary source and a missed news item is less costly. Re-measure after any change to the prompt, model, or criteria.
+- **Exchange feed licence:** no licence terms apply. Use is for personal use only.
+- **India CPI source:** the MoSPI advance release calendar (section 8.1), as recommended in this document.
+
+**Still open:**
+- None.
 
 ## 8. Economic calendar (market dashboard)
 
@@ -195,7 +218,7 @@ Resolved on 2026-11-09: the March 2026 FOMC date is 17–18 Mar (the earlier 19 
 - **Holiday shifts.** Dates move when they fall on a holiday or a weekend (CPI: next working day). Keep the calendar as dated rows, not a formula.
 - **Lead time and alerts.** Show the next event with a countdown. Decide the alert lead time (for example, 1 day and 1 hour before). Alerts for rate decisions and CPI are macro alerts, separate from the stock event alerts.
 - **Actual versus expected.** Once a release is out, store the actual figure beside the scheduled date. Do not add a consensus forecast until a source is chosen (see section 5).
-- **Scope.** Start with the four rows in 7.1 (India CPI, US CPI, RBI MPC, FOMC). Add others later (for example, India IIP, GDP, US payrolls) only if asked.
+- **Scope.** Start with the four rows in 8.1 (India CPI, US CPI, RBI MPC, FOMC). Add others later (for example, India IIP, GDP, US payrolls) only if asked.
 - **Storage.** A table of calendar rows (event, country, scheduled UTC time, source URL, checked date, status). It is read through the Fastify API. The browser must not read the database directly (spec section 6).
 
 ## 9. Links
