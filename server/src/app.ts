@@ -24,6 +24,11 @@ import {
   validateCandlesRequest,
 } from "./candles.js";
 import {
+  buildRecentClosesQuery,
+  shapeRecentCloses,
+  validateRecentClosesRequest,
+} from "./recentCloses.js";
+import {
   buildDeletePresetQuery,
   buildInsertPresetQuery,
   buildListPresetsQuery,
@@ -230,6 +235,21 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const found = await deps.query(query.sql, query.values);
     return shapeCandles(checked.value.symbol, found.rows);
   });
+
+  // Last N daily closes for many symbols in one call, for the scan table sparklines.
+  // Symbols with no stored candles are missing from the map, not 404.
+  app.get<{ Querystring: { symbols?: unknown; limit?: unknown } }>(
+    "/api/recent-closes",
+    async (request, reply) => {
+      const checked = validateRecentClosesRequest(request.query);
+      if (!checked.ok) {
+        return reply.code(400).send({ error: checked.error });
+      }
+      const query = buildRecentClosesQuery(checked.value);
+      const found = await deps.query(query.sql, query.values);
+      return shapeRecentCloses(found.rows);
+    },
+  );
 
   // Saved scan presets. The write path validates every field before any SQL runs.
   app.get("/api/presets", async () => {

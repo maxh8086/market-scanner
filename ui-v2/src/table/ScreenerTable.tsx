@@ -30,6 +30,9 @@ import { StateView } from "../shell/StateView";
 import { ColumnFilter, type ColumnFilterKind } from "./ColumnFilter";
 import { ColumnChooser } from "./ColumnChooser";
 import { ColumnResizeHandle, useColumnWidths } from "./columnWidths";
+import { Sparkline } from "./Sparkline";
+import { fetchRecentCloses } from "./recentCloses";
+import { usePrefersReducedMotion } from "./reducedMotion";
 
 export interface ScreenerTableProps {
   runId: string;
@@ -88,6 +91,9 @@ const NO_TICKS: ReadonlyMap<string, LiveTick> = new Map();
  * definitions, so the columns stay the same object on every tick.
  */
 const LiveTicksContext = createContext<ReadonlyMap<string, LiveTick>>(NO_TICKS);
+const NO_CLOSES: ReadonlyMap<string, readonly number[]> = new Map();
+/** Recent closes per symbol for the sparkline column. Read here, like the live ticks, so columns stay stable. */
+const ClosesContext = createContext<ReadonlyMap<string, readonly number[]>>(NO_CLOSES);
 const PAGE_SIZE = 50;
 const ROW_HEIGHT_ESTIMATE = 40;
 const FLASH_MS = 700;
@@ -102,6 +108,7 @@ const COLUMN_IDS = [
   "one_year_return_pct",
   "distance_pct",
   "ath_date",
+  "sparkline",
   "industry",
   "stance",
 ] as const;
@@ -114,6 +121,7 @@ const COLUMN_LABELS: Record<ColumnId, string> = {
   one_year_return_pct: "1Y return",
   distance_pct: "From ATH",
   ath_date: "ATH date",
+  sparkline: "Trend",
   industry: "Sector",
   stance: "Stance",
   day_chg: "Chg %",
@@ -128,9 +136,14 @@ const NUMERIC_COLUMNS: ReadonlySet<ColumnId> = new Set<ColumnId>([
   "day_chg_abs",
 ]);
 
-/** Columns the API can sort on. "industry" is not in the sort whitelist; the day change columns are computed client-side. */
+/**
+ * Columns the API can sort on. "industry" is not in the sort whitelist; the day change columns are
+ * computed client-side; the sparkline is not sortable.
+ */
 const SERVER_SORTABLE: ReadonlySet<ColumnId> = new Set<ColumnId>(
-  COLUMN_IDS.filter((id) => id !== "industry" && id !== "day_chg" && id !== "day_chg_abs"),
+  COLUMN_IDS.filter(
+    (id) => id !== "industry" && id !== "day_chg" && id !== "day_chg_abs" && id !== "sparkline",
+  ),
 );
 
 const features = tableFeatures({ rowSortingFeature, columnVisibilityFeature });
@@ -207,11 +220,18 @@ function OpenStockCell({ text, onOpen, className }: OpenStockCellProps) {
  * LTP cell. A changed price gets a short gain or loss tint for about 700 ms. The tint is a colour
  * change with no animation, so it stays on under reduced motion. Tabular numerals keep the width fixed.
  */
+/**
+ * LTP cell. A changed price gets a short gain or loss tint for about 700 ms. Under
+ * prefers-reduced-motion the tint is replaced by a static 2px bar on the left edge, shown for the
+ * same time. The bar is absolutely positioned, so the cell does not move. Tabular numerals keep
+ * the width fixed.
+ */
 function LtpCell({ symbol, fallback }: { symbol: string; fallback: number | null }) {
   const ticks = useContext(LiveTicksContext);
   const value = ticks.get(symbol)?.ltp ?? fallback;
   const previous = useRef(value);
   const [direction, setDirection] = useState<"up" | "down" | null>(null);
+  const reducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     const before = previous.current;
@@ -224,15 +244,34 @@ function LtpCell({ symbol, fallback }: { symbol: string; fallback: number | null
     return () => clearTimeout(timer);
   }, [value]);
 
-  const tint = direction === "up" ? "bg-gain/15" : direction === "down" ? "bg-loss/15" : "";
+  const tint =
+    reducedMotion || direction === null
+      ? ""
+      : direction === "up"
+        ? "bg-gain/15"
+        : "bg-loss/15";
   return (
     <span
       data-flash={direction ?? undefined}
-      className={`tabular-nums rounded-sm px-1 transition-colors motion-reduce:transition-none ${tint}`}
+      data-motion={reducedMotion ? "reduced" : undefined}
+      className={`relative tabular-nums rounded-sm px-1 transition-colors motion-reduce:transition-none ${tint}`}
     >
+      {reducedMotion && direction ? (
+        <span
+          aria-hidden="true"
+          data-change-bar={direction}
+          className={`absolute inset-y-0 left-0 w-[2px] rounded-l-sm ${direction === "up" ? "bg-gain" : "bg-loss"}`}
+        />
+      ) : null}
       {formatInr(value)}
     </span>
   );
+}
+
+/** Sparkline cell. Reads the closes for its symbol from the context. Shows a dash until they arrive. */
+function SparklineCell({ symbol }: { symbol: string }) {
+  const closes = useContext(ClosesContext);
+  return <Sparkline closes={closes.get(symbol)} />;
 }
 
 /**
@@ -350,6 +389,12 @@ function buildColumns(
       sortDescFirst: false,
       cell: (info) => textOrDash(info.getValue()),
     }),
+    helper.accessor("symbol", {
+      id: "sparkline",
+      header: COLUMN_LABELS.sparkline,
+      enableSorting: false,
+      cell: (info) => <SparklineCell symbol={info.getValue()} />,
+    }),
     helper.accessor("industry", {
       id: "industry",
       header: COLUMN_LABELS.industry,
@@ -458,6 +503,31 @@ export function ScreenerTable({
     return () => controller.abort();
   }, [runId, sortId, sortOrder, filters, retryNonce]);
 
+  // Closes for the sparklines. Each symbol is requested once. Symbols with no candles stay out of
+  // the map and show the dash. A failed request frees its symbols, so the next rows change retries.
+  const [closes, setCloses] = useState<ReadonlyMap<string, readonly number[]>>(NO_CLOSES);
+  const requestedCloses = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const wanted = view.rows.map((row) => row.symbol).filter((symbol) => !requestedCloses.current.has(symbol));
+    if (wanted.length === 0) {
+      return;
+    }
+    wanted.forEach((symbol) => requestedCloses.current.add(symbol));
+    fetchRecentCloses(wanted)
+      .then((found) => {
+        setCloses((current) => {
+          const next = new Map(current);
+          for (const [symbol, values] of Object.entries(found)) {
+            next.set(symbol, values);
+          }
+          return next;
+        });
+      })
+      .catch(() => {
+        wanted.forEach((symbol) => requestedCloses.current.delete(symbol));
+      });
+  }, [view.rows]);
+
   const columns = useMemo(() => buildColumns(onOpenStock), [onOpenStock]);
 
   const table = useTable({
@@ -537,6 +607,21 @@ export function ScreenerTable({
     }
   };
 
+  /**
+   * Enter or Space on a focused row opens its stock, the same as the symbol control. Keys pressed on
+   * a control inside the row are left to that control, so the stock opens once.
+   */
+  const openRowFromKey = (event: KeyboardEvent<HTMLTableRowElement>, row: Row) => {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    onOpenStock?.(row.symbol, row.company);
+  };
+
   const visibleColumnCount = table.getVisibleLeafColumns().length;
   const virtualRows = virtualizer.getVirtualItems();
   const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
@@ -588,112 +673,117 @@ export function ScreenerTable({
       ) : null}
       {view.status === "error" ? (
         <p role="alert" className="text-sm text-loss">
+          <span aria-hidden="true">⚠ </span>
           Could not update results. {view.error}
         </p>
       ) : null}
 
       <LiveTicksContext.Provider value={liveTicks}>
-        <div
-          ref={scrollRef}
-          className="max-h-[60vh] overflow-auto rounded-md border border-border bg-surface"
-        >
-          <table
-            className={`border-collapse text-sm text-text whitespace-nowrap ${hasManualWidths ? "table-fixed w-full" : "table-auto w-max"}`}
+        <ClosesContext.Provider value={closes}>
+          <div
+            ref={scrollRef}
+            className="max-h-[60vh] overflow-auto rounded-md border border-border bg-surface"
           >
-            <thead>
-              {table.getHeaderGroups().map((group) => (
-                <tr key={group.id}>
-                  {group.headers.map((header) => {
-                    const id = header.column.id as ColumnId;
-                    const sorted = header.column.getIsSorted();
-                    const ariaSort = sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none";
-                    const align = NUMERIC_COLUMNS.has(id) ? "text-right" : "text-left";
-                    const stick = id === "symbol" ? "left-0 z-30" : "z-20";
-                    const spec = onFiltersChange ? filterSpecs[id] : undefined;
-                    const currentValues = spec ? readFilterValues(filters, spec.keys) : [];
-                    return (
-                      <th
-                        key={header.id}
-                        data-col={id}
-                        scope="col"
-                        aria-sort={header.column.getCanSort() ? ariaSort : undefined}
-                        style={columnWidths.widths[id] !== undefined ? { width: columnWidths.widths[id] } : undefined}
-                        className={`sticky top-0 relative whitespace-nowrap bg-surface-2 px-3 py-2 font-semibold ${align} ${stick}`}
-                      >
-                        {header.column.getCanSort() && SERVER_SORTABLE.has(id) ? (
-                          <button
-                            type="button"
-                            onClick={header.column.getToggleSortingHandler()}
-                            className="inline-flex items-center gap-1 font-semibold text-text"
-                          >
-                            <span className="min-w-0 truncate">{COLUMN_LABELS[id]}</span>
-                            <SortChevron
-                              direction={sorted === "asc" || sorted === "desc" ? sorted : null}
-                            />
-                          </button>
-                        ) : (
-                          <span className="block min-w-0 truncate">{COLUMN_LABELS[id]}</span>
-                        )}
-                        {spec && onFiltersChange ? (
-                          <ColumnFilter
-                            label={spec.label}
-                            kind={spec.kind}
-                            align={spec.align}
-                            options={spec.options}
-                            value={[currentValues[0] ?? "", currentValues[1] ?? ""]}
-                            active={currentValues.some((value) => value !== "")}
-                            onApply={(next) =>
-                              onFiltersChange(writeFilterValues(filters, spec.keys, next, spec.numeric))
-                            }
-                          />
-                        ) : null}
-                        <ColumnResizeHandle
-                          label={COLUMN_LABELS[id]}
-                          onStart={(event) => columnWidths.startResize(event, id)}
-                          onReset={columnWidths.reset}
-                        />
-                      </th>
-                    );
-                  })}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {paddingTop > 0 ? (
-                <tr aria-hidden="true">
-                  <td colSpan={visibleColumnCount} style={{ height: paddingTop, padding: 0 }} />
-                </tr>
-              ) : null}
-              {virtualRows.map((virtualRow) => {
-                const row = tableRows[virtualRow.index];
-                return (
-                  <tr
-                    key={row.id}
-                    data-index={virtualRow.index}
-                    ref={virtualizer.measureElement}
-                    className="border-t border-border"
-                  >
-                    {row.getVisibleCells().map((cell) => {
-                      const id = cell.column.id as ColumnId;
+            <table
+              className={`border-collapse text-sm text-text whitespace-nowrap ${hasManualWidths ? "table-fixed w-full" : "table-auto w-max"}`}
+            >
+              <thead>
+                {table.getHeaderGroups().map((group) => (
+                  <tr key={group.id}>
+                    {group.headers.map((header) => {
+                      const id = header.column.id as ColumnId;
+                      const sorted = header.column.getIsSorted();
+                      const ariaSort = sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none";
                       const align = NUMERIC_COLUMNS.has(id) ? "text-right" : "text-left";
-                      const stick = id === "symbol" ? "sticky left-0 z-10 bg-surface" : "";
+                      const stick = id === "symbol" ? "left-0 z-30" : "z-20";
+                      const spec = onFiltersChange ? filterSpecs[id] : undefined;
+                      const currentValues = spec ? readFilterValues(filters, spec.keys) : [];
                       return (
-                        <td key={cell.id} className={`overflow-hidden text-ellipsis px-3 py-2 ${align} ${stick}`}>
-                          <table.FlexRender cell={cell} />
-                        </td>
+                        <th
+                          key={header.id}
+                          data-col={id}
+                          scope="col"
+                          aria-sort={header.column.getCanSort() ? ariaSort : undefined}
+                          style={columnWidths.widths[id] !== undefined ? { width: columnWidths.widths[id] } : undefined}
+                          className={`sticky top-0 relative whitespace-nowrap bg-surface px-3 py-2 font-semibold ${align} ${stick}`}
+                        >
+                          {header.column.getCanSort() && SERVER_SORTABLE.has(id) ? (
+                            <button
+                              type="button"
+                              onClick={header.column.getToggleSortingHandler()}
+                              className="inline-flex items-center gap-1 font-semibold text-text"
+                            >
+                              <span className="min-w-0 truncate">{COLUMN_LABELS[id]}</span>
+                              <SortChevron
+                                direction={sorted === "asc" || sorted === "desc" ? sorted : null}
+                              />
+                            </button>
+                          ) : (
+                            <span className="block min-w-0 truncate">{COLUMN_LABELS[id]}</span>
+                          )}
+                          {spec && onFiltersChange ? (
+                            <ColumnFilter
+                              label={spec.label}
+                              kind={spec.kind}
+                              align={spec.align}
+                              options={spec.options}
+                              value={[currentValues[0] ?? "", currentValues[1] ?? ""]}
+                              active={currentValues.some((value) => value !== "")}
+                              onApply={(next) =>
+                                onFiltersChange(writeFilterValues(filters, spec.keys, next, spec.numeric))
+                              }
+                            />
+                          ) : null}
+                          <ColumnResizeHandle
+                            label={COLUMN_LABELS[id]}
+                            onStart={(event) => columnWidths.startResize(event, id)}
+                            onReset={columnWidths.reset}
+                          />
+                        </th>
                       );
                     })}
                   </tr>
-                );
-              })}
-              {paddingBottom > 0 ? (
-                <tr aria-hidden="true">
-                  <td colSpan={visibleColumnCount} style={{ height: paddingBottom, padding: 0 }} />
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </thead>
+              <tbody>
+                {paddingTop > 0 ? (
+                  <tr aria-hidden="true">
+                    <td colSpan={visibleColumnCount} style={{ height: paddingTop, padding: 0 }} />
+                  </tr>
+                ) : null}
+                {virtualRows.map((virtualRow) => {
+                  const row = tableRows[virtualRow.index];
+                  return (
+                    <tr
+                      key={row.id}
+                      data-index={virtualRow.index}
+                      ref={virtualizer.measureElement}
+                      tabIndex={0}
+                      onKeyDown={(event) => openRowFromKey(event, row.original)}
+                      className="border-t border-border focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus"
+                    >
+                      {row.getVisibleCells().map((cell) => {
+                        const id = cell.column.id as ColumnId;
+                        const align = NUMERIC_COLUMNS.has(id) ? "text-right" : "text-left";
+                        const stick = id === "symbol" ? "sticky left-0 z-10 bg-surface" : "";
+                        return (
+                          <td key={cell.id} className={`overflow-hidden text-ellipsis px-3 py-2 ${align} ${stick}`}>
+                            <table.FlexRender cell={cell} />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+                {paddingBottom > 0 ? (
+                  <tr aria-hidden="true">
+                    <td colSpan={visibleColumnCount} style={{ height: paddingBottom, padding: 0 }} />
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </ClosesContext.Provider>
       </LiveTicksContext.Provider>
 
       {remaining > 0 ? (

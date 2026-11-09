@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Row } from "../api/results";
 import { ScreenerTable } from "./ScreenerTable";
@@ -46,8 +46,23 @@ function pageBody(results: Row[]) {
   return { results, total: results.length, page: 1, perPage: 50 };
 }
 
+/** URLs of the results requests only. The sparkline closes requests are left out. */
+function resultsUrls(fetchMock: ReturnType<typeof vi.fn>): string[] {
+  return fetchMock.mock.calls.map((call) => call[0] as string).filter((url) => url.includes("/results"));
+}
+
 function lastUrl(fetchMock: ReturnType<typeof vi.fn>): string {
-  return fetchMock.mock.calls[fetchMock.mock.calls.length - 1][0] as string;
+  const urls = resultsUrls(fetchMock);
+  return urls[urls.length - 1];
+}
+
+/** Table row that holds the given symbol's button. */
+function rowFor(symbol: string): HTMLElement {
+  const row = screen.getByRole("button", { name: symbol }).closest("tr");
+  if (!row) {
+    throw new Error(`No row for ${symbol}`);
+  }
+  return row;
 }
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -132,6 +147,70 @@ describe("ScreenerTable", () => {
     expect(onOpenStock).toHaveBeenNthCalledWith(3, "RELIANCE", "Reliance Industries");
   });
 
+  it("opens the stock when a focused row gets Enter or Space, and ignores other keys", async () => {
+    const onOpenStock = vi.fn();
+    render(<ScreenerTable runId={RUN_ID} onOpenStock={onOpenStock} />);
+    await screen.findByRole("button", { name: "RELIANCE" });
+    const row = rowFor("RELIANCE");
+    expect(row).toHaveAttribute("tabindex", "0");
+
+    fireEvent.keyDown(row, { key: "a" });
+    expect(onOpenStock).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(row, { key: "Enter" });
+    fireEvent.keyDown(row, { key: " " });
+
+    expect(onOpenStock).toHaveBeenCalledTimes(2);
+    expect(onOpenStock).toHaveBeenNthCalledWith(1, "RELIANCE", "Reliance Industries");
+    expect(onOpenStock).toHaveBeenNthCalledWith(2, "RELIANCE", "Reliance Industries");
+  });
+
+  it("does not open the stock twice when Enter is pressed on the symbol inside the row", async () => {
+    const onOpenStock = vi.fn();
+    render(<ScreenerTable runId={RUN_ID} onOpenStock={onOpenStock} />);
+    const symbol = await screen.findByRole("button", { name: "TCS" });
+
+    fireEvent.keyDown(symbol, { key: "Enter" });
+
+    expect(onOpenStock).toHaveBeenCalledTimes(1);
+    expect(onOpenStock).toHaveBeenCalledWith("TCS", "Tata Consultancy Services");
+  });
+
+  it("draws a sparkline per row from one recent-closes request, and a dash with Not available when there are no closes", async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      url.startsWith("/api/recent-closes")
+        ? jsonResponse({ closes: { RELIANCE: [2800, 2900, 2950.5] } })
+        : jsonResponse(pageBody(ROWS)),
+    );
+    render(<ScreenerTable runId={RUN_ID} />);
+    await screen.findByRole("button", { name: "RELIANCE" });
+
+    const closesCalls = fetchMock.mock.calls
+      .map((call) => call[0] as string)
+      .filter((url) => url.startsWith("/api/recent-closes"));
+    expect(closesCalls).toEqual(["/api/recent-closes?symbols=RELIANCE%2CTCS&limit=30"]);
+
+    const reliance = await within(rowFor("RELIANCE")).findByRole("img", {
+      name: "Trend rising over the last 3 closes",
+    });
+    expect(reliance.tagName.toLowerCase()).toBe("svg");
+    expect(reliance).toHaveAttribute("data-sparkline", "up");
+
+    const tcsDash = within(rowFor("TCS")).getByTitle("Not available");
+    expect(tcsDash).toHaveTextContent("—");
+  });
+
+  it("keeps the table usable when the recent-closes request fails", async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      url.startsWith("/api/recent-closes") ? jsonResponse({ error: "down" }, 500) : jsonResponse(pageBody(ROWS)),
+    );
+    render(<ScreenerTable runId={RUN_ID} />);
+
+    expect(await screen.findByRole("button", { name: "RELIANCE" })).toBeInTheDocument();
+    expect(within(rowFor("RELIANCE")).getAllByTitle("Not available")).not.toHaveLength(0);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("removes a column when its visibility toggle is unchecked", async () => {
     render(<ScreenerTable runId={RUN_ID} />);
     await screen.findByRole("button", { name: "RELIANCE" });
@@ -184,12 +263,12 @@ describe("ScreenerTable", () => {
     render(<ScreenerTable runId={RUN_ID} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Database offline");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(resultsUrls(fetchMock)).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(await screen.findByRole("button", { name: "RELIANCE" })).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(resultsUrls(fetchMock)).toHaveLength(2);
     expect(lastUrl(fetchMock)).toBe(`/api/runs/${RUN_ID}/results?page=1&perPage=50`);
   });
 
@@ -241,6 +320,24 @@ describe("ScreenerTable", () => {
       return source;
     }
 
+    /** Answers matchMedia for the reduced-motion query only. */
+    function stubReducedMotion(reduce: boolean): void {
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        writable: true,
+        value: (query: string) => ({
+          matches: reduce && query === "(prefers-reduced-motion: reduce)",
+          media: query,
+          onchange: null,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          addListener: () => {},
+          removeListener: () => {},
+          dispatchEvent: () => false,
+        }),
+      });
+    }
+
     beforeEach(() => {
       FakeEventSource.instances = [];
       vi.stubGlobal("EventSource", FakeEventSource);
@@ -249,6 +346,7 @@ describe("ScreenerTable", () => {
     afterEach(() => {
       FakeEventSource.instances = [];
       vi.unstubAllGlobals();
+      Reflect.deleteProperty(window, "matchMedia");
     });
 
     it("does not open a live stream when the live prop is off", async () => {
@@ -288,6 +386,63 @@ describe("ScreenerTable", () => {
       });
       expect(priceCell.tagName).toBe("SPAN");
       expect(screen.queryByText("₹2,950.50")).not.toBeInTheDocument();
+    });
+
+    it("keeps the tint and draws no bar when motion is allowed", async () => {
+      stubReducedMotion(false);
+      render(<ScreenerTable runId={RUN_ID} live />);
+      await screen.findByRole("button", { name: "RELIANCE" });
+
+      act(() =>
+        latestSource().emit("tick", { symbol: "RELIANCE", ltp: 2960.25, ltt: null, cp: null }),
+      );
+
+      const priceCell = await waitFor(() => {
+        const cell = screen.getByText("₹2,960.25");
+        expect(cell).toHaveAttribute("data-flash", "up");
+        return cell;
+      });
+      expect(priceCell).toHaveClass("bg-gain/15");
+      expect(priceCell).not.toHaveAttribute("data-motion");
+      expect(priceCell.querySelector("[data-change-bar]")).toBeNull();
+    });
+
+    it("replaces the flash with a static 2px bar in the gain colour under reduced motion", async () => {
+      stubReducedMotion(true);
+      render(<ScreenerTable runId={RUN_ID} live />);
+      await screen.findByRole("button", { name: "RELIANCE" });
+
+      act(() =>
+        latestSource().emit("tick", { symbol: "RELIANCE", ltp: 2960.25, ltt: null, cp: null }),
+      );
+
+      const priceCell = await waitFor(() => {
+        const cell = screen.getByText("₹2,960.25");
+        expect(cell).toHaveAttribute("data-flash", "up");
+        return cell;
+      });
+      expect(priceCell).toHaveAttribute("data-motion", "reduced");
+      expect(priceCell).not.toHaveClass("bg-gain/15");
+      const bar = priceCell.querySelector("[data-change-bar='up']");
+      expect(bar).toHaveClass("absolute", "left-0", "w-[2px]", "bg-gain");
+      expect(bar).toHaveAttribute("aria-hidden", "true");
+    });
+
+    it("uses the loss colour for the reduced-motion bar on a falling price", async () => {
+      stubReducedMotion(true);
+      render(<ScreenerTable runId={RUN_ID} live />);
+      await screen.findByRole("button", { name: "RELIANCE" });
+
+      act(() =>
+        latestSource().emit("tick", { symbol: "RELIANCE", ltp: 2900, ltt: null, cp: null }),
+      );
+
+      const priceCell = await waitFor(() => {
+        const cell = screen.getByText("₹2,900.00");
+        expect(cell).toHaveAttribute("data-flash", "down");
+        return cell;
+      });
+      expect(priceCell.querySelector("[data-change-bar='down']")).toHaveClass("bg-loss");
     });
 
     it("shows the day change from the live tick's previous close", async () => {
