@@ -9,6 +9,12 @@ import {
   normalizePaging,
   type ResultsParams,
 } from "./results.js";
+import {
+  buildDeletePresetQuery,
+  buildInsertPresetQuery,
+  buildListPresetsQuery,
+  validatePresetInput,
+} from "./presets.js";
 
 export interface QueryResult {
   rows: Array<Record<string, unknown>>;
@@ -98,6 +104,38 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         page,
         perPage,
       };
+    },
+  );
+
+  // Saved scan presets. The write path validates every field before any SQL runs.
+  app.get("/api/presets", async () => {
+    const listing = buildListPresetsQuery();
+    const found = await deps.query(listing.sql, listing.values);
+    return { presets: found.rows };
+  });
+
+  app.post<{ Body: unknown }>("/api/presets", async (request, reply) => {
+    const checked = validatePresetInput(request.body);
+    if (!checked.ok) {
+      return reply.code(400).send({ error: checked.error });
+    }
+    const insert = buildInsertPresetQuery(checked.value);
+    const created = await deps.query(insert.sql, insert.values);
+    return reply.code(201).send(created.rows[0]);
+  });
+
+  app.delete<{ Params: { presetId: string } }>(
+    "/api/presets/:presetId",
+    async (request, reply) => {
+      const checked = buildDeletePresetQuery(request.params.presetId);
+      if (!checked.ok) {
+        return reply.code(400).send({ error: checked.error });
+      }
+      const removed = await deps.query(checked.value.sql, checked.value.values);
+      if (removed.rows.length === 0) {
+        return reply.code(404).send({ error: "Preset not found" });
+      }
+      return reply.code(204).send();
     },
   );
 

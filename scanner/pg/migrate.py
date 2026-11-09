@@ -12,6 +12,8 @@ import argparse
 import hashlib
 from pathlib import Path
 
+from dotenv import find_dotenv, load_dotenv
+
 from . import db
 
 MIGRATIONS = Path(__file__).resolve().parents[2] / "db" / "migrations"
@@ -51,6 +53,7 @@ def apply() -> list[str]:
 
 
 def main(argv=None) -> int:
+    load_dotenv(find_dotenv(usecwd=True))  # same .env loading as scanner/upstox.py
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--status", action="store_true")
     args = ap.parse_args(argv)
