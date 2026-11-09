@@ -912,6 +912,7 @@ async function saveSecrets() {
   const res = await fetch("/api/secrets", {method: "PUT", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({values})});
   const msg = $("#sec-msg");
+  if (res.status === 410) { msg.textContent = "Saving from the browser is disabled. Use the secrets CLI in the API container."; return; }
   if (!res.ok) { msg.textContent = "Save failed"; return; }
   const st = await res.json();
   msg.textContent = st.needs_setup ? "Saved. Still missing: " + st.missing.join(", ") : "Saved.";
