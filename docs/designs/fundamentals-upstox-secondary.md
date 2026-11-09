@@ -110,10 +110,14 @@ Sources: the official Upstox pages named below, and one live call with the analy
    |---|---|---|---|---|---|
    | TCS | Mar 2026 | 49,454 | 182,372 | 27.12% | 27.18% |
    | Reliance | Mar 2026 | 95,610 | 2,178,140 | 4.39% | 4.18% |
+   | Bharti Airtel | Mar 2026 | 33,823 | 552,152 | 6.13% | 6.77% |
+   | HDFC Bank | Mar 2026 | 79,219 | 4,908,041 | 1.61% | 1.94% |
 
-   - TCS matches within rounding. Average total assets give 28.9%, so the Upstox figure uses year-end assets.
-   - Reliance does not match. The gap is 0.21 points, and the statements do not show which net-profit figure Upstox used. Attributable-to-owners profit is the likely candidate, because Reliance has large minority interest. Not confirmed.
-   - Conclusion: the ROA basis check **fails for Reliance**, so ROA is not yet approved for use. TCS alone is not enough, because it matched only one of two stocks.
+   - TCS matches within rounding. Average total assets give 28.9%, so for TCS the Upstox figure uses year-end assets.
+   - Reliance, Airtel and HDFC Bank do not match. Gaps: Reliance -0.21, Airtel +0.64, HDFC Bank -0.33 points. The gaps change sign, so no single rule explains them.
+   - Attributable-to-owners profit was tested as the explanation and does not hold. For HDFC Bank, Upstox's ROA implies about 95,200 crore of profit, more than the reported net profit of 79,219 crore. Attributable profit cannot exceed the consolidated figure, so this rules it out for HDFC Bank. The Airtel figure also points the wrong way.
+   - Average assets and prior-year assets were also tried. They do not explain all three gaps (Reliance's implied denominator is above its current year-end assets).
+   - Conclusion: the ROA basis check **fails for three of four stocks**. The Upstox ROA definition is unknown, so ROA is not approved for use. The definition must come from Upstox.
    - Quick Ratio cannot be checked: the balance sheet response has `full_statement: null`, so current assets and current liabilities are not returned. EV/EBITDA cannot be checked without a price and share count, which this doc does not yet source.
 
 Effect on the open checks below:
@@ -134,7 +138,7 @@ Each Upstox value stores an as-of date. Fundamentals change quarterly, so the co
 
 ## Open before build
 
-- **Basis check.** ROA: run for TCS and Reliance (see "Checks run" item 8). TCS matches, Reliance does not. Find the net-profit definition Upstox uses, or check a third stock, before ROA is used. Quick Ratio: needs a source for current assets and liabilities. EV/EBITDA: define the EV and EBITDA inputs first. Do not use these three fields until each passes.
+- **Basis check.** ROA: run for TCS, Reliance, Bharti Airtel and HDFC Bank (see "Checks run" item 8). Only TCS matches. The attributable-profit explanation is ruled out for HDFC Bank. Ask Upstox for the ROA definition before ROA is used. Quick Ratio: needs a source for current assets and liabilities. EV/EBITDA: define the EV and EBITDA inputs first. Do not use these three fields until each passes.
 - **Screener premise check (partly done 2026-11-10).** One public Screener page per sector (12 sectors, consolidated pages). The default page has the same eight top ratios on every sector sample: Book Value, Current Price, Dividend Yield, Face Value, Market Cap, ROCE, ROE, Stock P/E. No page has ROA or "Return on Assets". Two signs need follow-up:
   - Quick Ratio appears in an "Add ratio to table" feature (Screener's ratio-table editor). The values are not in the public page, so the premise is not proven either way.
   - "EV / EBITDA" appears only as a chart metric label, not as a value.
