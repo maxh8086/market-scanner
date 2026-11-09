@@ -96,7 +96,7 @@ BSE XML (`bseindia.com`):
 Terms check (read 2026-11-09):
 - NSE (website Terms of Use, https://www.nseindia.com/static/nse-terms-of-use): content must not be copied, stored (in hardcopy or an electronic retrieval system), aggregated, adapted or distributed without NSE's prior written permission. The exception covers content that is available for download, and the terms do not say whether RSS items fall under it, so it cannot be relied on for RSS. Systematic or automated data collection, including scraping, data mining and data harvesting, is prohibited. The NSE Data Sharing and Usage Policy (market data) was not read.
 - BSE: the BSE terms page returned HTTP 403 and was not read. The announcements disclaimer says information is provided "AS IS" without warranty, and BSE does not pre-verify company announcements. No redistribution or scraping terms were found in search results.
-- Impact: a collector that stores NSE items conflicts with the NSE clauses above, even for personal use. Section 7 ("Exchange feed licence: no licence terms apply") was written before these terms were read and needs a decision.
+- Impact: a collector that stores NSE items conflicts with the NSE clauses above, even for personal use. Section 7 records the user's decision (option a, 2026-11-09): collect for personal use only, accepting the terms risk.
 - Rate limits: not checked.
 - Status: not decided. See section 7.
 
