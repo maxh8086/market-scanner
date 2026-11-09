@@ -25,6 +25,7 @@ const pool = new Pool(loadPoolConfig());
 const app = buildApp({
   query: (sql, values) => pool.query(sql, values),
   logger: true,
+  live: { accessToken: process.env.UPSTOX_ACCESS_TOKEN || process.env.UPSTOX_ANALYTICS_ACCESS_TOKEN || undefined },
 });
 
 app.addHook("onClose", async () => {

@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import {
   columnVisibilityFeature,
   createColumnHelper,
@@ -12,6 +20,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { fetchResults, ResultsError, type Row, type SortOrder } from "../api/results";
 import { formatInr, formatPercentWithArrow } from "../lib/format";
 import { hasActiveFilters, type FilterState } from "../filters/filterState";
+import { LIVE_SYMBOL_LIMIT, useLiveTicks, type LiveTick } from "../live/useLiveTicks";
 import { StateView } from "../shell/StateView";
 
 export interface ScreenerTableProps {
@@ -22,11 +31,20 @@ export interface ScreenerTableProps {
   filters?: FilterState;
   /** Clears the filters. Offered from the no-results state. */
   onClearFilters?: () => void;
+  /** Streams live last-traded prices into the LTP column. Off outside market hours. */
+  live?: boolean;
 }
 
 const NO_FILTERS: FilterState = {};
+const NO_TICKS: ReadonlyMap<string, LiveTick> = new Map();
+/**
+ * Live ticks for the table body. The LTP cell reads them from here, not from the column
+ * definitions, so the columns stay the same object on every tick.
+ */
+const LiveTicksContext = createContext<ReadonlyMap<string, LiveTick>>(NO_TICKS);
 const PAGE_SIZE = 50;
 const ROW_HEIGHT_ESTIMATE = 40;
+const FLASH_MS = 700;
 
 /** Column ids double as the server sort keys. "industry" is not in the API sort whitelist. */
 const COLUMN_IDS = [
@@ -111,7 +129,45 @@ function OpenStockCell({ text, onOpen, className }: OpenStockCellProps) {
   );
 }
 
-function buildColumns(onOpenStock?: (symbol: string, company: string | null) => void) {
+/**
+ * LTP cell. A changed price gets a short gain or loss tint for about 700 ms. The tint is a colour
+ * change with no animation, so it stays on under reduced motion. Tabular numerals keep the width fixed.
+ */
+function LtpCell({ symbol, fallback }: { symbol: string; fallback: number | null }) {
+  const ticks = useContext(LiveTicksContext);
+  const value = ticks.get(symbol)?.ltp ?? fallback;
+  const previous = useRef(value);
+  const [direction, setDirection] = useState<"up" | "down" | null>(null);
+
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = value;
+    if (value === null || before === null || value === before) {
+      return;
+    }
+    setDirection(value > before ? "up" : "down");
+    const timer = setTimeout(() => setDirection(null), FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [value]);
+
+  const tint = direction === "up" ? "bg-gain/15" : direction === "down" ? "bg-loss/15" : "";
+  return (
+    <span
+      data-flash={direction ?? undefined}
+      className={`tabular-nums rounded-sm px-1 transition-colors motion-reduce:transition-none ${tint}`}
+    >
+      {formatInr(value)}
+    </span>
+  );
+}
+
+/**
+ * Column definitions. FlexRender renders each cell function as a component, so a new column
+ * array remounts every cell. Keep this independent of the live ticks (see LiveTicksContext).
+ */
+function buildColumns(
+  onOpenStock: ((symbol: string, company: string | null) => void) | undefined,
+) {
   return helper.columns([
     helper.accessor("symbol", {
       id: "symbol",
@@ -147,7 +203,7 @@ function buildColumns(onOpenStock?: (symbol: string, company: string | null) => 
       id: "ltp",
       header: COLUMN_LABELS.ltp,
       sortDescFirst: false,
-      cell: (info) => <span className="tabular-nums">{formatInr(info.getValue())}</span>,
+      cell: (info) => <LtpCell symbol={info.row.original.symbol} fallback={info.getValue()} />,
     }),
     helper.accessor("one_year_return_pct", {
       id: "one_year_return_pct",
@@ -210,7 +266,13 @@ const INITIAL_VIEW: ViewState = {
   moreError: null,
 };
 
-export function ScreenerTable({ runId, onOpenStock, filters = NO_FILTERS, onClearFilters }: ScreenerTableProps) {
+export function ScreenerTable({
+  runId,
+  onOpenStock,
+  filters = NO_FILTERS,
+  onClearFilters,
+  live = false,
+}: ScreenerTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>({});
   const [view, setView] = useState<ViewState>(INITIAL_VIEW);
@@ -219,6 +281,15 @@ export function ScreenerTable({ runId, onOpenStock, filters = NO_FILTERS, onClea
   // Bumped on every reset so a stale "load more" response is discarded.
   const generation = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Streams the first LIVE_SYMBOL_LIMIT loaded rows. The symbol list only changes on a new
+  // sort, filter or run, so the stream is not reopened on every "load more".
+  const liveSymbols = useMemo(
+    () => view.rows.slice(0, LIVE_SYMBOL_LIMIT).map((row) => row.symbol),
+    [view.rows],
+  );
+  const liveState = useLiveTicks({ runId, symbols: liveSymbols, enabled: live });
+  const liveTicks = live ? liveState.ticks : NO_TICKS;
 
   const activeSort = sorting[0];
   const sortId = activeSort?.id;
@@ -370,91 +441,98 @@ export function ScreenerTable({ runId, onOpenStock, filters = NO_FILTERS, onClea
       <p className="text-sm text-text-muted" aria-live="polite">
         Showing {view.rows.length} of {view.total}
         {view.status === "loading" ? " · Updating…" : ""}
+        {live && liveState.status === "live" ? " · Live prices" : ""}
+        {live && liveState.status === "unavailable" ? " · Live prices unavailable" : ""}
       </p>
+      {live && liveState.status === "reconnecting" ? (
+        <StateView kind="reconnecting" message="Live prices reconnecting. Showing the last saved prices." />
+      ) : null}
       {view.status === "error" ? (
         <p role="alert" className="text-sm text-loss">
           Could not update results. {view.error}
         </p>
       ) : null}
 
-      <div
-        ref={scrollRef}
-        className="max-h-[60vh] overflow-auto rounded-md border border-border bg-surface"
-      >
-        <table className="w-full border-collapse text-sm text-text">
-          <thead>
-            {table.getHeaderGroups().map((group) => (
-              <tr key={group.id}>
-                {group.headers.map((header) => {
-                  const id = header.column.id as ColumnId;
-                  const sorted = header.column.getIsSorted();
-                  const ariaSort = sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none";
-                  const indicator = sorted === "asc" ? "↑" : sorted === "desc" ? "↓" : "";
-                  const align = NUMERIC_COLUMNS.has(id) ? "text-right" : "text-left";
-                  const stick = id === "symbol" ? "left-0 z-30" : "z-20";
-                  return (
-                    <th
-                      key={header.id}
-                      scope="col"
-                      aria-sort={header.column.getCanSort() ? ariaSort : undefined}
-                      className={`sticky top-0 whitespace-nowrap bg-surface-2 px-3 py-2 font-semibold ${align} ${stick}`}
-                    >
-                      {header.column.getCanSort() && SERVER_SORTABLE.has(id) ? (
-                        <button
-                          type="button"
-                          onClick={header.column.getToggleSortingHandler()}
-                          className="inline-flex items-center gap-1 font-semibold text-text"
-                        >
-                          {COLUMN_LABELS[id]}
-                          <span aria-hidden="true" className="text-text-muted">
-                            {indicator}
-                          </span>
-                        </button>
-                      ) : (
-                        COLUMN_LABELS[id]
-                      )}
-                    </th>
-                  );
-                })}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {paddingTop > 0 ? (
-              <tr aria-hidden="true">
-                <td colSpan={visibleColumnCount} style={{ height: paddingTop, padding: 0 }} />
-              </tr>
-            ) : null}
-            {virtualRows.map((virtualRow) => {
-              const row = tableRows[virtualRow.index];
-              return (
-                <tr
-                  key={row.id}
-                  data-index={virtualRow.index}
-                  ref={virtualizer.measureElement}
-                  className="border-t border-border"
-                >
-                  {row.getVisibleCells().map((cell) => {
-                    const id = cell.column.id as ColumnId;
+      <LiveTicksContext.Provider value={liveTicks}>
+        <div
+          ref={scrollRef}
+          className="max-h-[60vh] overflow-auto rounded-md border border-border bg-surface"
+        >
+          <table className="w-full border-collapse text-sm text-text">
+            <thead>
+              {table.getHeaderGroups().map((group) => (
+                <tr key={group.id}>
+                  {group.headers.map((header) => {
+                    const id = header.column.id as ColumnId;
+                    const sorted = header.column.getIsSorted();
+                    const ariaSort = sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none";
+                    const indicator = sorted === "asc" ? "↑" : sorted === "desc" ? "↓" : "";
                     const align = NUMERIC_COLUMNS.has(id) ? "text-right" : "text-left";
-                    const stick = id === "symbol" ? "sticky left-0 z-10 bg-surface" : "";
+                    const stick = id === "symbol" ? "left-0 z-30" : "z-20";
                     return (
-                      <td key={cell.id} className={`px-3 py-2 ${align} ${stick}`}>
-                        <table.FlexRender cell={cell} />
-                      </td>
+                      <th
+                        key={header.id}
+                        scope="col"
+                        aria-sort={header.column.getCanSort() ? ariaSort : undefined}
+                        className={`sticky top-0 whitespace-nowrap bg-surface-2 px-3 py-2 font-semibold ${align} ${stick}`}
+                      >
+                        {header.column.getCanSort() && SERVER_SORTABLE.has(id) ? (
+                          <button
+                            type="button"
+                            onClick={header.column.getToggleSortingHandler()}
+                            className="inline-flex items-center gap-1 font-semibold text-text"
+                          >
+                            {COLUMN_LABELS[id]}
+                            <span aria-hidden="true" className="text-text-muted">
+                              {indicator}
+                            </span>
+                          </button>
+                        ) : (
+                          COLUMN_LABELS[id]
+                        )}
+                      </th>
                     );
                   })}
                 </tr>
-              );
-            })}
-            {paddingBottom > 0 ? (
-              <tr aria-hidden="true">
-                <td colSpan={visibleColumnCount} style={{ height: paddingBottom, padding: 0 }} />
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </thead>
+            <tbody>
+              {paddingTop > 0 ? (
+                <tr aria-hidden="true">
+                  <td colSpan={visibleColumnCount} style={{ height: paddingTop, padding: 0 }} />
+                </tr>
+              ) : null}
+              {virtualRows.map((virtualRow) => {
+                const row = tableRows[virtualRow.index];
+                return (
+                  <tr
+                    key={row.id}
+                    data-index={virtualRow.index}
+                    ref={virtualizer.measureElement}
+                    className="border-t border-border"
+                  >
+                    {row.getVisibleCells().map((cell) => {
+                      const id = cell.column.id as ColumnId;
+                      const align = NUMERIC_COLUMNS.has(id) ? "text-right" : "text-left";
+                      const stick = id === "symbol" ? "sticky left-0 z-10 bg-surface" : "";
+                      return (
+                        <td key={cell.id} className={`px-3 py-2 ${align} ${stick}`}>
+                          <table.FlexRender cell={cell} />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+              {paddingBottom > 0 ? (
+                <tr aria-hidden="true">
+                  <td colSpan={visibleColumnCount} style={{ height: paddingBottom, padding: 0 }} />
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </LiveTicksContext.Provider>
 
       {remaining > 0 ? (
         <div className="flex flex-wrap items-center gap-3">
