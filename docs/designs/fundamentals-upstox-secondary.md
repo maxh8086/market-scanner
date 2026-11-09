@@ -118,6 +118,7 @@ Sources: the official Upstox pages named below, and one live call with the analy
    - Attributable-to-owners profit was tested as the explanation and does not hold. For HDFC Bank, Upstox's ROA implies about 95,200 crore of profit, more than the reported net profit of 79,219 crore. Attributable profit cannot exceed the consolidated figure, so this rules it out for HDFC Bank. The Airtel figure also points the wrong way.
    - Average assets and prior-year assets were also tried. They do not explain all three gaps (Reliance's implied denominator is above its current year-end assets).
    - Conclusion: the ROA basis check **fails for three of four stocks**. The Upstox ROA definition is unknown, so ROA is not approved for use. The definition must come from Upstox.
+   - Follow-up 2026-11-10: the Upstox learning-center article on ROA (https://upstox.com/learning-center/share-market/what-is-a-return-on-assets-meaning-formula-ratio-and-examples) was searched, but its formula section was not retrieved. Other Indian brokers define ROA as net income over total assets, some using average assets. Neither matches Upstox's values for three of four stocks, so the search did not settle it. The definition is still open with Upstox.
    - Quick Ratio cannot be checked: the balance sheet response has `full_statement: null`, so current assets and current liabilities are not returned. EV/EBITDA cannot be checked without a price and share count, which this doc does not yet source.
 
 Effect on the open checks below:
