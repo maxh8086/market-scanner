@@ -14,6 +14,11 @@ import {
   shapeFilterOptions,
 } from "./filterOptions.js";
 import {
+  buildCandlesQuery,
+  shapeCandles,
+  validateCandlesRequest,
+} from "./candles.js";
+import {
   buildDeletePresetQuery,
   buildInsertPresetQuery,
   buildListPresetsQuery,
@@ -129,6 +134,20 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       return shapeFilterOptions(result.rows);
     },
   );
+
+  // Daily candles for one symbol. Unknown symbols return an empty list, not 404.
+  app.get<{
+    Params: { symbol: string };
+    Querystring: { from?: unknown; to?: unknown; limit?: unknown };
+  }>("/api/stocks/:symbol/candles", async (request, reply) => {
+    const checked = validateCandlesRequest({ symbol: request.params.symbol, ...request.query });
+    if (!checked.ok) {
+      return reply.code(400).send({ error: checked.error });
+    }
+    const query = buildCandlesQuery(checked.value);
+    const found = await deps.query(query.sql, query.values);
+    return shapeCandles(checked.value.symbol, found.rows);
+  });
 
   // Saved scan presets. The write path validates every field before any SQL runs.
   app.get("/api/presets", async () => {
