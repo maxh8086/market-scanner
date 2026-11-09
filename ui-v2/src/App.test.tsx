@@ -196,7 +196,8 @@ describe("App Home screen", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Sectors" }));
 
     expect(await screen.findByRole("button", { name: "1D" })).toHaveAttribute("aria-pressed", "true");
-    expect(await screen.findByText("IT")).toBeInTheDocument();
+    const tiles = await screen.findByRole("list", { name: "Sector tiles" });
+    expect(within(tiles).getByText("IT")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Sectors", selected: true })).toBeInTheDocument();
   });
 
@@ -223,5 +224,26 @@ describe("App Home screen", () => {
 
     expect(await screen.findByRole("alert")).toHaveAttribute("data-state", "error");
     expect(screen.getByText("Could not reach the run service.")).toBeInTheDocument();
+  });
+
+  it("retries the latest run request from the error state", async () => {
+    const working = routeFetch(jsonResponse(RUN));
+    let latestCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/runs/latest" && latestCalls++ === 0) {
+          throw new TypeError("Failed to fetch");
+        }
+        return working(url);
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("Run date: 2026-11-09")).toBeInTheDocument();
+    expect(latestCalls).toBe(2);
   });
 });

@@ -70,6 +70,12 @@ export default function App() {
   const [, setClockTick] = useState(0);
   const [stockTabs, setStockTabs] = useState<StockTab[]>([]);
   const [latest, setLatest] = useState<LatestRunState>({ status: "loading" });
+  // Bumped by the Retry action so the latest-run request runs again.
+  const [latestRetryNonce, setLatestRetryNonce] = useState(0);
+  const retryLatestRun = () => {
+    setLatest({ status: "loading" });
+    setLatestRetryNonce((count) => count + 1);
+  };
   const [filterOptions, setFilterOptions] = useState<FilterOptionsState>({ status: "loading" });
   const [filters, setFilters] = useState<FilterState>({});
   const clearFilters = () => setFilters({});
@@ -148,7 +154,9 @@ export default function App() {
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [latestRetryNonce]);
+
+  const retryAction = { label: "Retry", onClick: retryLatestRun };
 
   return (
     <ThemeProvider>
@@ -165,7 +173,7 @@ export default function App() {
             <>
               {latest.status === "loading" && <StateView kind="loading" message="Loading the current run." />}
               {latest.status === "empty" && <StateView kind="empty" message="No current run." />}
-              {latest.status === "error" && <StateView kind="error" message={latest.message} />}
+              {latest.status === "error" && <StateView kind="error" message={latest.message} action={retryAction} />}
             </>
           )
         ) : activeStock ? (
@@ -174,7 +182,7 @@ export default function App() {
           <>
             {latest.status === "loading" && <StateView kind="loading" message="Loading the current run." />}
             {latest.status === "empty" && <StateView kind="empty" message="No current run." />}
-            {latest.status === "error" && <StateView kind="error" message={latest.message} />}
+            {latest.status === "error" && <StateView kind="error" message={latest.message} action={retryAction} />}
             {latest.status === "ready" && (
               <div className="flex flex-col gap-3">
                 <p className="text-sm text-text-muted">Run date: {latest.run.runDate}</p>
