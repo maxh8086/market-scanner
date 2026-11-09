@@ -1,111 +1,113 @@
-# Concepts Brief: Shared Column Glossary
+# Redesign the Market Scanner UI
 
-Status: proposal, not approved. Nothing here is implemented. Source context is `handoff.md` lines 864-1033 (Report and UI review round, UI direction) and `scanner/workbook.py` lines 57-84 (`_organize_columns`). Reviews were run in BRAINSTORM mode by six lenses (design, codebase details, zoom-out, comprehension, implementation readiness, structural).
+* **Author:** Vaibhav Pavtekar
+* **Date:** 2026-11-09
+* **Status:** Goldfish review done (BRAINSTORM mode). Not approved. Open questions below need your answers before design starts.
 
 ## Overview
 
-The model misread `vol_*` as trading volume in 98 of 291 conclusions (34%). Raw field names such as `price.distance_pct` leak into conclusions, concerns and positives. Excel and the UI show many columns with no explanation. The proposal is one glossary file, one entry per column, read by three consumers: Excel cell comments, UI tooltips and labels, and the model prompt. The goal is that the three cannot drift apart.
+Concept under review: a dense, desktop-first screen for Indian equities (NSE/BSE, INR, IST). Each stock shows its scanner data beside it. The app gives no buy, sell or hold verdicts. Current filters, scan logic, API contracts and routes stay unchanged. The old UI keeps running until you approve the switch.
 
-The problem is real and the three-consumer idea is sound. The proposal as written, however, is over-specified in places it cannot deliver (automatic maintenance, parked formulas, full column coverage) and under-specified in others (format owner, gate, scan scope). The reviews agree that a smaller first version fixes the measured defects.
+Stack: Vite + React + TypeScript. Data grids and tables: TanStack Table (virtualized rows, sorting, filtering, column pinning). Charts: TradingView Lightweight Charts, or Chart.js as the alternative, for canvas-based financial rendering.
+
+Tailwind/shadcn/ui: not yet confirmed by owner.
 
 ## Analysis
 
-### What the source establishes
+Six lenses reviewed the concept: design, codebase details, zoom-out (scope), comprehension, implementation readiness and structure. The synthesis was done by Haiku. Sonnet should re-check it before it is treated as final.
 
-- The measured defects are: the `vol` naming (34% of conclusions read it as volume), raw field names in model text (194 conclusions, 67%), "No order data" listed as a concern (143 rows), "Distance from ATH" listed as a concern (177 rows), and blank positives (67 rows). Most of these are fixed by prompt and naming changes, not by a glossary alone.
-- `_organize_columns` (`scanner/workbook.py` 59-84) keeps hand-written lists and silently appends any column not in them (lines 77-79). A new column reaches Excel with no failure. `above_ema50` and `above_sma200` are still listed at line 64, although handoff line 898 says to drop them.
-- Packet keys are nested and dynamic (`price.*`, `forecast.*`, `filing{i}.*`, `graph.*`). Handoff line 925 says `price.vol_*`, but the reviewers found `vol_forecast_pct` sits under the forecast group, so its key is `forecast.vol_forecast_pct`.
-- Column lists are duplicated in `scanner/report.py` and in `GROUPS` in `scanner/conclude.py` (about lines 47-61). No existing test enumerates workbook or packet columns.
-- Several rules in the handoff describe values that are not yet settled: the `stance_score` thresholds and pillars (handoff 901, parked by 970-972), `breakout_quality` (928-938, to be redefined once volume data arrives), and the `order_value_source` labels (903, "user to confirm").
-- Code and handoff disagree in places: `order_significance` is documented as blank when unknown (904), but the code writes the string `UNKNOWN` (`enrich.py` near 996, via `significance.py`; reviewer-reported, not re-run). `above_sma200` is used by `scanner/portfolio.py` for logic (around lines 99, 231-235, 290), so it cannot be dropped from the backend without a change there.
-- The UI is moving to Node.js and supersedes the FastAPI plan (handoff 1011-1012). Current consumers under `ui/app/` (`api.py`, `queries.py`, static files) will be replaced. The glossary format must not depend on Python.
+The concept and the on-disk brief (`docs/designs/ui-redesign-brief.md`, 2026-11-08) describe different scope. The concept covers the scanner table and stock view. The brief also adds portfolio (Zerodha, Upstox, CSV), Telegram alerts, policy RSS with LLM classification, events, fundamentals, concall summaries and a Home feed. Settle scope first.
 
-### Weak points and objections
+### Blockers
 
-1. **"The system maintains the file automatically" conflicts with the rest of the proposal.** Plain-English tooltips and explanations need human authorship. The handoff requires user-confirmed wording (903), wireframe sign-off (871, 891), and a banned-word rule. Generated prose will not reliably pass plain-English checks, and LLM-drafted text is non-deterministic. Fix: a human writes the prose; the automation only reports entries that are missing, stale (formula changed), or still marked "proposed".
+1. **No-verdict rule conflicts with approved decisions.** `docs/wireframe-review-2026-11-01.md` approved BUY, HOLD, EXIT and REJECT, plus a Trim, Add and Hold action set. `ui/wireframes/strategy.html` styles those labels. The brief gives holdings buy, add, hold, trim, sell or rebalance labels. The stance values CONSTRUCTIVE, MIXED and CAUTIOUS (`scanner/conclude.py`, `db/migrations/001_core.sql`) are part of the stance filter. Needed: a written decision on which rule governs, a banned-word list, and neutral wording.
+2. **Scope is unbounded.** The brief adds at least eight subsystems. Suggested v1: scanner table and stock page on existing endpoints, delayed or end-of-day data, five states, no chart, no websocket, no portfolio.
+3. **No live data path exists.** The app is REST only, with no WebSocket, SSE, polling or setInterval. Stored data is end-of-day from Upstox REST. The live, reconnecting and pre-open states cannot be built or tested on real data. Broker licence terms for sharing with others are unchecked.
+4. **Stack and backend:** resolved by the owner. Frontend is Vite + React + TypeScript, built to static files and served by the existing FastAPI. Node.js is not used at runtime. Tailwind/shadcn/ui: not yet confirmed by owner.
+5. **Chart library:** resolved by the owner. TradingView Lightweight Charts v5 only. KLineChart is rejected and must not appear in new code or designs. Chart.js is the alternative only if Lightweight Charts cannot meet a need.
+6. **Baseline UI is ambiguous.** There is a root `ui/app/` (FastAPI, port 8080), a nested `app/` git repo, and a third copy at `ui/wireframes/strategy.html`. A OneDrive path was named but not checked. No screenshots exist.
+7. **Security exposure.** `ui/app/main.py` binds 0.0.0.0:8080 with no auth. `README.md` says "loopback only, no login", which contradicts the code. Config and secrets write endpoints have no auth (not re-verified). The UI builds `innerHTML` from `location.hash`. Broker and Telegram tokens sit on the same server. Settle auth and bind address before any portfolio, broker or socket work.
+8. **Switch mechanism is undefined.** The catch-all route at `ui/app/main.py:37` would shadow or be shadowed by a second build. Missing: hash-route compatibility, port or prefix, flag, rollback command, approver.
+9. **Users are unknown.** Self, family or traders changes density, auth, holdings privacy and licence position. Do not start design until this is answered.
 
-2. **The formula test has no independent oracle.** The rule is "a test checks the code output against the stated formula." A prose derivation cannot be checked by a machine. A second implementation inside the test copies the code and drifts with it. The HV windows and baseline definition are not fully stated (918-922), the percentile uses a midpoint rank and tolerance (`volatility.py` 150-172), and the zero-baseline branches are unspecified (213-223). Fix: write each formula with its inputs, window, blank rule and branches, then test against hand-computed fixtures, not against the code.
+### Major
 
-3. **Parked and redesigned logic is frozen into the glossary.** `stance`, `stance_score`, `stance_why` and `breakout_quality` will change with the scoring redesign (901, 928-938, 970-972). Writing exact formula tests now locks in behaviour the user has already said will change. Fix: mark these entries "provisional, pending scoring redesign", with a warning rather than a failure, until the redesign lands.
+10. **Virtualization conflicts with API caps.** Results cap `per_page` at 100. `/api/stocks` caps at 200. No all-rows endpoint exists. The 5,000-row figure is unsourced; the wireframe mentions 750 companies. TanStack Table does not virtualize rows.
+11. **Errors return HTTP 200.** Error bodies look like "no results", so the UI cannot tell them apart.
+12. **State definitions are missing.** Pre-open, market closed, stale and reconnecting have no triggers, thresholds, holiday calendar or session times. The "data as of" stamp uses the browser clock, so stale data looks fresh.
+13. **Timezone is inconsistent.** `api.py` line 419 uses naive server-local time. The UI uses browser locale. Docker containers often default to UTC.
+14. **Row key is undefined.** A stock can list on NSE and BSE and appear in several runs.
+15. **"Scanner data" and "beside it" are undefined.** No field list, column set, default sort or minimum width exists.
+16. **Filter parity is unclear.** The API has bucket and stance filters; the UI has no bucket control. `/api/stocks` returns only symbol, bucket, stance score and run date.
+17. **Layout decision is not recorded.** The brief says Option D awaits your confirmation; the directions doc recommends C. Option D makes Home the scan table, which conflicts with the brief's Home requirement.
+18. **Accessibility and format rules are missing.** The brief requires WCAG AA, never colour alone for gain and loss, reduced motion, tabular numerals, lakh and crore grouping. The existing UI fails several of these.
+19. **Rollback is missing.** Migrations 025 and 026 are untracked. `fundamentals-tables.md` proposes deleting old Mongo documents.
+20. **Phases are referenced but not defined** in the brief.
+21. **Phase 1 audit status contradicts the concept.** `docs/designs/ui-redesign-audit.md` exists and is untracked. The brief says Phase 2 is complete. Decide which governs.
+22. **Fundamentals source rule conflicts.** `directions.md` says layout and fields only, no scraping. `fundamentals-tables.md` uses screener.in row labels verbatim.
+23. **Three design systems conflict.** `ui/DESIGN.md`, the approved wireframe and the brief's shadcn tokens differ.
+24. **No observability.** One `logger.exception`, no metrics or request IDs.
+25. **Query load.** Each request opens a new connection with no pool. `get_results` is `async def` but calls synchronous code. Cache by run ID and query string; completed runs do not change.
 
-4. **The column set is not closed.** "Every column" cannot be enumerated from the source: `_organize_columns` appends unknown columns, packet keys are dynamic, and handoff line 905 uses the wildcard `rev_ttm_dev_*`. Fix: the coverage test should run on the real workbook header and a generated model packet, and fail on any key without an entry. It should not rely on the hand-kept lists. Remove the duplicate lists in `report.py` and `GROUPS` as part of the same change.
+### Minor
 
-5. **Rules do not fit the three-way split.** Some values are rule-based, not formula-based or model-written: the `order_significance` bands (two different tables, `MCAP_BANDS` and `REVENUE_BANDS`, in `significance.py`), `stance` (deterministic scorecard), and the `industry PE == own PE` fallback (983). Fix: add a third class, "rule", that names the function and thresholds. Entries should state the blank meaning explicitly, since blank also means "not in uptrend" for `breakout_quality` and "not reported" elsewhere (890).
-
-6. **Rename and alias rules collide with the packet rule.** Handoff 925-926 says packet keys the model sees must not contain `vol`. A rollout alias that still serves old keys to the model keeps the misreading alive. Stored runs (868-870) keep old names. Fix: aliases are for read paths only (lookups for stored data), never emitted into the packet or the UI. Give each alias a removal point and a test. For a single-user workbook regenerated each run, a single-commit rename with a grep test for old keys may be simpler than an alias map.
-
-7. **The Screener-name check is too narrow.** Handoff 887-888 says the source must not be shown in the UI. The check as written covers UI tooltips and labels only. The same glossary text feeds Excel comments and the prompt, and model-written fields (conclusion, positives, concerns) can reach the UI. Fix: scan every output that leaves the repository (UI files, Excel comments, the packet, the model's output fields), and scan the built UI, not only source. Name the forbidden terms and the scanned paths in the spec, and add a planted-fixture test that proves the check fails.
-
-8. **Gate and visibility are inconsistent.** "Build warns, test fails" lets a warning be ignored. There is no build target in the repository (no `pyproject.toml`, `Makefile` or `ui/package.json` build step, per the readiness lens), so "build" is undefined. Hidden columns (889, 905-908) have no visibility field, so each consumer decides separately. Fix: one hard gate (a pytest test); the entry carries a visibility field (excel, ui, prompt, backend-only).
-
-9. **Buzzword and plain-English rules are not testable as written.** No banned-word list exists. The handoff's own wording uses "tailwind", "signal", "regime", "anchor", "clamped" and "pillars". Acronyms (ATH, TTM, PEG, QoQ, EMA, SMA, HV, LLM) need expansion on first use in each consumer. Fix: ship a banned-term list and a short acronym list with the test.
-
-10. **Model glossary can give conflicting instructions.** The prompt glossary must say that blank means "not reported", and must say what each field is for. Without this, "No order data" concerns and "Distance from ATH" concerns persist (1003-1004). Fix: each prompt-facing entry carries a role line (for example "screen criterion, not a concern") and a blank meaning.
-
-11. **Reader comprehension of the proposed labels is weak.** "CAUTIOUS" can read as "sell". "MIXED" also covers "fewer than 3 pillars have data" (901), so no-data reads as mixed signals. "HV_PCT" reads as "HV as a percent" when it is a median of history. "breakout_quality" promises a breakout judgement it does not make (936). "Filed figure (unit inferred)" does not say what was inferred. Fix: each label carries a one-sentence meaning and a "not a buy or sell call" note; insufficient data gets its own wording.
-
-12. **Scope and effort are larger than the defect needs.** Auto-generated text, a formula-check suite for every column, a banned-word linter and an alias layer together form a platform. A minimum version covers the defect: one hand-written data file for the columns that reach Excel, UI or the packet, one coverage test, one forbidden-token test (old keys, `vol` in packet keys, `UNKNOWN`, the Screener name), and formula fixtures for the three formulas that are stable.
-
-13. **Format must outlive the Python code.** A Python module as the glossary would tie the Node UI to Python. Store it as JSON or YAML at one path, name the loader module for Python, and record the decision in an ADR before the first task.
-
-### Corrections to the source before building
-
-- Packet key for HV Forecast is `forecast.vol_forecast_pct`, not `price.vol_*`.
-- `order_significance` writes `UNKNOWN` today; the blank rule in the handoff is a proposal, and the writer must change first.
-- `above_sma200` is read by `portfolio.py`; removing it from the display and the packet is fine, removing it from the backend is not.
-- `HV Forecast` is empty without a model, and the `rev_forward_ttm_*` bands come from backtest percentiles. Both are model- or backtest-derived; the test should check presence and range, not exact values.
+26. Dark and light mode doubles token and test work. Define the token set once.
+27. Named skills are not installed; their rules must be written into the spec.
+28. TanStack Query is in the brief but not the concept. Decide whether it stays.
+29. "Calm, not fear" is not actionable. Turn it into rules, such as no full-row red or green fills and a visible "data as of" on every screen.
+30. The brief uses phase numbers and "Option D" without definitions.
+31. Existing tests (`tests/test_ui_api.py`, `test_ui_stocks_page.py`, `test_results_sort.py`, `test_relative_strength_ui.py`) could serve as API contract checks. Their contents were not read.
+32. The root API has no published contract. `app/docs/contract/openapi.yaml` exists in the nested repo; its coverage is unchecked.
 
 ## Goals vs. Non-Goals
 
-**Goals**
-- One data file with one entry per column that reaches Excel, UI or the model packet.
-- Excel comments, UI tooltips and labels, and the model's glossary read from that one file.
-- Stop the model reading `vol` as volume: rename to HV, and forbid `vol` in packet keys the model sees.
-- Stop raw field names appearing in model text.
-- Blank means "not reported" everywhere, and the code writes it that way.
-- The Screener source name never appears in anything shown to a user or sent to the model.
+* **In-Scope Goals (proposed v1):** Scanner table and stock page on existing endpoints. Delayed or end-of-day data. Five states. No chart, no websocket, no portfolio.
+* **Out-of-Scope Non-Goals:** Portfolio, broker feeds, Telegram alerts, policy RSS, concall summaries, Home feed, websocket. Pending your decision.
 
-**Non-Goals**
-- Automatic generation of plain-English prose. Humans write entries.
-- Exact formula tests for `stance`, `stance_score` or `breakout_quality` before the scoring redesign.
-- Volume-based breakout logic (waits for the delivery and volume work).
-- BSE data.
-- Building the Node UI itself. This brief only sets the glossary format it will read.
-- Keeping backward-compatible old keys in the model packet.
+## Key Decisions & Staging for Next Steps
 
-## Key Decisions and Staging
+Answers received (2026-11-09):
 
-**Decided by the user (2026-10-31)**
-1. Wording is generated by an LLM from the data. A column with no data has nothing to derive, so it gets no entry, and the coverage test skips it.
-2. Renames happen in one commit with a grep test. There is no alias layer.
-3. The build prints a warning for a missing entry. The test suite fails on a formula mismatch and on the Screener-name check.
-4. The Screener-name check covers every output: Excel, the prompt, model text and the UI.
-5. Excel headers are display labels written for the reader, not backend keys.
+1. **Verdicts:** the approved 2026-11-01 labels (BUY, HOLD, EXIT, REJECT) stay as they are. The user's reply, "any one of them, but not all", is still open. Clarify whether one label per stock is allowed, or only on holdings.
+2. **Scope:** the full 2026-11-08 brief is in scope as a redesign requirement. Portfolio, Telegram, policy RSS, concall summaries and Home feed are all included. Ordering is still to be set.
+3. **Live data:** agreed. No live path. Design uses REST and end-of-day data. Live and reconnecting states are out of v1.
+4. **Security:** agreed that bind address and auth must be settled before any broker or socket work. Preferred secret store: Docker secret. Docker Swarm is not present (see the earlier decision record), so the option is Compose file-based secrets, which need no Swarm. Migration not started.
+5. **Chart:** lightweight-charts v5 (TradingView, Apache 2.0). KLineChart is a separate open-source candlestick library and is not chosen.
 
-**Resolved by the user (2026-10-31)**
-1. Sign-off: the user signs off on the final wording and labels, including LLM-written wording. The wireframe is a separate gate and is not covered here.
-2. Wording for `order_value_source`, the stance labels, the HV labels and the "Forecast uncertain" chip depends on the data present. It is not mandatory: a column or label with no data has no entry.
-3. Hidden backend-only columns get a short entry for the record only. They get no tooltip. This resolves the conflict between lines 884 and 889 of the handoff.
-4. `above_sma200` and `above_ema50` stay in the backend.
-5. Stored runs are re-run through a key mapping. Old key names are not kept in stored runs.
+Answers received (2026-11-09, round 2):
 
-**Staging (proposed order)**
-0. Confirm the wording and decisions above. Wireframe sign-off for the UI stays a separate gate (871, 891).
-1. Write an ADR for the file format, its path, the loader module and the single pytest gate. Set the list of forbidden terms and scanned paths.
-2. Fix the defects that do not need the glossary: rename `vol_*` to HV labels and packet keys in one change, add the field-name ban to the prompt, make `UNKNOWN` blank for `order_significance`, remove duplicate column lists, and make an unlisted column fail instead of appending silently. Each change gets a grep or unit test. Acceptance: the test suite passes and the old keys are gone from the packet.
-3. Write hand-authored entries for the columns that reach Excel, UI or the packet, with visibility set per entry. Add the coverage test and the forbidden-token test (including the Screener name over every consumer's output).
-4. Write formula entries for the stable formulas (HV, HV percentile and regime, `order_significance` bands, `volume_spike` once it exists), each with fixtures computed by hand.
-5. Mark `stance`, `stance_score`, `stance_why` and `breakout_quality` as provisional. Revisit after the scoring redesign.
-6. The Node UI reads the same file when its build starts. Wireframes first.
+- **Verdicts:** one label per stock. A stock may show one of BUY, HOLD, EXIT or REJECT. No view shows all four together for the same stock.
+- **Users:** me and family, on one home network. Needs login and per-user holdings privacy. Not reachable outside the home network.
+- **Stack:** chosen by the owner's criteria (fast, low resource use, wide UI design choice). Confirmed by owner: Vite + React + TypeScript, built to static files and served by the existing FastAPI. No Node server at runtime. Data grids and tables: TanStack Table (virtualized rows, sorting, filtering, column pinning). Charts: TradingView Lightweight Charts, or Chart.js as the alternative, for canvas-based financial rendering. Tailwind/shadcn/ui: not yet confirmed by owner.
+- **Secrets:** Docker secret. Swarm is not present, so this means Compose file-based secrets. Migration needs docker-compose.yml to change, which earlier notes said to hold until the alert service exists. Owner to confirm.
 
-## Top Objections (short list)
+Answers received (2026-11-09, round 3):
 
-1. **Auto-maintenance contradicts hand-written, user-confirmed wording.** Automation should only flag missing or stale entries.
-2. **The formula test has no independent oracle, and it locks in parked formulas** (`stance_score`, `breakout_quality`). Use hand-computed fixtures and mark redesign-dependent entries provisional.
-3. **The column set cannot be enumerated from the hand-kept lists.** `_organize_columns` appends unknowns silently, and packet keys are dynamic. The coverage test must run on real output.
-4. **The alias layer keeps the misreading alive and conflicts with the no-`vol`-in-packet rule.** Aliases must be read-only and removed on a date, or the rename done in one commit.
-5. **The Screener-name check is scoped too narrowly and the gates are inconsistent.** Scan every output (Excel, prompt, model text, UI) with one hard gate, and define the format owner so Python and Node read the same file.
+- **Docker-compose hold:** lifted by owner. Compose file-based secrets may be wired now.
+- **Ordering:** data collection first, then backend, then API, then UI.
+- **Baseline and switch:** the current UI is the baseline. The switch target is the final UI revamp, which replaces it once approved.
+- **Migrations 025 and 026:** in scope as the first step of data collection. Application is pending a separate explicit go, because `start.ps1` applies every pending migration on its next run.
 
-## Verification note
+Collector note (2026-11-09):
 
-Six reviewer lenses ran read-only. Their factual claims about `order_significance`, `forecast.vol_forecast_pct`, `above_sma200` in `portfolio.py`, and the duplicate lists were not re-run by this synthesis; they should be confirmed with a grep before the ADR is written. No code was modified.
+- **Cause:** `collector_settings` has rows for `index_eod`, `exchange_results` and `gov_feeds`. `scanner/collect/sources.py` defines none of them (it defines announcements, ath_scan, candles_eod, corporate_actions, filings, fundamentals). The serve loop tried to run the two scheduled rows, failed with "unknown source", and never recorded a run. So they were due, and failed, every minute from at least 20:30 UTC on 8 Nov.
+- **Fix in code:** `collect.split_registered` skips rows with no collector and logs each name once. Tests in `tests/test_collect_missing_source.py`. Running collector still has the old code until it is rebuilt and restarted.
+- **Done (2026-11-09):** the three orphan `collector_settings` rows were deleted, with their 12 `collector_runs` rows and 1 `collector_requests` row (approved by you). Backup of the settings is in the session scratchpad.
+
+Completed (2026-11-09, round 4):
+
+- **Sector load:** run for real. 751 symbols in 22 NSE industries upserted into `symbol_sector` with `as_of` 2026-11-09. The first attempt stamped 2026-11-08 because the container clock is UTC. The loader now uses the IST date (`today_ist`), and the load was rerun to correct it. The `sub_sector` columns were not touched.
+- **Face value:** `fund_derive.key_ratios` now outputs `face_value` from the #top-ratios "Face Value" row (`face_value_from_overview`). Market cap and book value use it. A missing or zero face value leaves those two values empty. Tests: `tests/test_fund_derive.py`, plus IST tests in `tests/test_symbol_sector.py`.
+- **Chart library:** KLineChart replaced with TradingView lightweight-charts v5 in `ui/wireframes/strategy.html` (4 places) and `app/docs/strategy/handoff_ui_rollout.md` (3 places).
+- **UI stack:** Vite + React + TypeScript (owner confirmed). Tailwind/shadcn/ui: not yet confirmed by owner.
+
+Still open:
+
+- Secrets (decided 2026-11-09): deferred to the end of development. Until then, `.env` stays the single secrets file. Compose file secrets are not wired. The Swarm route needs `docker stack deploy`, because Compose cannot read Swarm secrets (tested locally).
+- Migrations 025, 026 and 027 (fundamentals tables, empty): applied on 2026-11-09. The scanner image was rebuilt so 027 was included.
+
+## Verification notes
+
+- Confirmed in code by reviewers: no WebSocket or polling; end-of-day data only; `per_page` cap of 100; `/api/stocks` cap of 200; bind to 0.0.0.0; the stamp uses the browser clock; errors return HTTP 200.
+- Not re-verified: innerHTML, dark-token duplication, keyboard access, the OneDrive wireframe, and the cost of the announcement-coverage query.
+- The 750 and 5,000 row figures are unresolved. No reviewer queried the database.
