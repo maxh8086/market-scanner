@@ -246,6 +246,7 @@ Resolved on 2026-11-09: the March 2026 FOMC date is 17–18 Mar (the earlier 19 
 - **Holiday shifts.** Dates move when they fall on a holiday or a weekend (CPI: next working day). Keep the calendar as dated rows, not a formula.
 - **Lead time and alerts.** Show the next event with a countdown. Decide the alert lead time (for example, 1 day and 1 hour before). Alerts for rate decisions and CPI are macro alerts, separate from the stock event alerts.
 - **Actual versus expected.** Once a release is out, store the actual figure beside the scheduled date. Do not add a consensus forecast until a source is chosen (see section 5).
+- **Data source for the calendar (decided 2026-11-09).** Use the official RBI and Fed release calendars as the source of dates and times. US data releases (CPI, jobs, PPI) use the BLS calendar, and India data releases use the MoSPI calendar, as already listed in 8.1. Investing.com data is not reused. Financial Modeling Prep and Trading Economics are not used for now, so the planned FMP key test is dropped.
 - **Scope.** Start with the four rows in 8.1 (India CPI, US CPI, RBI MPC, FOMC). Add others later (for example, India IIP, GDP, US payrolls) only if asked.
 - **Storage.** A table of calendar rows (event, country, scheduled UTC time, source URL, checked date, status). It is read through the Fastify API. The browser must not read the database directly (spec section 6).
 
