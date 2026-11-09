@@ -192,7 +192,7 @@ def key_ratios(lines: list[Line], price: float, face_value: Optional[float] = No
     basis: dict[str, str] = {}
 
     values["market_cap_cr"] = price * shares_cr if shares_cr else None
-    basis["market_cap_cr"] = "price x (TTM PAT / TTM EPS)"
+    basis["market_cap_cr"] = "price x shares (equity capital / face value)"
 
     values["pe"] = price / eps_ttm if eps_ttm and eps_ttm > 0 else None
     basis["pe"] = "price / TTM EPS"
