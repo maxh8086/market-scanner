@@ -23,7 +23,7 @@ Adding a strategy should mean adding a spec and a panel entry. It should not mea
 | Corporate-event factors | `scanner/factors.py`, `build_factor_table` | Sets `bonus_issue`, `demerger`, `orderbook_signal`, `expansion_signal` and `factors_matched` (count of the four). Joined on ISIN from NSE data. |
 | Scorecard | `scanner/conclude.py` `scorecard` | Six pillars (trend, growth, quality, valuation, forecast, orders), each clipped to -2..+2. Stance: CONSTRUCTIVE if total >= 3, CAUTIOUS if total <= -2, otherwise MIXED. Fewer than 3 pillars with data gives MIXED. Returns the rules that fired. |
 | Shortlist | `handoff.md` lines 113-114 | Described as the intersection: UPTREND and at least one factor. The 2026-09-28 run gave 298 ATH matches and 39 names in that intersection. **No code applies this intersection.** It is a manual step recorded in the handoff. |
-| Scan output | `scanner/workbook.py` | Written to an Excel workbook. I did not find a table that stores each run's facts. |
+| Scan output | `scanner/workbook.py` | Written to an Excel workbook. That workbook was designed before the database existed. Strategy results do not go to Excel (decision 6). No table stores each run's facts yet. |
 
 Two items from earlier notes are corrected here:
 - The scorecard has six pillars, not five.
@@ -154,7 +154,7 @@ Proposed Postgres schema `strategy` (consistent with the fundamentals move to Po
 
 Each step gets the EGM brainstorm and user approval before any task is dispatched, as the project rules require. Each step is verified by the offline test command before it is marked done.
 
-1. **Fact snapshot.** Write each scan run's facts to `strategy.fact_snapshot`. Depends on decision 6.
+1. **Fact snapshot.** Write each scan run's facts to `strategy.fact_snapshot` in Postgres. No Excel output for strategy data.
 2. **Spec loader and engine.** Pure Python, no I/O. Tests cover the operators, missing-fact handling, nesting limits, and the 39-name acceptance test.
 3. **Run job.** After the EOD data is ready, run every active spec and write `strategy.run`, `strategy.result`.
 4. **Outcome job.** Adjusted prices, benchmark, horizons, `pending`, `no_data`, metrics.
@@ -170,7 +170,7 @@ Tests: `.venv/Scripts/python.exe -m unittest discover -s tests -t . -q`.
 3. **Horizons.** Recommended: 20 and 60 trading days. Confirm.
 4. **Benchmark.** Recommended: NIFTY 500. I have not checked that the index EOD source covers it.
 5. **Scorecard.** Recommended: keep it as a system fact, usable by strategies. The alternative is to make it a strategy.
-6. **Fact snapshot storage.** Recommended: a Postgres table, so results can be reproduced. The alternative is to keep Excel as the only record, which cannot reproduce a result after the workbook changes.
+6. **Fact snapshot storage. Decided 2026-11-09: Postgres only.** Strategy results and the fact snapshot are not sent to Excel. The Excel workbook was designed before the database existed, and it is not a record for strategies.
 
 ## 11. Open risks
 
