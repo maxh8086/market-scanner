@@ -1,6 +1,6 @@
 # Upstox as secondary fundamentals source
 
-Status: proposed 2026-11-10, awaiting approval. Not built.
+Status: approved 2026-11-10 (decisions below). Not built. Next step: EGM brainstorm review, then the build plan.
 Related: `docs/designs/fundamentals-tables.md`, `scanner/fund_derive.py`, `scripts/fetch_upstox_sector.py`.
 
 ## Rule
@@ -33,11 +33,13 @@ Not used for now: sector benchmark values (unverified), competitors, and Upstox 
 
 Face value, share count and borrowings have no Upstox source. Screener stays the only source for them. Share count can be estimated as PAT / EPS, which is an estimate and must be labelled as one.
 
-## Decisions needed
+## Decisions
 
-1. Confirm the candidate list above. Default: ROA, EV/EBITDA and quick ratio are the new stored fields. Last price, description and corporate actions are not built now.
-2. Confirm that Upstox P/E is excluded until its basis is known.
-3. Confirm that the fallback applies only to the candidate fields in this table.
+Approved 2026-11-10.
+
+1. New stored fields are ROA, EV/EBITDA and Quick Ratio, sourced from Upstox. Last price, company description and corporate actions are not built now.
+2. Upstox P/E is not used until its basis is known. Screener P/E is the only P/E.
+3. The fallback applies to any field Upstox can supply, not only the table above. Exclusions still apply: Upstox P/E, and the unverified sector benchmark values. Face value, share count and borrowings stay empty when Screener is missing them, because Upstox has no source for them.
 
 ## Verification
 
