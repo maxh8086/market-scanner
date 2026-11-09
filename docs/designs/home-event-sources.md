@@ -181,6 +181,8 @@ Test result on the macro set: 2 of 21 entries match. Matched: 11 (Gold, quoted h
 
 **Q3. Freshness.** Use frequent polling with a visible timestamp (option C). Each item shows when it was fetched. The RSS source is built and tested, but it stays OFF by default because the laptop is not always on. Exchange filings and the economic calendar are the default sources.
 
+**RSS age limit (decided 2026-11-09).** RSS items older than 1 week are dropped and do not show on the Home panel. The done test for the RSS module is that RSS items appear on the Home panel.
+
 **Q4. What makes a stock "shortlisted".** Use the existing ATH scanner rule, not a new one. A stock is on the Home shortlist only if all three hold:
 1. It is an ATH-scan match: a new ATH today, or its last price is within 26% of its all-time high (`scanner/ath.py`, `classify_bucket`, default `max_dist=26.0`).
 2. Its trend is UPTREND: last price is above both the 50-day EMA and the 200-day SMA (`scanner/indicators.py`, `classify_trend`).
