@@ -15,34 +15,55 @@ function addSymbol(text: string) {
 }
 
 describe("WatchlistPanel", () => {
-  it("shows the default index table with LTP, change points and change percent columns", () => {
+  it("shows the index table with price, change, change percent and open, high, low columns", () => {
     render(<WatchlistPanel />);
 
     expect(screen.getByRole("heading", { name: "Market Watch" })).toBeInTheDocument();
     const table = screen.getByRole("table");
-    expect(within(table).getByRole("columnheader", { name: "Price" })).toBeInTheDocument();
-    expect(within(table).getByRole("columnheader", { name: "Chg" })).toBeInTheDocument();
-    expect(within(table).getByRole("columnheader", { name: "Chg %" })).toBeInTheDocument();
-    const rowNames = within(table).getAllByRole("rowheader").map((th) => th.textContent?.split("O ")[0]);
-    expect(rowNames).toEqual(DEFAULT_INDICES);
+    for (const label of ["Index", "Price", "Chg", "Chg %", "Open", "High", "Low"]) {
+      expect(within(table).getByRole("columnheader", { name: label })).toBeInTheDocument();
+    }
+    expect(within(table).queryByRole("columnheader", { name: "Prev. Close" })).not.toBeInTheDocument();
     expect(screen.getByText("No custom symbols yet.")).toBeInTheDocument();
   });
 
-  it("switches the table rows when another index segment is chosen", () => {
+  it("lists the three sections in order, each under its divider", () => {
     render(<WatchlistPanel />);
-    const select = screen.getByLabelText("Index segment");
-
-    fireEvent.change(select, { target: { value: "Sectoral Indices" } });
     const table = screen.getByRole("table");
-    let names = within(table).getAllByRole("rowheader").map((th) => th.textContent?.split("O ")[0]);
-    expect(names).toContain("NIFTY BANK");
-    expect(names).not.toContain("SENSEX");
-
-    fireEvent.change(select, { target: { value: "All Indices" } });
-    names = within(screen.getByRole("table")).getAllByRole("rowheader").map((th) => th.textContent?.split("O ")[0]);
-    expect(names).toContain("SENSEX");
-    expect(names).toContain("NIFTY BANK");
+    const names = within(table).getAllByRole("rowheader").map((th) => th.textContent?.split("O ")[0]);
+    expect(names.slice(0, DEFAULT_INDICES.length)).toEqual(DEFAULT_INDICES);
+    expect(names).toContain("NIFTY Auto");
+    expect(names).toContain("NIFTY MIDCAP 150");
     expect(new Set(names).size).toBe(names.length);
+    expect(within(table).getByText("Key Indices")).toBeInTheDocument();
+    expect(within(table).getByText("Sectoral Indices")).toBeInTheDocument();
+    expect(within(table).getByText("Other Indices")).toBeInTheDocument();
+  });
+
+  it("has no segment filter", () => {
+    render(<WatchlistPanel />);
+    expect(screen.queryByLabelText("Index segment")).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  it("lets the user switch columns on and off from the gear control and remembers the choice", () => {
+    render(<WatchlistPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose columns" }));
+    const dialog = screen.getByRole("dialog", { name: "Choose columns" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Chg" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Prev. Close" }));
+
+    const table = screen.getByRole("table");
+    expect(within(table).queryByRole("columnheader", { name: "Chg" })).not.toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "Prev. Close" })).toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem("marketScanner.watchlistColumns") ?? "[]")).toEqual([
+      "chg_pct",
+      "open",
+      "high",
+      "low",
+      "prev_close",
+    ]);
   });
 
   it("computes change points and percent from the last price and previous close", () => {
@@ -78,8 +99,8 @@ describe("WatchlistPanel", () => {
     addSymbol("<script>");
     expect(screen.getByText(/Use letters, digits/)).toBeInTheDocument();
 
-    addSymbol("sensex");
-    expect(screen.getByText("SENSEX is already in the index list.")).toBeInTheDocument();
+    addSymbol("nifty 200");
+    expect(screen.getByText("NIFTY 200 is already in the index list.")).toBeInTheDocument();
     expect(screen.getByText("No custom symbols yet.")).toBeInTheDocument();
   });
 

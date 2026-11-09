@@ -29,12 +29,15 @@ import {
   buildListPresetsQuery,
   validatePresetInput,
 } from "./presets.js";
+import { buildIndexEodQuery, shapeIndexEod } from "./indexEod.js";
+import { registerCollectorRefreshRoute } from "./collectorRefresh.js";
 import {
   buildIsinLookupQuery,
   createWsSocket,
   formatSseEvent,
   INDEX_INSTRUMENT_KEYS,
   nseEquityKey,
+  parseIndexNames,
   parseLiveSymbols,
 } from "./live/liveRoute.js";
 import { createLiveFeed, type FeedListeners, type FeedMode, type FeedStatus, type LiveFeed } from "./live/upstoxFeed.js";
@@ -260,6 +263,16 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     },
   );
 
+  // Last two stored end-of-day closes per benchmark index, for Market Watch outside market hours.
+  app.get("/api/index-eod", async () => {
+    const query = buildIndexEodQuery();
+    const found = await deps.query(query.sql, query.values);
+    return shapeIndexEod(found.rows);
+  });
+
+  // Manual EOD refresh for the index_eod collector (refused on trading days before 15:30 IST).
+  registerCollectorRefreshRoute(app, deps.query);
+
   // Zerodha Kite holdings for the holdings table. Live prices are NOT taken from here (they come from Upstox).
   // The Kite token is read on the server and never sent to the browser.
   app.get("/api/holdings", async (_request, reply) => {
@@ -276,10 +289,19 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return { holdings: result.holdings };
   });
 
-  // Server-sent index quotes for the default watchlist: LTP, previous close, and the day's open, high
-  // and low (full feed mode). Events match /api/live/ticks: `status`, `tick`, `heartbeat`.
-  app.get("/api/live/indices", async (_request, reply) => {
-    const symbolByKey = new Map(Object.entries(INDEX_INSTRUMENT_KEYS).map(([name, key]) => [key, name]));
+  // Server-sent index quotes: LTP, previous close, and the day's open, high and low (full feed mode).
+  // `symbols` (comma-separated watchlist names) limits the subscription to the rows on screen; without
+  // it every mapped index is subscribed. Events match /api/live/ticks: `status`, `tick`, `heartbeat`.
+  app.get<{ Querystring: { symbols?: unknown } }>("/api/live/indices", async (request, reply) => {
+    let names: string[] = Object.keys(INDEX_INSTRUMENT_KEYS);
+    if (request.query.symbols !== undefined) {
+      const parsed = parseIndexNames(request.query.symbols);
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: parsed.error });
+      }
+      names = parsed.names;
+    }
+    const symbolByKey = new Map(names.map((name) => [INDEX_INSTRUMENT_KEYS[name] as string, name]));
     const createFeed = deps.live?.createFeed ?? defaultCreateFeed;
     streamLiveFeed(reply, (listeners) =>
       createFeed({

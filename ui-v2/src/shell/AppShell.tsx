@@ -10,13 +10,15 @@ export interface AppShellProps {
   activeTabId: string;
   onSelectTab: (id: string) => void;
   onCloseTab?: (id: string) => void;
+  /** Session notice shown in the top bar. */
+  topBarStatus?: ReactNode;
   children: ReactNode;
 }
 
-export function AppShell({ tabs, activeTabId, onSelectTab, onCloseTab, children }: AppShellProps) {
+export function AppShell({ tabs, activeTabId, onSelectTab, onCloseTab, topBarStatus, children }: AppShellProps) {
   return (
     <div className="flex min-h-screen flex-col bg-bg text-text">
-      <TopBar />
+      <TopBar status={topBarStatus} />
       <TabStrip tabs={tabs} activeId={activeTabId} onSelect={onSelectTab} onClose={onCloseTab} />
       <main id="main" className="min-w-0 flex-1 overflow-x-auto p-4">
         <ResizablePanels

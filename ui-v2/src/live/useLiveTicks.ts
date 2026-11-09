@@ -38,8 +38,8 @@ export interface UseLiveTicksOptions {
   /** False keeps the hook idle: no connection is opened. */
   enabled: boolean;
   /**
-   * Streams the default watchlist indices from /api/live/indices instead of the run's stocks. The
-   * server picks the index list, so runId and symbols are ignored.
+   * Streams watchlist indices from /api/live/indices instead of the run's stocks. Here `symbols`
+   * holds index names (for example "NIFTY 50") and runId is ignored.
    */
   indices?: boolean;
 }
@@ -57,6 +57,12 @@ export function buildLiveTicksUrl(runId: string, symbols: readonly string[]): st
 }
 
 export const INDICES_URL = "/api/live/indices";
+
+/** Index stream for the given watchlist names. The server subscribes only to these. */
+export function buildIndicesUrl(names: readonly string[]): string {
+  const params = new URLSearchParams({ symbols: names.join(",") });
+  return `${INDICES_URL}?${params.toString()}`;
+}
 
 /** Maps the server's feed status to the UI status. An unconfigured feed is shown as unavailable. */
 export function mapFeedStatus(status: string): LiveStatus {
@@ -106,6 +112,9 @@ function parseTick(data: unknown): LiveTick | null {
 /**
  * Streams last-traded prices for the given symbols from GET /api/live/ticks. Ticks are batched
  * and applied at most every FLUSH_MS. Closing the hook (or changing the symbols) closes the stream.
+ *
+ * In indices mode the symbols are the watchlist names on screen. Changing them reconnects with the
+ * new list but keeps the ticks already received, so rows that stay visible do not blank out.
  */
 export function useLiveTicks(options: UseLiveTicksOptions): LiveTicksState {
   const { runId, symbols, enabled } = options;
@@ -115,15 +124,17 @@ export function useLiveTicks(options: UseLiveTicksOptions): LiveTicksState {
   const indices = options.indices === true;
 
   useEffect(() => {
-    setTicks(NO_TICKS);
-    const ready = indices || (runId !== "" && symbolKey !== "");
+    const ready = indices ? enabled && symbolKey !== "" : runId !== "" && symbolKey !== "";
+    if (!indices || !ready) {
+      setTicks(NO_TICKS);
+    }
     if (!enabled || !ready || typeof EventSource === "undefined") {
       setStatus("idle");
       return;
     }
 
     setStatus("connecting");
-    const url = indices ? INDICES_URL : buildLiveTicksUrl(runId, symbolKey.split(","));
+    const url = indices ? buildIndicesUrl(symbolKey.split(",")) : buildLiveTicksUrl(runId, symbolKey.split(","));
     let source: EventSource | null = null;
     let stopped = false;
     let pending = new Map<string, LiveTick>();

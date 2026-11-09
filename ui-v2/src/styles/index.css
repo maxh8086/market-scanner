@@ -23,6 +23,19 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Glass frames. Every `bg-surface` panel gets a blur, except the ones that must stay opaque:
+   sticky headers and cells (content scrolls beneath them) and dropdown menus (text must read clearly). */
+[class~="bg-surface"]:not([class~="sticky"]):not([class~="shadow-lg"]):not([class~="shadow-md"]) {
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+}
+
+[class~="bg-surface"][class~="sticky"],
+[class~="bg-surface"][class~="shadow-lg"],
+[class~="bg-surface"][class~="shadow-md"] {
+  background-color: var(--surface-solid);
+}
+
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;

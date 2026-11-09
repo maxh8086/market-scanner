@@ -274,7 +274,7 @@ export function SectorHeatmap({ runId }: SectorHeatmapProps) {
           </div>
 
           <div className="overflow-x-auto">
-            <table aria-label="Sector performance" className={`w-full border-collapse text-sm whitespace-nowrap ${hasManualWidths ? "table-fixed" : "table-auto"}`}>
+            <table aria-label="Sector performance" className={`border-collapse text-sm whitespace-nowrap ${hasManualWidths ? "table-fixed w-full" : "table-auto w-max"}`}>
               <thead className="border-b border-border text-text-muted">
                 <tr>
                   <SortableHeader label="#" sort={sort} onSort={onSort} align="right" resize={resizeFor("#")} />

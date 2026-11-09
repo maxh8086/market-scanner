@@ -1,6 +1,5 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { createPreset, deletePreset, listPresets, PresetsError, type Preset } from "../api/presets";
-import { StateView } from "../shell/StateView";
 import type { FilterState } from "./filterState";
 
 export interface PresetsMenuProps {
@@ -9,6 +8,8 @@ export interface PresetsMenuProps {
 }
 
 export const PRESET_NAME_MAX = 60;
+/** Most presets a user can keep. Saving stops at this count until one is deleted. */
+export const PRESET_LIMIT = 6;
 
 export type PresetNameResult = { ok: true; name: string } | { ok: false; error: string };
 
@@ -31,7 +32,7 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error.";
 }
 
-/** Lists, applies, saves and deletes filter presets. */
+/** Lists, applies, saves and deletes filter presets. Renders as a single row. */
 export function PresetsMenu({ filters, onApply }: PresetsMenuProps) {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [listStatus, setListStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -46,6 +47,7 @@ export function PresetsMenu({ filters, onApply }: PresetsMenuProps) {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const nameId = useId();
+  const atLimit = presets.length >= PRESET_LIMIT;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -76,6 +78,10 @@ export function PresetsMenu({ filters, onApply }: PresetsMenuProps) {
       setSaveError(null);
       return;
     }
+    if (atLimit) {
+      setSaveError(`You can keep up to ${PRESET_LIMIT} presets. Delete one to save another.`);
+      return;
+    }
     setNameError(null);
     setSaveError(null);
     setSaving(true);
@@ -103,24 +109,33 @@ export function PresetsMenu({ filters, onApply }: PresetsMenuProps) {
     }
   };
 
-  return (
-    <section aria-label="Filter presets" className="space-y-3 rounded-md border border-border bg-surface p-3">
-      <h2 className="text-sm font-semibold text-text">Presets</h2>
+  const errorText = deleteError ?? saveError ?? nameError;
 
-      {listStatus === "loading" ? <StateView kind="loading" message="Loading presets." /> : null}
-      {listStatus === "error" ? <StateView kind="error" message={`Could not load presets. ${listError ?? ""}`.trim()} /> : null}
+  return (
+    <section
+      aria-label="Filter presets"
+      className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-border bg-surface px-3 py-2"
+    >
+      <h2 className="shrink-0 text-sm font-semibold text-text">Presets</h2>
+
+      {listStatus === "loading" ? <span className="text-sm text-text-muted">Loading presets…</span> : null}
+      {listStatus === "error" ? (
+        <span role="alert" className="text-sm text-loss">
+          Could not load presets. {listError ?? ""}
+        </span>
+      ) : null}
       {listStatus === "ready" && presets.length === 0 ? (
-        <StateView kind="empty" message="No saved presets." />
+        <span className="text-sm text-text-muted">No saved presets.</span>
       ) : null}
 
       {listStatus === "ready" && presets.length > 0 ? (
-        <ul className="flex flex-col gap-2">
+        <ul className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap">
           {presets.map((preset) => (
-            <li key={preset.preset_id} className="flex flex-wrap items-center gap-2">
+            <li key={preset.preset_id} className="flex shrink-0 items-center gap-1">
               <button
                 type="button"
                 onClick={() => onApply(preset.filters)}
-                className="rounded-(--radius-control) border border-border-ui px-3 py-1 text-sm text-text"
+                className="rounded-(--radius-control) border border-border-ui px-2 py-0.5 text-sm text-text"
               >
                 {preset.name}
               </button>
@@ -129,51 +144,42 @@ export function PresetsMenu({ filters, onApply }: PresetsMenuProps) {
                 aria-label={`Delete preset ${preset.name}`}
                 disabled={deletingId === preset.preset_id}
                 onClick={() => onDelete(preset)}
-                className="rounded-(--radius-control) px-2 py-1 text-sm text-loss disabled:opacity-60"
+                className="px-1 text-sm text-loss disabled:opacity-60"
               >
-                Delete
+                ×
               </button>
             </li>
           ))}
         </ul>
-      ) : null}
-      {deleteError ? (
-        <p role="alert" className="text-sm text-loss">
-          {deleteError}
-        </p>
-      ) : null}
+      ) : (
+        <span className="flex-1" />
+      )}
 
-      <form onSubmit={onSave} noValidate className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <label htmlFor={nameId} className="text-xs text-text-muted">
-            Preset name
-          </label>
-          <input
-            id={nameId}
-            type="text"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            aria-invalid={nameError ? true : undefined}
-            aria-describedby={nameError ? `${nameId}-error` : undefined}
-            className="w-full min-w-0 rounded-(--radius-control) border border-border-ui bg-surface px-2 py-1 text-sm text-text"
-          />
-          {nameError ? (
-            <span id={`${nameId}-error`} role="alert" className="text-sm text-loss">
-              {nameError}
-            </span>
-          ) : null}
-        </div>
+      <form onSubmit={onSave} noValidate className="flex shrink-0 items-center gap-2">
+        <label htmlFor={nameId} className="sr-only">
+          Preset name
+        </label>
+        <input
+          id={nameId}
+          type="text"
+          value={name}
+          placeholder="Preset name"
+          onChange={(event) => setName(event.target.value)}
+          aria-invalid={nameError ? true : undefined}
+          className="w-40 min-w-0 rounded-(--radius-control) border border-border-ui bg-surface px-2 py-0.5 text-sm text-text"
+        />
         <button
           type="submit"
-          disabled={saving}
-          className="rounded-(--radius-control) border border-border-ui px-3 py-1 text-sm text-text disabled:opacity-60"
+          disabled={saving || atLimit}
+          className="whitespace-nowrap rounded-(--radius-control) border border-border-ui px-2 py-0.5 text-sm text-text disabled:opacity-60"
         >
           {saving ? "Saving…" : "Save current filters"}
         </button>
       </form>
-      {saveError ? (
-        <p role="alert" className="text-sm text-loss">
-          {saveError}
+
+      {errorText ? (
+        <p role="alert" className="w-full text-sm text-loss">
+          {errorText}
         </p>
       ) : null}
     </section>

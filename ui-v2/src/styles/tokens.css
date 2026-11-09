@@ -6,6 +6,7 @@
   --bg: #F8FAFC;
   --surface: #FFFFFF;
   --surface-2: #F1F5F9;
+  --surface-solid: #FFFFFF;
   --border: #CBD5E1;
   --border-ui: #7A8699;
   --text: #0F172A;
@@ -18,12 +19,14 @@
   --focus: #3730A3;
 }
 
+/* Dark: pitch-black page, translucent glass frames. Frames use rgba so the page shows through. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0F172A;
-    --surface: #1E293B;
-    --surface-2: #273449;
-    --border: #334155;
+    --bg: #000000;
+    --surface: rgba(255, 255, 255, 0.06);
+    --surface-2: rgba(255, 255, 255, 0.10);
+    --surface-solid: #0A0D12;
+    --border: rgba(255, 255, 255, 0.14);
     --border-ui: #7C8A9E;
     --text: #E2E8F0;
     --text-muted: #94A3B8;
@@ -37,10 +40,11 @@
 }
 
 :root[data-theme="dark"] {
-  --bg: #0F172A;
-  --surface: #1E293B;
-  --surface-2: #273449;
-  --border: #334155;
+  --bg: #000000;
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-2: rgba(255, 255, 255, 0.10);
+  --surface-solid: #0A0D12;
+  --border: rgba(255, 255, 255, 0.14);
   --border-ui: #7C8A9E;
   --text: #E2E8F0;
   --text-muted: #94A3B8;
@@ -56,6 +60,7 @@
   --bg: #F8FAFC;
   --surface: #FFFFFF;
   --surface-2: #F1F5F9;
+  --surface-solid: #FFFFFF;
   --border: #CBD5E1;
   --border-ui: #7A8699;
   --text: #0F172A;

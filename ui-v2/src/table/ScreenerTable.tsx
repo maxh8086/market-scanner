@@ -598,7 +598,7 @@ export function ScreenerTable({
           className="max-h-[60vh] overflow-auto rounded-md border border-border bg-surface"
         >
           <table
-            className={`w-full border-collapse text-sm text-text whitespace-nowrap ${hasManualWidths ? "table-fixed" : "table-auto"}`}
+            className={`border-collapse text-sm text-text whitespace-nowrap ${hasManualWidths ? "table-fixed w-full" : "table-auto w-max"}`}
           >
             <thead>
               {table.getHeaderGroups().map((group) => (

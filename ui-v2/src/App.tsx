@@ -159,6 +159,12 @@ export default function App() {
 
   const retryAction = { label: "Retry", onClick: retryLatestRun };
 
+  const topBarStatus = banner ? (
+    <span role="status" data-state={banner.kind} className="text-caution">
+      {banner.message}
+    </span>
+  ) : undefined;
+
   return (
     <ThemeProvider>
       <AppShell
@@ -166,6 +172,7 @@ export default function App() {
         activeTabId={activeTabId}
         onSelectTab={setActiveTabId}
         onCloseTab={closeStock}
+        topBarStatus={topBarStatus}
       >
         {activeTabId === "sectors" ? (
           latest.status === "ready" ? (
@@ -187,7 +194,6 @@ export default function App() {
             {latest.status === "ready" && (
               <div className="flex flex-col gap-3">
                 <p className="text-sm text-text-muted">Run date: {latest.run.runDate}</p>
-                {banner ? <StateView kind={banner.kind} message={banner.message} /> : null}
                 <PresetsMenu filters={filters} onApply={setFilters} />
                 <ScreenerTable
                   runId={latest.run.runId}

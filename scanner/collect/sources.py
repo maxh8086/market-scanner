@@ -483,9 +483,136 @@ class AthScan(Source):
         }
 
 
+class IndexEOD(Source):
+    """End-of-day closes for the benchmark indices (scanner/index_candles.py).
+
+    Stored under IDX:<NAME> in candles, so the UI can show the last close when the
+    market is shut. Skips weekends and the market session (09:15 to 15:30 IST, when
+    today's bar is partial). After 15:30 IST the target is today; before it, the
+    previous weekday. The scheduler runs it at 15:45 and in an 08:45 retry; a manual
+    refresh queued after 15:30 IST is not skipped.
+    """
+
+    OPEN_MIN = 9 * 60 + 15    # 09:15 IST
+    CLOSE_MIN = 15 * 60 + 30  # 15:30 IST
+
+    def __init__(self):
+        super().__init__("index_eod")
+        self.tz = pytz.timezone("Asia/Kolkata")
+
+    def _get_now(self, now: Optional[datetime]) -> datetime:
+        if now is None:
+            now = datetime.now(pytz.UTC)
+        if now.tzinfo is None:
+            now = pytz.UTC.localize(now)
+        return now
+
+    def _is_trading_day(self, d: date) -> bool:
+        """Monday=0, ..., Sunday=6."""
+        return d.weekday() < 5
+
+    def _target_date(self, ist_now: datetime) -> date:
+        """Latest completed trading day: today once 15:30 IST has passed, else the previous weekday."""
+        day = ist_now.date()
+        if ist_now.hour * 60 + ist_now.minute >= self.CLOSE_MIN:
+            return day
+        day -= timedelta(days=1)
+        while not self._is_trading_day(day):
+            day -= timedelta(days=1)
+        return day
+
+    @staticmethod
+    def _skip(message: str) -> dict:
+        return {"fetched": 0, "new": 0, "from": None, "to": None, "message": message}
+
+    def run(self, params: dict, now: Optional[datetime] = None,
+            dry_run: bool = False) -> dict:
+        """Fetch index closes for the target day, or skip with a reason."""
+        if dry_run:
+            return self.plan(params, now)
+
+        now = self._get_now(now)
+        ist_now = now.astimezone(self.tz)
+        today = ist_now.date()
+        minutes = ist_now.hour * 60 + ist_now.minute
+
+        if not self._is_trading_day(today):
+            return self._skip(f"weekend ({today})")
+        if self.OPEN_MIN <= minutes < self.CLOSE_MIN:
+            return self._skip("market open, waiting for 15:30 IST")
+
+        # Import late to avoid circular deps
+        from dotenv import load_dotenv
+
+        try:
+            from scanner import index_candles
+
+            target = self._target_date(ist_now)
+            if all(
+                (last := index_candles.last_stored_date(name)) is not None and last >= target
+                for name in index_candles.INDEX_KEYS
+            ):
+                return self._skip(f"already stored through {target}")
+
+            load_dotenv()
+            token = __import__("os").environ.get("UPSTOX_ANALYTICS_ACCESS_TOKEN", "")
+            if not token:
+                return self._skip("skipped: UPSTOX_ANALYTICS_ACCESS_TOKEN not set")
+
+            from scanner import upstox
+            client = upstox.UpstoxClient(token)
+            include_today = minutes >= self.CLOSE_MIN
+
+            fetched = new = failed = 0
+            first_error = ""
+            for name in index_candles.INDEX_KEYS:
+                try:
+                    key, rows, err = index_candles.resolve_and_fetch(
+                        client, name, since=index_candles.last_stored_date(name),
+                        today=today, include_today=include_today)
+                    if rows:
+                        fetched += len(rows)
+                        new += index_candles.store(name, rows)
+                    if key is None or err:
+                        failed += 1
+                        first_error = first_error or _redact(str(err or "no candles returned"))
+                except Exception as exc:
+                    failed += 1
+                    first_error = first_error or _redact(f"{type(exc).__name__}: {exc}")
+
+            total = len(index_candles.INDEX_KEYS)
+            message = f"{failed} of {total} indices failed; first: {first_error}" if failed else ""
+            return {
+                "fetched": fetched,
+                "new": new,
+                "from": None,
+                "to": today,
+                "message": message
+            }
+        except Exception as e:
+            return {
+                "fetched": 0, "new": 0, "from": None, "to": None,
+                "message": _redact(f"{type(e).__name__}: {e}")
+            }
+
+    def plan(self, params: dict, now: Optional[datetime] = None) -> dict:
+        """Report what would be fetched, without fetching."""
+        now = self._get_now(now)
+        ist_now = now.astimezone(self.tz)
+        today = ist_now.date()
+        minutes = ist_now.hour * 60 + ist_now.minute
+
+        if not self._is_trading_day(today):
+            return self._skip(f"dry-run: would skip weekend ({today})")
+        if self.OPEN_MIN <= minutes < self.CLOSE_MIN:
+            return self._skip(f"dry-run: would wait for 15:30 IST (now {ist_now.strftime('%H:%M IST')})")
+        return self._skip(f"dry-run: would fetch index closes through {self._target_date(ist_now)}")
+
+
 # Registry of all sources
 SOURCES = {
     "candles_eod": CandlesEOD(),
+    "index_eod": IndexEOD(),
     "announcements": Announcements(),
     "corporate_actions": CorporateActions(),
     "filings": Filings(),

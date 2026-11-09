@@ -149,6 +149,40 @@ describe("GET /api/live/indices stream", () => {
     await waitUntil(() => fake.wasStopped());
     await app.close();
   });
+
+  it("subscribes only the requested watchlist names and drops names without a key", async () => {
+    const fake = fakeFeed((listeners) => listeners.onStatus("live"));
+    const app = buildApp({ query: queuedQuery([]).query, live: { accessToken: "token", createFeed: fake.createFeed } });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = app.server.address() as AddressInfo;
+
+    const controller = new AbortController();
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/live/indices?symbols=${encodeURIComponent("Nifty Bank,GIFT NIFTY,nifty 50")}`,
+      { signal: controller.signal },
+    );
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    while (!text.includes("event: status")) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value);
+    }
+
+    expect(fake.captured.keys).toEqual(["NSE_INDEX|Nifty Bank", "NSE_INDEX|Nifty 50"]);
+
+    controller.abort();
+    await waitUntil(() => fake.wasStopped());
+    await app.close();
+  });
+
+  it("returns 400 when no requested name has a live index key", async () => {
+    const app = buildApp({ query: queuedQuery([]).query });
+    const res = await app.inject({ method: "GET", url: `/api/live/indices?symbols=${encodeURIComponent("GIFT NIFTY,NOT AN INDEX")}` });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
 });
 
 describe("GET /api/live/ticks stream", () => {

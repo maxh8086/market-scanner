@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildLiveTicksUrl, mapFeedStatus, useLiveTicks } from "./useLiveTicks";
+import { buildIndicesUrl, buildLiveTicksUrl, mapFeedStatus, useLiveTicks } from "./useLiveTicks";
 
 type Listener = (event: { data: string }) => void;
 
@@ -50,6 +50,12 @@ afterEach(() => {
 describe("buildLiveTicksUrl", () => {
   it("encodes the run id and comma-joins the symbols", () => {
     expect(buildLiveTicksUrl("run 1", ["TCS", "INFY"])).toBe("/api/live/ticks?runId=run+1&symbols=TCS%2CINFY");
+  });
+});
+
+describe("buildIndicesUrl", () => {
+  it("sends the visible watchlist names as the symbols parameter", () => {
+    expect(buildIndicesUrl(["NIFTY 50", "Nifty Bank"])).toBe("/api/live/indices?symbols=NIFTY+50%2CNifty+Bank");
   });
 });
 

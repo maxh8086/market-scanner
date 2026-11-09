@@ -39,15 +39,58 @@ INDEX_KEYS = {
     "Nifty 500": "NSE_INDEX|Nifty 500",
     "Nifty Next 50": "NSE_INDEX|Nifty Next 50",
     "Nifty Midcap 150": "NSE_INDEX|NIFTY MIDCAP 150",
-    "Nifty Smallcap 250": "NSE_INDEX|NIFTY SMLCAP 250",
+    "NIFTY SMLCAP 250": "NSE_INDEX|NIFTY_SMLCAP_250",
+    "Nifty500 Mul50:25:25": "NSE_INDEX|NIFTY500 MULTICAP",
+    "NIFTY Services": "NSE_INDEX|Nifty Serv Sector",
     "Nifty Microcap 250": "NSE_INDEX|NIFTY MICROCAP250",
+    "INDIA VIX": "NSE_INDEX|India VIX",
+    # Watchlist indices matched to the NSE instrument master by name (see server/src/live/liveRoute.ts).
+    "NIFTY 100": "NSE_INDEX|Nifty 100",
+    "NIFTY 200": "NSE_INDEX|Nifty 200",
+    "NIFTY Midcap 100": "NSE_INDEX|NIFTY MIDCAP 100",
+    "NIFTY MIDCAP 50": "NSE_INDEX|Nifty Midcap 50",
+    "NIFTY Smallcap 100": "NSE_INDEX|NIFTY SMLCAP 100",
+    "NIFTY SMLCAP 50": "NSE_INDEX|NIFTY SMLCAP 50",
+    "NIFTY 750 TOTAL MKT": "NSE_INDEX|NIFTY TOTAL MKT",
+    "NIFTY Auto": "NSE_INDEX|Nifty Auto",
+    "NIFTY IT": "NSE_INDEX|Nifty IT",
+    "NIFTY PSU Bank": "NSE_INDEX|Nifty PSU Bank",
+    "NIFTY Fin Service": "NSE_INDEX|Nifty Fin Service",
+    "NIFTY Pharma": "NSE_INDEX|Nifty Pharma",
+    "NIFTY FMCG": "NSE_INDEX|Nifty FMCG",
+    "NIFTY Metal": "NSE_INDEX|Nifty Metal",
+    "NIFTY Realty": "NSE_INDEX|Nifty Realty",
+    "NIFTY Media": "NSE_INDEX|Nifty Media",
+    "NIFTY Energy": "NSE_INDEX|Nifty Energy",
+    "Nifty Pvt Bank": "NSE_INDEX|Nifty Pvt Bank",
+    "NIFTY Infra": "NSE_INDEX|Nifty Infra",
+    "NIFTY Commodities": "NSE_INDEX|Nifty Commodities",
+    "NIFTY Consumption": "NSE_INDEX|Nifty Consumption",
+    "NIFTY PSE": "NSE_INDEX|Nifty PSE",
+    "Nifty FinSrv25/50": "NSE_INDEX|Nifty FinSrv25 50",
+    "Nifty Cons Durbl": "NSE_INDEX|NIFTY CONSR DURBL",
+    "Nifty Healthcare": "NSE_INDEX|NIFTY HEALTHCARE",
+    "Nifty Oil & Gas": "NSE_INDEX|NIFTY OIL AND GAS",
+    "NIFTY India Mfg": "NSE_INDEX|NIFTY INDIA MFG",
+    "Nifty India Defence": "NSE_INDEX|Nifty Ind Defence",
+    "NIFTY MIDSML 400": "NSE_INDEX|NIFTY MIDSML 400",
+    "NIFTY MNC": "NSE_INDEX|Nifty MNC",
+    "NIFTY AlphaLowVol 30": "NSE_INDEX|NIFTY AlphaLowVol",
+    "Nifty200 Momentum 30": "NSE_INDEX|Nifty200Momentm30",
+    "Nifty LargeMid250": "NSE_INDEX|NIFTY LARGEMID250",
+    "NIFTY CPSE": "NSE_INDEX|Nifty CPSE",
+    "NIFTY MID SELECT": "NSE_INDEX|NIFTY MID SELECT",
+    "NIFTY IND DIGITAL": "NSE_INDEX|NIFTY IND DIGITAL",
+    "NIFTY M150 QLTY50": "NSE_INDEX|NIFTY M150 QLTY50",
+    "Nifty Capital Market": "NSE_INDEX|Nifty Capital Mkt",
+    "Nifty India FPI 150": "NSE_INDEX|Nifty FPI 150",
 }
 
 # Unverified spellings, tried in order when the primary key fails.
 ALTERNATE_KEYS = {
     "Nifty Next 50": ["NSE_INDEX|NIFTY NEXT 50"],
     "Nifty Midcap 150": ["NSE_INDEX|Nifty Midcap 150"],
-    "Nifty Smallcap 250": ["NSE_INDEX|NIFTY SMALLCAP 250"],
+    "NIFTY SMLCAP 250": ["NSE_INDEX|NIFTY SMLCAP 250", "NSE_INDEX|NIFTY SMALLCAP 250"],
     "Nifty Microcap 250": ["NSE_INDEX|NIFTY MICROCAP 250", "NSE_INDEX|Nifty Microcap250"],
 }
 
@@ -97,20 +140,26 @@ def fetch_full_history(client, key: str, today: date | None = None) -> tuple[lis
 
 
 def resolve_and_fetch(
-    client, name: str, since: date | None = None, today: date | None = None
+    client,
+    name: str,
+    since: date | None = None,
+    today: date | None = None,
+    include_today: bool = False,
 ) -> tuple[str | None, list[dict], str | None]:
     """Try the primary key, then alternates. Returns (key_used, rows, last_error).
 
-    Both modes end at yesterday (today's bar is partial during market hours).
-    With `since` set, fetches only from `since - INCREMENTAL_OVERLAP_DAYS` through
-    yesterday. Without it, fetches the full history from START_DATE through yesterday.
+    By default both modes end at yesterday (today's bar is partial during market hours).
+    With `include_today=True` the end date is `today` instead, for a run after the close
+    when today's bar is complete. With `since` set, fetches only from
+    `since - INCREMENTAL_OVERLAP_DAYS` through the end date. Without it, fetches the full
+    history from START_DATE through the end date.
     """
+    today = today or date.today()
+    end = today if include_today else today - timedelta(days=1)
     if since is None:
-        fetch = lambda key: fetch_full_history(client, key, today)  # noqa: E731
+        fetch = lambda key: fetch_history(client, key, START_DATE, end)  # noqa: E731
     else:
-        today = today or date.today()
         start = since - timedelta(days=INCREMENTAL_OVERLAP_DAYS)
-        end = today - timedelta(days=1)
         fetch = lambda key: fetch_history(client, key, start, end)  # noqa: E731
 
     last_error = None
