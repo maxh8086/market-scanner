@@ -14,6 +14,7 @@ Screen: Home, shortlist and event feed (`docs/designs/ui-redesign-spec.md` secti
 | 4 | Broker rating changes | From news RSS feeds | User |
 | 5 | Credit-rating agency actions | From exchange filings | User |
 | 6 | Order win relative to market cap | Market cap is available in our data. Confirm the exact field and its refresh rate | User; to confirm |
+| 7 | Upstox News as an extra news source | Proposed: add the Upstox News API as a per-stock source (section 4.5), using the analytics token. It runs through the same relevance filter (section 2) and the same 1-week age limit (section 7). Terms check pending | User, 2026-11-10 (request); proposal open for review |
 
 ## 2. Relevance filter for news feeds (decision)
 
@@ -117,6 +118,28 @@ Terms check (read 2026-11-09):
 - User's reading (2026-11-09): the reproduction limit applies only when news is published under the user's name or on the user's website. The dashboard is an internal page for personal reference. It shows headline and summary with the source link, and is not published. The user's view is that the policies do not apply to it. This reading covers reproduction and publishing. It does not address the storing, using, scraping and database clauses above, which the dashboard's collector would trigger.
 - Status: decided 2026-11-09 (section 7). The user chose to fetch and store headlines and summaries from these sites for personal use, and accepts the terms risk described above.
 First Telegram batch (9 Nov 2026) publishers: Moneycontrol, Investing.com, NDTV Profit, Economic Times, Business Standard, Firstpost, pv-magazine India, The Verge, Inshorts, and Google share links (the publisher is not shown in the link). The batch also had two LinkedIn posts. LinkedIn is not a news source in this design, so LinkedIn links are not queued (its terms have not been checked).
+
+### 4.5 Upstox News (per-stock) — proposed, not built
+
+Source: Upstox News API (`GET https://api.upstox.com/v2/news`, the News endpoint of the official SDK). Auth: the analytics token (`upstox_analytics_token`, see `secrets-and-roles.md`). The token covers News, with no static IP needed, and is read-only.
+
+How it is queried:
+- Category `instrument_keys`. Keys are `NSE_EQ|<ISIN>`, built from `symbol_sector.isin` (751 rows, all with an ISIN).
+- Up to 30 keys per request. Batch the watchlist and scanner universe in groups of 30.
+- Window: the endpoint returns about the last 7 days. Poll once a day, store the new items, and dedupe by `article_link`.
+- Each item carries an ISIN-linked instrument key, so the symbol is known before the LLM runs. The item still goes through section 2 so the LLM can set the category, stance and reason.
+
+What is stored: headline and summary only, as for RSS items in section 2. No article body. The link is kept as the source link. Titles and links follow the same retention rule as section 2.1 (not kept long term unless critical).
+
+Checks still open:
+- Terms: not read. Read the Upstox developer terms and the News API terms before the build, and record the result here. Until then this source is blocked, as section 4.2 is for its licence check.
+- `positions` and `holdings` categories: returned 0 records with no error in the 2026-11-10 test. Not used for now. The design needs only `instrument_keys`.
+- Rate limits: assumed to fall under Upstox's "Other Standard APIs" class (50/s, 500/min, 2000 per 30 min per user), which the fundamentals doc uses. The News page was not checked for its own class. No daily limit applies (confirmed by the project owner, 2026-11-10). The per-second, per-minute and per-30-minute limits are the ones to respect.
+
+Proposed defaults, for the user to confirm:
+- Same age limit as RSS: items older than 1 week are dropped (section 7).
+- OFF by default, like the RSS module, until the terms check passes.
+- Keep the Upstox News link and the source name `Upstox` in the event record (section 7, Q5).
 
 ### 4.3 Macro: rate decisions, stance and inflation — in scope, separate panel
 

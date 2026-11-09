@@ -526,12 +526,16 @@ async def get_secrets():
 
 @router.put("/secrets")
 async def put_secrets(body: SecretsUpdate):
-    """Save entered keys. Blank leaves a key unchanged; '-' clears it."""
-    unknown = [k for k in body.values if k not in secrets_store.FIELDS]
-    if unknown:
-        raise HTTPException(status_code=400, detail=f"Unknown keys: {unknown}")
-    secrets_store.save(body.values)
-    return secrets_store.status()
+    """Disabled. The UI has no login, so it must not write secrets.
+
+    Secrets are set through the command-line tool inside the API container
+    (secrets-and-roles.md, decision 9). Returns 410 without reading the body
+    into any store.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail="Saving keys from the browser is disabled. Use the secrets CLI in the API container.",
+    )
 
 
 # ---- HELPERS ----
