@@ -14,6 +14,11 @@ import {
   shapeFilterOptions,
 } from "./filterOptions.js";
 import {
+  buildSectorSummaryQuery,
+  shapeSectorSummary,
+  validateSectorPeriod,
+} from "./sectorSummary.js";
+import {
   buildCandlesQuery,
   shapeCandles,
   validateCandlesRequest,
@@ -132,6 +137,31 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       const options = buildFilterOptionsQuery(String(resolvedRunId));
       const result = await deps.query(options.sql, options.values);
       return shapeFilterOptions(result.rows);
+    },
+  );
+
+  // Per-sector average price change over a period (default "1d"). An invalid
+  // period returns 400 before any SQL runs. An unknown or malformed run id
+  // returns an empty sector list (no 404), like filter-options.
+  app.get<{ Params: { runId: string }; Querystring: { period?: unknown } }>(
+    "/api/runs/:runId/sector-summary",
+    async (request, reply) => {
+      const checked = validateSectorPeriod(request.query.period);
+      if (!checked.ok) {
+        return reply.code(400).send({ error: checked.error });
+      }
+      const period = checked.value;
+      const empty = { period, sectors: [] };
+      const lookup = buildRunLookupQuery(request.params.runId);
+      if (!lookup) return empty;
+
+      const found = await deps.query(lookup.sql, lookup.values);
+      const resolvedRunId = found.rows[0]?.run_id;
+      if (resolvedRunId === undefined || resolvedRunId === null) return empty;
+
+      const summary = buildSectorSummaryQuery(String(resolvedRunId), period);
+      const result = await deps.query(summary.sql, summary.values);
+      return shapeSectorSummary(result.rows, period);
     },
   );
 
