@@ -16,7 +16,8 @@ import { StateView } from "../shell/StateView";
 
 export interface ScreenerTableProps {
   runId: string;
-  onOpenStock?: (symbol: string) => void;
+  /** Opens the stock tab. Called from the symbol or company cell (click, Enter or Space). */
+  onOpenStock?: (symbol: string, company: string | null) => void;
   /** Filters sent with every results request. Pass a stable object; a new object refetches. */
   filters?: FilterState;
   /** Clears the filters. Offered from the no-results state. */
@@ -82,17 +83,18 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error.";
 }
 
-interface SymbolCellProps {
-  symbol: string;
-  onOpen?: (symbol: string) => void;
+interface OpenStockCellProps {
+  text: string;
+  onOpen?: () => void;
+  className: string;
 }
 
-function SymbolCell({ symbol, onOpen }: SymbolCellProps) {
-  const open = () => onOpen?.(symbol);
+/** A cell that opens the stock tab on click, Enter or Space. */
+function OpenStockCell({ text, onOpen, className }: OpenStockCellProps) {
   const onKeyDown = (event: KeyboardEvent<HTMLSpanElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      open();
+      onOpen?.();
     }
   };
 
@@ -100,28 +102,46 @@ function SymbolCell({ symbol, onOpen }: SymbolCellProps) {
     <span
       role="button"
       tabIndex={0}
-      onClick={open}
+      onClick={() => onOpen?.()}
       onKeyDown={onKeyDown}
-      className="cursor-pointer font-mono font-semibold text-accent hover:underline"
+      className={`cursor-pointer text-accent hover:underline ${className}`}
     >
-      {symbol}
+      {text}
     </span>
   );
 }
 
-function buildColumns(onOpenStock?: (symbol: string) => void) {
+function buildColumns(onOpenStock?: (symbol: string, company: string | null) => void) {
   return helper.columns([
     helper.accessor("symbol", {
       id: "symbol",
       header: COLUMN_LABELS.symbol,
       sortDescFirst: false,
-      cell: (info) => <SymbolCell symbol={info.getValue()} onOpen={onOpenStock} />,
+      cell: (info) => (
+        <OpenStockCell
+          text={info.getValue()}
+          onOpen={() => onOpenStock?.(info.getValue(), info.row.original.company)}
+          className="font-mono font-semibold"
+        />
+      ),
     }),
     helper.accessor("company", {
       id: "company",
       header: COLUMN_LABELS.company,
       sortDescFirst: false,
-      cell: (info) => textOrDash(info.getValue()),
+      cell: (info) => {
+        const company = info.getValue();
+        if (company === null) {
+          return EMPTY_TEXT;
+        }
+        return (
+          <OpenStockCell
+            text={company}
+            onOpen={() => onOpenStock?.(info.row.original.symbol, company)}
+            className=""
+          />
+        );
+      },
     }),
     helper.accessor("ltp", {
       id: "ltp",

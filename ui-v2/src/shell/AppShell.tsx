@@ -8,6 +8,7 @@ export interface AppShellProps {
   tabs: TabItem[];
   activeTabId: string;
   onSelectTab: (id: string) => void;
+  onCloseTab?: (id: string) => void;
   watchlistSymbols?: string[];
   children: ReactNode;
 }
@@ -16,13 +17,14 @@ export function AppShell({
   tabs,
   activeTabId,
   onSelectTab,
+  onCloseTab,
   watchlistSymbols = [],
   children,
 }: AppShellProps) {
   return (
     <div className="flex min-h-screen flex-col bg-bg text-text">
       <TopBar />
-      <TabStrip tabs={tabs} activeId={activeTabId} onSelect={onSelectTab} />
+      <TabStrip tabs={tabs} activeId={activeTabId} onSelect={onSelectTab} onClose={onCloseTab} />
       <main id="main" className="min-w-0 flex-1 overflow-x-auto p-4">
         <ResizablePanels left={<WatchlistPanel symbols={watchlistSymbols} />}>
           {children}

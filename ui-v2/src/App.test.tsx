@@ -1,8 +1,28 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
+// The stock tab mounts a chart. jsdom has no canvas, so the chart library is replaced.
+vi.mock("lightweight-charts", () => ({
+  CandlestickSeries: { type: "Candlestick" },
+  ColorType: { Solid: "solid" },
+  createChart: vi.fn(() => ({
+    addSeries: vi.fn(() => ({ setData: vi.fn() })),
+    applyOptions: vi.fn(),
+    timeScale: vi.fn(() => ({ fitContent: vi.fn() })),
+    remove: vi.fn(),
+  })),
+}));
+
 const RUN = { runId: "run-42", runDate: "2026-11-09" };
+
+const CANDLES = {
+  symbol: "RELIANCE",
+  candles: [
+    { date: "2026-11-06", open: 100, high: 105, low: 99, close: 102, volume: 1000 },
+    { date: "2026-11-09", open: 102, high: 106, low: 101, close: 104, volume: 1100 },
+  ],
+};
 
 const FILTER_OPTIONS = { bucket: ["A", "B"], stance: ["Buy"] };
 
@@ -48,6 +68,9 @@ function routeFetch(latest: Response | Error, filterOptions: Response | Error = 
     }
     if (url === "/api/presets") {
       return jsonResponse({ presets: [] });
+    }
+    if (url.startsWith("/api/stocks/RELIANCE/candles")) {
+      return jsonResponse(CANDLES);
     }
     throw new Error(`Unexpected request: ${url}`);
   });
@@ -137,6 +160,23 @@ describe("App Home screen", () => {
       expect(screen.getByRole("status")).toHaveAttribute("data-state", "empty"),
     );
     expect(screen.getByText("No current run.")).toBeInTheDocument();
+  });
+
+  it("opens a stock tab from the company name and returns to Home when it is closed", async () => {
+    vi.stubGlobal("fetch", routeFetch(jsonResponse(RUN)));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Reliance Industries" }));
+
+    expect(await screen.findByRole("tab", { name: "RELIANCE", selected: true })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Home", selected: false })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close RELIANCE tab" }));
+
+    expect(screen.getByRole("tab", { name: "Home", selected: true })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "RELIANCE" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "RELIANCE" })).toBeInTheDocument();
   });
 
   it("shows the error state when the latest run request fails", async () => {

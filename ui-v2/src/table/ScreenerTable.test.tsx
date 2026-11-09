@@ -127,9 +127,9 @@ describe("ScreenerTable", () => {
     fireEvent.click(symbol);
 
     expect(onOpenStock).toHaveBeenCalledTimes(3);
-    expect(onOpenStock).toHaveBeenNthCalledWith(1, "RELIANCE");
-    expect(onOpenStock).toHaveBeenNthCalledWith(2, "RELIANCE");
-    expect(onOpenStock).toHaveBeenNthCalledWith(3, "RELIANCE");
+    expect(onOpenStock).toHaveBeenNthCalledWith(1, "RELIANCE", "Reliance Industries");
+    expect(onOpenStock).toHaveBeenNthCalledWith(2, "RELIANCE", "Reliance Industries");
+    expect(onOpenStock).toHaveBeenNthCalledWith(3, "RELIANCE", "Reliance Industries");
   });
 
   it("removes a column when its visibility toggle is unchecked", async () => {
