@@ -67,6 +67,16 @@ export function formatPercent(value: number | null | undefined, decimals = 2): s
   return `${body}%`;
 }
 
+/** Signed percent with a direction arrow: "▲ +1.23%", "▼ −0.87%", "● 0.00%". */
+export function formatPercentWithArrow(value: number | null | undefined, decimals = 2): string {
+  if (isMissing(value)) {
+    return EM_DASH;
+  }
+  const sign = roundedSign(value, decimals);
+  const arrow = sign > 0 ? "▲" : sign < 0 ? "▼" : "●";
+  return `${arrow} ${formatPercent(value, decimals)}`;
+}
+
 export function formatChange(
   value: number | null | undefined,
   percent: number | null | undefined,

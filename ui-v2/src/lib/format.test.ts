@@ -5,6 +5,7 @@ import {
   formatInr,
   formatIstDateTime,
   formatPercent,
+  formatPercentWithArrow,
 } from "./format";
 
 describe("formatInr", () => {
@@ -42,6 +43,24 @@ describe("formatPercent", () => {
 
   it("returns an em dash for null", () => {
     expect(formatPercent(null)).toBe("—");
+  });
+});
+
+describe("formatPercentWithArrow", () => {
+  it("shows an up arrow and plus sign for a gain", () => {
+    expect(formatPercentWithArrow(1.234)).toBe("▲ +1.23%");
+  });
+
+  it("shows a down arrow and U+2212 minus for a loss", () => {
+    expect(formatPercentWithArrow(-0.87)).toBe("▼ −0.87%");
+  });
+
+  it("shows a neutral marker for zero", () => {
+    expect(formatPercentWithArrow(0)).toBe("● 0.00%");
+  });
+
+  it("returns an em dash for null", () => {
+    expect(formatPercentWithArrow(null)).toBe("—");
   });
 });
 
