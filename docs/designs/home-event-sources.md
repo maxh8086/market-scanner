@@ -20,7 +20,7 @@ Screen: Home, shortlist and event feed (`docs/designs/ui-redesign-spec.md` secti
 **Decision (2026-11-09, updated the same day):** The dashboard shows only news and feed items that a local LLM marks as relevant to the criteria below. Raw RSS items never reach the dashboard, the events table or the API response. Items are processed whenever the LLM is available, and every relevant result is written to the event tracker and kept for future use.
 
 **Pipeline**
-1. Fetch RSS items from the sources in section 4.2 on a schedule. Fetching does not depend on the LLM. Each new item is written to an intake queue with: source, URL, published time, normalised title, and a content hash. The queue stores the title and link only, not article text.
+1. Fetch RSS items from the sources in section 4.2 on a schedule. Fetching does not depend on the LLM. Each new item is written to an intake queue with: source, URL, published time, normalised title, and a content hash. The queue stores the title, the link, and the page's headline and summary (the page's og:title or title, and its og:description or meta description). It does not store article body text.
 2. Deduplicate by URL and by content hash, at queue insert.
 3. Keyword prefilter (the draft filter in section 6). Items with no keyword and no watchlist symbol are marked "prefiltered_out" and do not call the LLM.
 4. When the LLM is available, a worker drains the queue in batches, oldest first. Each remaining item is classified once, using the local LLM through tokenfrugal (`thinker` role). No model name is hardcoded in the app. The model returns compact JSON only: `{"relevant": true|false, "category": "<tier or macro>", "symbols": [], "sectors": [], "stance": null|"hawkish"|"dovish"|"neutral", "reason": "<max 25 words>"}`.
@@ -102,6 +102,14 @@ CNBC TV18 (`cnbctv18.com/commonfeeds/v1/cne/rss/`):
 - `economy.xml`, `politics.xml`, `market.xml`, `world.xml`
 
 Use: beat/miss tag on results; broker upgrades and downgrades. Licence to use these feeds in an internal dashboard: **not confirmed**.
+X / Twitter: out of scope. No X API, no manual paste into the intake queue, and no scraping or automating a logged-in X session (see section 7).
+Telegram links: the user can send a news link to a Telegram bot. The bot queues it with the same fields as RSS items (title, link, page headline and summary). X links are ignored. Page fetch for the headline and summary is subject to the licence check in section 5.
+Terms check (read 2026-11-09):
+- Investing.com (terms page, risk disclosure section): prohibits using, storing, reproducing, displaying, modifying, transmitting or distributing the site's data without written permission from the site owner (Fusion Media) or the data provider. No RSS, syndication, personal-use or non-commercial clause found in the text read. The RSS index page returned HTTP 403, so the feed's own terms are unread.
+- CNBC TV18 (terms of use, sections 3 and 4): prohibits copying, storing, reproducing or republishing site content without written authorisation. Prohibits scraping, crawling or extracting data without express written permission. Prohibits using site content in a searchable or machine-readable form, including as a database, without written authorisation. Prohibits repeating stock-call information outside the site. No personal-use carve-out found.
+- User's reading (2026-11-09): the reproduction limit applies only when news is published under the user's name or on the user's website. The dashboard is an internal page for personal reference. It shows headline and summary with the source link, and is not published. The user's view is that the policies do not apply to it. This reading covers reproduction and publishing. It does not address the storing, using, scraping and database clauses above, which the dashboard's collector would trigger.
+- Status: decided 2026-11-09 (section 7). The user chose to fetch and store headlines and summaries from these sites for personal use, and accepts the terms risk described above.
+First Telegram batch (9 Nov 2026) publishers: Moneycontrol, Investing.com, NDTV Profit, Economic Times, Business Standard, Firstpost, pv-magazine India, The Verge, Inshorts, and Google share links (the publisher is not shown in the link). The batch also had two LinkedIn posts. LinkedIn is not a news source in this design, so LinkedIn links are not queued (its terms have not been checked).
 
 ### 4.3 Macro: rate decisions, stance and inflation — in scope, separate panel
 
@@ -136,6 +144,7 @@ India inflation data: **no source configured yet.** Candidate: MoSPI CPI (offici
 3. **Freshness.** Alerts should arrive within minutes. Polling interval for each feed still to set.
 4. **Market cap field.** Confirm which table and column holds market cap, and how often it refreshes. Needed for the order-win relative-size rule.
 5. **Order-win keywords.** Draft list from the user's pasted notes (below). Needs testing against real filings to check false positives such as generic "contract" notices.
+6. Page fetch. Fetching publisher pages for a headline and summary (RSS links and Telegram links) falls under the same licence check as the news feeds in section 4.2. Terms read 2026-11-09 (section 4.2). The user's personal-use reading does not cover the storing and scraping clauses. Decided 2026-11-09 (section 7): fetch and store, for personal use, accepting the terms risk.
 
 ## 6. Draft order-win keyword filter
 
@@ -152,6 +161,8 @@ Tier 3 (sector terms, optional):
 - IT: "Multi-year deal", "Digital transformation contract", "Managed services agreement"
 
 Search string (draft): ("Letter of Award" OR "LoA" OR "LOI" OR "Work Order" OR "Bagged") AND ("Crore" OR "Lakh" OR "Contract" OR "Order")
+
+Test on the first Telegram batch (9 Nov 2026, 21 headlines chosen by the user): 0 of 21 match the draft filter above. The filter covers order wins only. The batch is macro, market and corporate news, so the filter would mark all 21 as prefiltered_out. Before the prefilter goes live, add a macro keyword set (Fed, RBI, inflation, CPI, sanctions, tariffs, rate decision). All 21 were chosen by the user, so this batch cannot measure false positives.
 
 ## 7. Decisions from brainstorm (answered 2026-11-09)
 
@@ -183,6 +194,10 @@ The shortlist is the intersection of these three. On the 2026-09-28 full run thi
 - **News-filter acceptance targets (set on 2026-11-09):** measured on a labelled set of at least 100 items from real feed output (section 2). Precision of at least 0.85, because the dashboard shows only items marked relevant, so each false positive is visible noise. Recall of at least 0.70, because exchange filings remain the primary source and a missed news item is less costly. Re-measure after any change to the prompt, model, or criteria.
 - **Exchange feed licence:** no licence terms apply. Use is for personal use only.
 - **India CPI source:** the MoSPI advance release calendar (section 8.1), as recommended in this document.
+- **X / Twitter: out of scope.** Decided 2026-11-09: no X API tier, no manual paste of X posts into the intake queue, and no scraping or automating a logged-in X session. No X content enters the feed or the event tracker.
+- **Live-feed testing.** Decided 2026-11-09: live-feed tests are opt-in and run outside the offline test command. The offline test command (`.venv/Scripts/python.exe -m unittest discover -s tests -t . -q`) uses recorded samples only and never calls the network. The live-feed tests need an explicit flag or environment variable to run, and they are not part of the default test run.
+- **Telegram link intake.** Decided 2026-11-09: the user can send news links to a Telegram bot. Each link is queued with the same fields as RSS items (title, link, page headline and summary, no article body). The bot ignores X links. The Telegram reader is a new service and needs its own plan before it is built. Whether fetching a publisher page for its headline and summary is allowed is still open (section 5).
+- **Collector fetch and storage.** Decided 2026-11-09: the collector fetches each publisher page for its headline and summary, and stores them, for personal use. The user accepts the terms risk recorded in section 4.2 (Investing.com and CNBC TV18 storing and scraping clauses). Article body text is still not stored. This decision does not cover republishing or any use outside the user's personal reference page.
 
 **Still open:**
 - None.
