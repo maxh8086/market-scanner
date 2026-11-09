@@ -123,9 +123,12 @@ class Client:
             resp = await self._http.post(
                 f"{BASE_URL}/login/", headers={"Referer": f"{BASE_URL}/login/"},
                 data={"username": user, "password": password,
-                      "csrfmiddlewaretoken": csrf, "next": "/"})
+                      "csrfmiddlewaretoken": csrf, "next": ""})
             self.logged_in = "/login/" not in str(resp.url)
             if not self.logged_in:
+                log.warning("screener login diagnostic: post_status=%s final_url=%s history=%s cookies=%s",
+                            resp.status_code, resp.url,
+                            [str(h.url) for h in resp.history], sorted(self._http.cookies.keys()))
                 log.warning("screener login failed; continuing on the public pages")
         except Exception as e:  # noqa: BLE001 - login is optional
             log.warning("screener login error (%s); continuing on the public pages", type(e).__name__)
