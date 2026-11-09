@@ -1,0 +1,97 @@
+/* Design tokens. Source: docs/designs/ui-redesign-spec.md sections 2 to 2.4.
+   Hex values live only in this file. */
+
+:root {
+  /* Light (fallback) */
+  --bg: #F8FAFC;
+  --surface: #FFFFFF;
+  --surface-2: #F1F5F9;
+  --border: #CBD5E1;
+  --border-ui: #7A8699;
+  --text: #0F172A;
+  --text-muted: #475569;
+  --gain: #047857;
+  --loss: #BE123C;
+  --neutral: #475569;
+  --accent: #4338CA;
+  --caution: #B45309;
+  --focus: #3730A3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F172A;
+    --surface: #1E293B;
+    --surface-2: #273449;
+    --border: #334155;
+    --border-ui: #7C8A9E;
+    --text: #E2E8F0;
+    --text-muted: #94A3B8;
+    --gain: #34D399;
+    --loss: #FB7185;
+    --neutral: #94A3B8;
+    --accent: #818CF8;
+    --caution: #FBBF24;
+    --focus: #A5B4FC;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0F172A;
+  --surface: #1E293B;
+  --surface-2: #273449;
+  --border: #334155;
+  --border-ui: #7C8A9E;
+  --text: #E2E8F0;
+  --text-muted: #94A3B8;
+  --gain: #34D399;
+  --loss: #FB7185;
+  --neutral: #94A3B8;
+  --accent: #818CF8;
+  --caution: #FBBF24;
+  --focus: #A5B4FC;
+}
+
+:root[data-theme="light"] {
+  --bg: #F8FAFC;
+  --surface: #FFFFFF;
+  --surface-2: #F1F5F9;
+  --border: #CBD5E1;
+  --border-ui: #7A8699;
+  --text: #0F172A;
+  --text-muted: #475569;
+  --gain: #047857;
+  --loss: #BE123C;
+  --neutral: #475569;
+  --accent: #4338CA;
+  --caution: #B45309;
+  --focus: #3730A3;
+}
+
+:root {
+  /* Spacing (px): 4, 8, 12, 16, 24, 32 */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+
+  /* Radius */
+  --radius-card: 6px;
+  --radius-control: 4px;
+
+  /* Type */
+  --font-sans: "Fira Sans", sans-serif;
+  --font-mono: "Fira Code", monospace;
+
+  /* Focus */
+  --focus-ring: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
