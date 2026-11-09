@@ -38,6 +38,20 @@ def _get_source(name: str) -> sources_module.Source:
     return sources_module.SOURCES[name]
 
 
+_reported_missing: set[str] = set()  # names already reported this process, so the log is not repeated every minute
+
+
+def split_registered(pairs, registry) -> tuple[list, list[str]]:
+    """Split (source_name, trigger) pairs into runnable pairs and names with no collector.
+
+    collector_settings can hold rows for sources that sources.py no longer (or not yet)
+    defines. Those rows must not fail every minute of the serve loop, so they are skipped here
+    and reported once by the caller."""
+    runnable = [(name, trig) for name, trig in pairs if name in registry]
+    missing = sorted({name for name, _ in pairs if name not in registry})
+    return runnable, missing
+
+
 def cmd_run(args) -> int:
     """Run one source immediately."""
     try:
@@ -148,6 +162,13 @@ def cmd_serve(args) -> int:
                         to_run.append((source_name, "manual"))
         except Exception as e:
             print(f"[{now:%Y-%m-%d %H:%M:%S}] Failed to check running status: {e}", file=sys.stderr)
+
+        to_run, missing = split_registered(to_run, sources_module.SOURCES)
+        for name in missing:
+            if name not in _reported_missing:
+                _reported_missing.add(name)
+                print(f"[{now:%Y-%m-%d %H:%M:%S}] skipped: '{name}' has a collector_settings row "
+                      f"but no collector in sources.py", file=sys.stderr)
 
         for source_name, trigger in to_run:
             try:

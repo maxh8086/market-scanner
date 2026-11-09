@@ -46,6 +46,10 @@ def ensure_sources() -> list[str]:
             if name in existing:
                 continue
             conn.execute(
+                "INSERT INTO collector_sources (source) VALUES (%s) ON CONFLICT (source) DO NOTHING",
+                (name,),
+            )
+            conn.execute(
                 "INSERT INTO collector_settings (source, mode, cron, params) "
                 "VALUES (%s, 'manual', '0 0 1 1 *', '{}') ON CONFLICT (source) DO NOTHING",
                 (name,),

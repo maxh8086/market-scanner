@@ -24,3 +24,5 @@ node_modules
 
 # Local tooling state (not project source)
 .claude/
+
+/secrets/
