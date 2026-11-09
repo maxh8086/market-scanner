@@ -168,6 +168,7 @@ These rules apply everywhere a number is shown.
 ## 7. Data rules
 
 - The UI reads only from the database. It never calls a third-party site.
+- The browser never connects to Postgres, Mongo or Upstox directly. All database reads and all live market-data feeds go through the Fastify API in `server/`. Live Upstox data is pulled by the server and passed to the browser over the API (for example a server-sent event stream). Set by you on 2026-11-09.
 - Fundamentals: the collector brings them into the database (decision 1, 2026-11-08).
 - Concall content: the local LLM generates summaries from stored transcripts and presentations, using `docs/designs/concall-summary-template.md`. No site text is copied (decision 2).
 - Order book: the company's backlog and contract awards, from stored announcements (decision 3).
