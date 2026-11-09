@@ -8,10 +8,14 @@ import { AppShell } from "./shell/AppShell";
 import { StateView } from "./shell/StateView";
 import type { TabItem } from "./shell/TabStrip";
 import { StockPage } from "./stock/StockPage";
+import { SectorHeatmap } from "./sectors/SectorHeatmap";
 import { ScreenerTable } from "./table/ScreenerTable";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
-const TABS: TabItem[] = [{ id: "home", label: "Home" }];
+const TABS: TabItem[] = [
+  { id: "home", label: "Home" },
+  { id: "sectors", label: "Sectors" },
+];
 
 /** An open stock tab. The id is the symbol, so opening the same stock twice focuses the existing tab. */
 interface StockTab {
@@ -117,7 +121,17 @@ export default function App() {
         onSelectTab={setActiveTabId}
         onCloseTab={closeStock}
       >
-        {activeStock ? (
+        {activeTabId === "sectors" ? (
+          latest.status === "ready" ? (
+            <SectorHeatmap runId={latest.run.runId} />
+          ) : (
+            <>
+              {latest.status === "loading" && <StateView kind="loading" message="Loading the current run." />}
+              {latest.status === "empty" && <StateView kind="empty" message="No current run." />}
+              {latest.status === "error" && <StateView kind="error" message={latest.message} />}
+            </>
+          )
+        ) : activeStock ? (
           <StockPage key={activeStock.id} symbol={activeStock.id} company={activeStock.company} />
         ) : (
           <>

@@ -26,6 +26,11 @@ const CANDLES = {
 
 const FILTER_OPTIONS = { bucket: ["A", "B"], stance: ["Buy"] };
 
+const SECTOR_SUMMARY = {
+  period: "1d",
+  sectors: [{ sector: "IT", count: 10, avgChangePct: 1.23, advancers: 6, decliners: 4 }],
+};
+
 const ROW = {
   symbol: "RELIANCE",
   company: "Reliance Industries",
@@ -71,6 +76,9 @@ function routeFetch(latest: Response | Error, filterOptions: Response | Error = 
     }
     if (url.startsWith("/api/stocks/RELIANCE/candles")) {
       return jsonResponse(CANDLES);
+    }
+    if (url.startsWith("/api/runs/run-42/sector-summary")) {
+      return jsonResponse(SECTOR_SUMMARY);
     }
     throw new Error(`Unexpected request: ${url}`);
   });
@@ -177,6 +185,19 @@ describe("App Home screen", () => {
     expect(screen.getByRole("tab", { name: "Home", selected: true })).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "RELIANCE" })).not.toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "RELIANCE" })).toBeInTheDocument();
+  });
+
+  it("shows the sector heatmap when the Sectors tab is clicked", async () => {
+    vi.stubGlobal("fetch", routeFetch(jsonResponse(RUN)));
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "RELIANCE" });
+    fireEvent.click(screen.getByRole("tab", { name: "Sectors" }));
+
+    expect(await screen.findByRole("button", { name: "1D" })).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByText("IT")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Sectors", selected: true })).toBeInTheDocument();
   });
 
   it("shows the error state when the latest run request fails", async () => {
