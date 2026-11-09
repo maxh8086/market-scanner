@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildLiveTicksUrl, mapFeedStatus, useLiveTicks } from "./useLiveTicks";
+import { buildIndicesUrl, buildLiveTicksUrl, mapFeedStatus, useLiveTicks } from "./useLiveTicks";
 
 type Listener = (event: { data: string }) => void;
 
@@ -50,6 +50,12 @@ afterEach(() => {
 describe("buildLiveTicksUrl", () => {
   it("encodes the run id and comma-joins the symbols", () => {
     expect(buildLiveTicksUrl("run 1", ["TCS", "INFY"])).toBe("/api/live/ticks?runId=run+1&symbols=TCS%2CINFY");
+  });
+});
+
+describe("buildIndicesUrl", () => {
+  it("sends the visible watchlist names as the symbols parameter", () => {
+    expect(buildIndicesUrl(["NIFTY 50", "Nifty Bank"])).toBe("/api/live/indices?symbols=NIFTY+50%2CNifty+Bank");
   });
 });
 
@@ -129,5 +135,42 @@ describe("useLiveTicks", () => {
     unmount();
 
     expect(source.closed).toBe(true);
+  });
+
+  it("drops a silent stream after the stale window and opens a new one", () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useLiveTicks({ runId: "r1", symbols: ["TCS"], enabled: true }));
+      act(() => FakeEventSource.instances[0].emit("status", { status: "live" }));
+      expect(result.current.status).toBe("live");
+
+      act(() => vi.advanceTimersByTime(35_000));
+      expect(result.current.status).toBe("reconnecting");
+      expect(FakeEventSource.instances[0].closed).toBe(true);
+
+      act(() => vi.advanceTimersByTime(3_000));
+      expect(FakeEventSource.instances).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the stream live while heartbeats arrive", () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useLiveTicks({ runId: "r1", symbols: ["TCS"], enabled: true }));
+      const source = FakeEventSource.instances[0];
+      act(() => source.emit("status", { status: "live" }));
+
+      act(() => vi.advanceTimersByTime(20_000));
+      act(() => source.emit("heartbeat", { ts: 1 }));
+      act(() => vi.advanceTimersByTime(20_000));
+
+      expect(result.current.status).toBe("live");
+      expect(FakeEventSource.instances).toHaveLength(1);
+      expect(source.closed).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

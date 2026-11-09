@@ -6,6 +6,15 @@ export const LIVE_SYMBOL_LIMIT = 50;
 /** Ticks arriving within this window are applied in one React update. */
 const FLUSH_MS = 250;
 
+/**
+ * The server sends a heartbeat every 15 seconds. With no event for this long (two missed
+ * heartbeats) the stream is treated as dead, even if the browser never reported an error.
+ */
+const HEARTBEAT_STALE_MS = 35_000;
+
+/** Wait before opening a new stream after a silent one is dropped. */
+const RECONNECT_MS = 3_000;
+
 /** EventSource.CLOSED. Written as a literal so the hook does not depend on the global constant. */
 const EVENT_SOURCE_CLOSED = 2;
 
@@ -15,7 +24,12 @@ export interface LiveTick {
   symbol: string;
   ltp: number;
   ltt: number | null;
+  /** Previous close. */
   cp: number | null;
+  /** Day open, high and low. Only the index stream sends them. */
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
 }
 
 export interface UseLiveTicksOptions {
@@ -23,6 +37,11 @@ export interface UseLiveTicksOptions {
   symbols: readonly string[];
   /** False keeps the hook idle: no connection is opened. */
   enabled: boolean;
+  /**
+   * Streams watchlist indices from /api/live/indices instead of the run's stocks. Here `symbols`
+   * holds index names (for example "NIFTY 50") and runId is ignored.
+   */
+  indices?: boolean;
 }
 
 export interface LiveTicksState {
@@ -35,6 +54,14 @@ const NO_TICKS: ReadonlyMap<string, LiveTick> = new Map();
 export function buildLiveTicksUrl(runId: string, symbols: readonly string[]): string {
   const params = new URLSearchParams({ runId, symbols: symbols.join(",") });
   return `/api/live/ticks?${params.toString()}`;
+}
+
+export const INDICES_URL = "/api/live/indices";
+
+/** Index stream for the given watchlist names. The server subscribes only to these. */
+export function buildIndicesUrl(names: readonly string[]): string {
+  const params = new URLSearchParams({ symbols: names.join(",") });
+  return `${INDICES_URL}?${params.toString()}`;
 }
 
 /** Maps the server's feed status to the UI status. An unconfigured feed is shown as unavailable. */
@@ -70,37 +97,53 @@ function parseTick(data: unknown): LiveTick | null {
   if (!body || typeof body.symbol !== "string" || typeof body.ltp !== "number") {
     return null;
   }
+  const price = (value: unknown) => (typeof value === "number" ? value : null);
   return {
     symbol: body.symbol,
     ltp: body.ltp,
-    ltt: typeof body.ltt === "number" ? body.ltt : null,
-    cp: typeof body.cp === "number" ? body.cp : null,
+    ltt: price(body.ltt),
+    cp: price(body.cp),
+    open: price(body.open),
+    high: price(body.high),
+    low: price(body.low),
   };
 }
 
 /**
  * Streams last-traded prices for the given symbols from GET /api/live/ticks. Ticks are batched
  * and applied at most every FLUSH_MS. Closing the hook (or changing the symbols) closes the stream.
+ *
+ * In indices mode the symbols are the watchlist names on screen. Changing them reconnects with the
+ * new list but keeps the ticks already received, so rows that stay visible do not blank out.
  */
-export function useLiveTicks({ runId, symbols, enabled }: UseLiveTicksOptions): LiveTicksState {
+export function useLiveTicks(options: UseLiveTicksOptions): LiveTicksState {
+  const { runId, symbols, enabled } = options;
   const [ticks, setTicks] = useState<ReadonlyMap<string, LiveTick>>(NO_TICKS);
   const [status, setStatus] = useState<LiveStatus>("idle");
   const symbolKey = symbols.join(",");
+  const indices = options.indices === true;
 
   useEffect(() => {
-    setTicks(NO_TICKS);
-    if (!enabled || !runId || symbolKey === "" || typeof EventSource === "undefined") {
+    const ready = indices ? enabled && symbolKey !== "" : runId !== "" && symbolKey !== "";
+    if (!indices || !ready) {
+      setTicks(NO_TICKS);
+    }
+    if (!enabled || !ready || typeof EventSource === "undefined") {
       setStatus("idle");
       return;
     }
 
     setStatus("connecting");
-    const source = new EventSource(buildLiveTicksUrl(runId, symbolKey.split(",")));
+    const url = indices ? buildIndicesUrl(symbolKey.split(",")) : buildLiveTicksUrl(runId, symbolKey.split(","));
+    let source: EventSource | null = null;
+    let stopped = false;
     let pending = new Map<string, LiveTick>();
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    let staleTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     const flush = () => {
-      timer = null;
+      flushTimer = null;
       if (pending.size === 0) {
         return;
       }
@@ -115,37 +158,87 @@ export function useLiveTicks({ runId, symbols, enabled }: UseLiveTicksOptions): 
       });
     };
 
-    source.addEventListener("status", (event) => {
-      const body = parseJsonObject((event as MessageEvent).data);
-      if (body && typeof body.status === "string") {
-        setStatus(mapFeedStatus(body.status));
+    const clearStale = () => {
+      if (staleTimer !== null) {
+        clearTimeout(staleTimer);
+        staleTimer = null;
       }
-    });
+    };
 
-    source.addEventListener("tick", (event) => {
-      const tick = parseTick((event as MessageEvent).data);
-      if (!tick) {
+    // Any event (status, tick or heartbeat) proves the stream is alive. Silence drops it and reconnects.
+    const armStale = () => {
+      clearStale();
+      staleTimer = setTimeout(() => {
+        staleTimer = null;
+        source?.close();
+        source = null;
+        setStatus("reconnecting");
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          connect();
+        }, RECONNECT_MS);
+      }, HEARTBEAT_STALE_MS);
+    };
+
+    function connect() {
+      if (stopped) {
         return;
       }
-      pending.set(tick.symbol, tick);
-      if (timer === null) {
-        timer = setTimeout(flush, FLUSH_MS);
-      }
-    });
+      const next = new EventSource(url);
+      source = next;
+      armStale();
 
-    // EventSource retries on its own. A closed source means the server refused the stream (for
-    // example no instruments), so retrying would only repeat the failure.
-    source.onerror = () => {
-      setStatus(source.readyState === EVENT_SOURCE_CLOSED ? "unavailable" : "reconnecting");
-    };
+      next.addEventListener("status", (event) => {
+        armStale();
+        const body = parseJsonObject((event as MessageEvent).data);
+        if (body && typeof body.status === "string") {
+          setStatus(mapFeedStatus(body.status));
+        }
+      });
+
+      next.addEventListener("heartbeat", () => armStale());
+
+      next.addEventListener("tick", (event) => {
+        armStale();
+        const tick = parseTick((event as MessageEvent).data);
+        if (!tick) {
+          return;
+        }
+        pending.set(tick.symbol, tick);
+        if (flushTimer === null) {
+          flushTimer = setTimeout(flush, FLUSH_MS);
+        }
+      });
+
+      // EventSource retries on its own. A closed source means the server refused the stream (for
+      // example no instruments), so retrying would only repeat the failure.
+      next.onerror = () => {
+        if (next.readyState === EVENT_SOURCE_CLOSED) {
+          clearStale();
+          source = null;
+          setStatus("unavailable");
+          return;
+        }
+        setStatus("reconnecting");
+      };
+    }
+
+    connect();
 
     return () => {
-      source.close();
-      if (timer !== null) {
-        clearTimeout(timer);
+      stopped = true;
+      source?.close();
+      clearStale();
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      if (flushTimer !== null) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
       }
     };
-  }, [enabled, runId, symbolKey]);
+  }, [enabled, runId, symbolKey, indices]);
 
   return { ticks, status };
 }

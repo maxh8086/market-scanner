@@ -19,3 +19,34 @@ export type FilterState = Pick<
 export function hasActiveFilters(filters: FilterState): boolean {
   return buildResultsQueryString(filters) !== "";
 }
+
+/** Reads the raw input strings for the given filter keys. Missing keys read as "". */
+export function readFilterValues(filters: FilterState, keys: readonly (keyof FilterState)[]): string[] {
+  return keys.map((key) => {
+    const value = filters[key];
+    return value === undefined || value === null ? "" : String(value);
+  });
+}
+
+/**
+ * Writes raw input strings back to the given filter keys. An empty string removes the key, so it
+ * is not sent. Numeric keys drop values that are not finite numbers.
+ */
+export function writeFilterValues(
+  filters: FilterState,
+  keys: readonly (keyof FilterState)[],
+  values: readonly string[],
+  numeric: boolean,
+): FilterState {
+  const copy: Record<string, unknown> = { ...filters };
+  keys.forEach((key, index) => {
+    const raw = (values[index] ?? "").trim();
+    const parsed = numeric && raw !== "" ? Number(raw) : raw;
+    if (raw === "" || (typeof parsed === "number" && !Number.isFinite(parsed))) {
+      delete copy[key];
+    } else {
+      copy[key] = parsed;
+    }
+  });
+  return copy as FilterState;
+}

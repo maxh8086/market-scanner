@@ -1,7 +1,16 @@
+import type { ReactNode } from "react";
 import { useTheme } from "../theme/ThemeProvider";
 import { DataAgeStamp, type DataAgeStampProps } from "./DataAgeStamp";
+import { EodRefreshButton } from "./EodRefreshButton";
 
-export function TopBar(props: DataAgeStampProps) {
+export interface TopBarProps extends DataAgeStampProps {
+  /** Session notice (market closed, pre-open, stale) shown beside the search button. */
+  status?: ReactNode;
+}
+
+export function TopBar({ status, ...stampProps }: TopBarProps) {
+  // The stamp renders only when a run date or timestamp exists, so no empty "Data as of —" shows.
+  const hasStamp = Boolean(stampProps.runDate || stampProps.runTimestamp);
   const { theme, toggleTheme } = useTheme();
   const nextTheme = theme === "dark" ? "light" : "dark";
 
@@ -17,8 +26,15 @@ export function TopBar(props: DataAgeStampProps) {
         <kbd className="hidden sm:inline font-mono text-xs text-text">Ctrl K</kbd>
       </button>
 
+      {status || hasStamp ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          {status}
+          {hasStamp ? <DataAgeStamp {...stampProps} /> : null}
+        </div>
+      ) : null}
+
       <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-4">
-        <DataAgeStamp {...props} />
+        <EodRefreshButton />
         <button
           type="button"
           onClick={toggleTheme}

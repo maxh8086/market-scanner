@@ -4,6 +4,7 @@ import { config as loadDotenv } from "dotenv";
 import pg from "pg";
 import { buildApp } from "./app.js";
 import { loadPoolConfig } from "./config.js";
+import { readSecret } from "./secrets.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // Repo-root .env. Existing process env vars win over file values.
@@ -26,6 +27,9 @@ const app = buildApp({
   query: (sql, values) => pool.query(sql, values),
   logger: true,
   live: { accessToken: process.env.UPSTOX_ACCESS_TOKEN || process.env.UPSTOX_ANALYTICS_ACCESS_TOKEN || undefined },
+  kite: {
+    credentials: () => ({ apiKey: readSecret("KITE_API_KEY"), accessToken: readSecret("KITE_ACCESS_TOKEN") }),
+  },
 });
 
 app.addHook("onClose", async () => {

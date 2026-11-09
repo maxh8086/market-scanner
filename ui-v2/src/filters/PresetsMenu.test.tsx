@@ -43,6 +43,20 @@ function postCalls() {
 }
 
 describe("PresetsMenu", () => {
+  it("stops saving at the preset limit and sends no request", async () => {
+    const six = Array.from({ length: 6 }, (_, index) => ({ ...SAVED, preset_id: `p${index}`, name: `P${index}` }));
+    fetchMock.mockImplementation(async () => jsonResponse({ presets: six }));
+    render(<PresetsMenu filters={{}} onApply={vi.fn()} />);
+    await screen.findByRole("button", { name: "P0" });
+
+    fireEvent.change(screen.getByLabelText("Preset name"), { target: { value: "Seventh" } });
+    const save = screen.getByRole("button", { name: "Save current filters" });
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+
+    expect(postCalls()).toHaveLength(0);
+  });
+
   it("rejects an empty name without sending a request", async () => {
     render(<PresetsMenu filters={{}} onApply={vi.fn()} />);
     await screen.findByRole("button", { name: "Existing" });

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { fetchSectorSummary, SectorSummaryError, type SectorPeriod, type SectorSummaryRow } from "../api/sectorSummary";
 import { formatPercentWithArrow } from "../lib/format";
+import { ColumnResizeHandle, useColumnWidths } from "../table/columnWidths";
 import { StateView } from "../shell/StateView";
 import {
   advDecRatio,
@@ -115,24 +116,44 @@ function SummaryList({ title, rows }: { title: string; rows: SectorSummaryRow[] 
   );
 }
 
+/** Column resize wiring for one header cell. Omit it for a fixed-width table. */
+interface HeaderResize {
+  width?: number;
+  onStart: (event: ReactPointerEvent<HTMLElement>) => void;
+  onReset: () => void;
+}
+
 interface SortableHeaderProps {
   label: string;
-  sortKey: SortKey;
+  /** Omit for a column that does not sort; it renders as a plain label. */
+  sortKey?: SortKey;
   sort: SortState;
   onSort: (key: SortKey) => void;
   align?: "left" | "right";
+  resize?: HeaderResize;
 }
 
-function SortableHeader({ label, sortKey, sort, onSort, align = "right" }: SortableHeaderProps) {
-  const active = sort.key === sortKey;
+function SortableHeader({ label, sortKey, sort, onSort, align = "right", resize }: SortableHeaderProps) {
+  const active = sortKey !== undefined && sort.key === sortKey;
   const ariaSort = active ? (sort.dir === "asc" ? "ascending" : "descending") : "none";
   const arrow = active ? (sort.dir === "asc" ? " ▲" : " ▼") : "";
   return (
-    <th scope="col" aria-sort={ariaSort} className={`px-2 py-2 font-semibold ${align === "right" ? "text-right" : "text-left"}`}>
-      <button type="button" onClick={() => onSort(sortKey)} className="whitespace-nowrap hover:text-text">
-        {label}
-        {arrow}
-      </button>
+    <th
+      scope="col"
+      data-col={label}
+      aria-sort={sortKey !== undefined ? ariaSort : undefined}
+      style={resize?.width !== undefined ? { width: resize.width } : undefined}
+      className={`relative px-2 py-2 font-semibold ${align === "right" ? "text-right" : "text-left"}`}
+    >
+      {sortKey !== undefined ? (
+        <button type="button" onClick={() => onSort(sortKey)} className="block max-w-full truncate hover:text-text">
+          {label}
+          {arrow}
+        </button>
+      ) : (
+        <span className="block max-w-full truncate">{label}</span>
+      )}
+      {resize ? <ColumnResizeHandle label={label} onStart={resize.onStart} onReset={resize.onReset} /> : null}
     </th>
   );
 }
@@ -141,6 +162,13 @@ export function SectorHeatmap({ runId }: SectorHeatmapProps) {
   const [period, setPeriod] = useState<SectorPeriod>("1d");
   const [state, setState] = useState<SectorState>({ status: "loading" });
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
+  const columnWidths = useColumnWidths();
+  const hasManualWidths = Object.keys(columnWidths.widths).length > 0;
+  const resizeFor = (columnId: string): HeaderResize => ({
+    width: columnWidths.widths[columnId],
+    onStart: (event) => columnWidths.startResize(event, columnId),
+    onReset: columnWidths.reset,
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -246,16 +274,16 @@ export function SectorHeatmap({ runId }: SectorHeatmapProps) {
           </div>
 
           <div className="overflow-x-auto">
-            <table aria-label="Sector performance" className="w-full min-w-[40rem] border-collapse text-sm">
+            <table aria-label="Sector performance" className={`border-collapse text-sm whitespace-nowrap ${hasManualWidths ? "table-fixed w-full" : "table-auto w-max"}`}>
               <thead className="border-b border-border text-text-muted">
                 <tr>
-                  <th scope="col" className="px-2 py-2 text-right font-semibold">#</th>
-                  <SortableHeader label="Sector" sortKey="sector" sort={sort} onSort={onSort} align="left" />
-                  <SortableHeader label="Change" sortKey="avgChangePct" sort={sort} onSort={onSort} />
-                  <SortableHeader label="Stocks" sortKey="count" sort={sort} onSort={onSort} />
-                  <th scope="col" className="px-2 py-2 text-right font-semibold">Adv / Dec</th>
-                  <SortableHeader label="Adv/Dec ratio" sortKey="ratio" sort={sort} onSort={onSort} />
-                  <th scope="col" className="px-2 py-2 text-left font-semibold">Breadth</th>
+                  <SortableHeader label="#" sort={sort} onSort={onSort} align="right" resize={resizeFor("#")} />
+                  <SortableHeader label="Sector" sortKey="sector" sort={sort} onSort={onSort} align="left" resize={resizeFor("Sector")} />
+                  <SortableHeader label="Change" sortKey="avgChangePct" sort={sort} onSort={onSort} resize={resizeFor("Change")} />
+                  <SortableHeader label="Stocks" sortKey="count" sort={sort} onSort={onSort} resize={resizeFor("Stocks")} />
+                  <SortableHeader label="Adv / Dec" sort={sort} onSort={onSort} resize={resizeFor("Adv / Dec")} />
+                  <SortableHeader label="Adv/Dec ratio" sortKey="ratio" sort={sort} onSort={onSort} resize={resizeFor("Adv/Dec ratio")} />
+                  <SortableHeader label="Breadth" sort={sort} onSort={onSort} align="left" resize={resizeFor("Breadth")} />
                 </tr>
               </thead>
               <tbody>
