@@ -72,7 +72,7 @@ Each strategy is one JSON file under `strategies/` (path to be confirmed in the 
   "outcome": {
     "track_until_trading_days": 756,
     "report_at_trading_days": [20, 60, 252, 756],
-    "benchmark": "NIFTY 750 TOTAL MKT",
+    "benchmark": "per_stock_indices",
     "success": "excess_return_pct > 0"
   },
   "panel": {
@@ -174,7 +174,7 @@ Resolved on 2026-11-09:
 1. **Spec format: declarative JSON, no code in specs.** Agreed.
 2. **Run timing: manual, or at end of day when the system is up.** The system may not run every day, so no run is assumed for any date. Intraday runs are out of scope.
 3. **Outcome horizons: open-ended, tracked up to 3 years (756 trading days).** Some outcomes take years to play out. The engine stores the daily path, and the panel shows report points (20, 60, 252, 756 trading days). The 20 and 60 day points are not the only measure. Report points are per strategy.
-4. **Benchmark: NIFTY 750 TOTAL MKT (Nifty Total Market), the index the scan universe is drawn from.** It is in the index list in `scanner/index_candles.py` (`NIFTY 750 TOTAL MKT`, mapped to `NSE_INDEX|NIFTY TOTAL MKT`), and daily closes are stored in Postgres. Depth of history for this index has not been checked. The universe is its members, so each stock is part of its own benchmark (see section 11).
+4. **Universe and benchmark.** The universe is NIFTY 750 TOTAL MKT (the scan universe). The benchmark is not one index. Each stock is measured against its own broader market indices, chosen by a per-stock mapping. Example: the index for its market-cap band and its sector index. The mapping rule is not defined yet (open item in section 11). The index list is in `scanner/index_candles.py`, and daily closes are stored in Postgres. History depth for each index has not been checked.
 5. **Scorecard: a system fact that strategies can use.** Agreed.
 6. **Fact snapshot storage: Postgres only.** Results and the snapshot are not sent to Excel. The Excel workbook was designed before the database existed.
 
@@ -186,5 +186,6 @@ Resolved on 2026-11-09:
 - **Small samples.** A new strategy has few events for months. The minimum sample rule (section 6) prevents early claims, but the panel must still show the count.
 - **Overfitting.** Rules picked after seeing outcomes will look good. The version rule (B6) keeps every version visible. A rule change must be recorded before its outcomes are seen.
 - **Missed days.** Runs happen only when the system is up, so some dates will have no snapshot. A missed date is recorded as missing. It is never rebuilt from later prices, because that would use information that was not available on the day.
-- **Benchmark includes the stocks.** The universe is the members of NIFTY 750 TOTAL MKT, so a stock's return is part of the benchmark return. For a large stock the excess return is partly against itself. Compare with a benchmark that excludes the universe, or report both, before reading excess return as skill. This needs your decision.
+- **Benchmark overlap.** Every broad Indian index shares stocks with NIFTY 750 TOTAL MKT. NIFTY 500 sits inside it, so it does not exclude the universe. A stock's own index also contains it. Excess return against these indices is therefore partly against the stock itself. No index in the list excludes the universe. Mitigations to decide in the brainstorm: report the stock's return against its per-stock indices, and report the universe-average return too, so the reader can see both.
+- **Per-stock mapping not defined.** The rule that links each stock to its benchmark indices (market-cap band, sector) is not written, and no mapping exists in the code yet. It must be defined and versioned before any excess return is shown.
 - **Shortlist not yet coded.** The 39 names come from a manual step. Until the engine runs the spec, the panel for the shortlist would be the first place the rule is applied in code.
