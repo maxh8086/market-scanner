@@ -10,6 +10,10 @@ import {
   type ResultsParams,
 } from "./results.js";
 import {
+  buildFilterOptionsQuery,
+  shapeFilterOptions,
+} from "./filterOptions.js";
+import {
   buildDeletePresetQuery,
   buildInsertPresetQuery,
   buildListPresetsQuery,
@@ -104,6 +108,25 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         page,
         perPage,
       };
+    },
+  );
+
+  // Distinct bucket and stance values for a run. An unknown or malformed run id
+  // returns empty lists (no 404), so the UI can show empty dropdowns.
+  app.get<{ Params: { runId: string } }>(
+    "/api/runs/:runId/filter-options",
+    async (request) => {
+      const empty = { bucket: [], stance: [] };
+      const lookup = buildRunLookupQuery(request.params.runId);
+      if (!lookup) return empty;
+
+      const found = await deps.query(lookup.sql, lookup.values);
+      const resolvedRunId = found.rows[0]?.run_id;
+      if (resolvedRunId === undefined || resolvedRunId === null) return empty;
+
+      const options = buildFilterOptionsQuery(String(resolvedRunId));
+      const result = await deps.query(options.sql, options.values);
+      return shapeFilterOptions(result.rows);
     },
   );
 
