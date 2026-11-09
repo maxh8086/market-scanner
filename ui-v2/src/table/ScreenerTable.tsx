@@ -1,11 +1,14 @@
 import {
   createContext,
+  memo,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import {
   columnVisibilityFeature,
@@ -25,7 +28,7 @@ import {
   writeFilterValues,
   type FilterState,
 } from "../filters/filterState";
-import { LIVE_SYMBOL_LIMIT, useLiveTicks, type LiveTick } from "../live/useLiveTicks";
+import { LIVE_SYMBOL_LIMIT, useLiveTicks, type LiveStatus, type LiveTick } from "../live/useLiveTicks";
 import { StateView } from "../shell/StateView";
 import { ColumnFilter, type ColumnFilterKind } from "./ColumnFilter";
 import { ColumnChooser } from "./ColumnChooser";
@@ -148,6 +151,9 @@ const SERVER_SORTABLE: ReadonlySet<ColumnId> = new Set<ColumnId>(
 
 const features = tableFeatures({ rowSortingFeature, columnVisibilityFeature });
 const helper = createColumnHelper<typeof features, Row>();
+
+type ScreenerTableInstance = ReturnType<typeof useTable<typeof features, Row>>;
+type ScreenerRow = ReturnType<ScreenerTableInstance["getRowModel"]>["rows"][number];
 
 const EMPTY_TEXT = "—";
 
@@ -430,6 +436,81 @@ const INITIAL_VIEW: ViewState = {
   moreError: null,
 };
 
+interface LiveTicksScopeProps {
+  runId: string;
+  symbols: readonly string[];
+  enabled: boolean;
+  onStatus: (status: LiveStatus) => void;
+  children: ReactNode;
+}
+
+/**
+ * Owns the live-tick subscription. Each flush re-renders only this component and the LTP and
+ * day-change cells that read the context, not the whole table. The feed status goes up to the table
+ * for the header and the reconnecting banner, which change rarely.
+ */
+function LiveTicksScope({ runId, symbols, enabled, onStatus, children }: LiveTicksScopeProps) {
+  const { ticks, status } = useLiveTicks({ runId, symbols, enabled });
+  useEffect(() => {
+    onStatus(status);
+  }, [onStatus, status]);
+  return (
+    <LiveTicksContext.Provider value={enabled ? ticks : NO_TICKS}>{children}</LiveTicksContext.Provider>
+  );
+}
+
+interface TableRowProps {
+  row: ScreenerRow;
+  table: ScreenerTableInstance;
+  index: number;
+  /** Visible column ids joined with commas. A change re-renders the row, since cells depend on it. */
+  visibleKey: string;
+  measureElement: (element: Element | null) => void;
+  onOpenStock: (symbol: string, company: string | null) => void;
+}
+
+/**
+ * One body row. Memoized so a re-render of the table (sorting, filters, load more, column chooser)
+ * does not re-render rows whose data and props did not change. Live prices update through context.
+ */
+const TableRow = memo(function TableRow({ row, table, index, measureElement, onOpenStock }: TableRowProps) {
+  /**
+   * Enter or Space on a focused row opens its stock, the same as the symbol control. Keys pressed on
+   * a control inside the row are left to that control, so the stock opens once.
+   */
+  const onKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    onOpenStock(row.original.symbol, row.original.company);
+  };
+
+  return (
+    <tr
+      data-index={index}
+      ref={measureElement}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      className="border-t border-border focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus"
+    >
+      {row.getVisibleCells().map((cell) => {
+        const id = cell.column.id as ColumnId;
+        const align = NUMERIC_COLUMNS.has(id) ? "text-right" : "text-left";
+        const stick = id === "symbol" ? "sticky left-0 z-10 bg-surface" : "";
+        return (
+          <td key={cell.id} className={`overflow-hidden text-ellipsis px-3 py-2 ${align} ${stick}`}>
+            <table.FlexRender cell={cell} />
+          </td>
+        );
+      })}
+    </tr>
+  );
+});
+
 export function ScreenerTable({
   runId,
   onOpenStock,
@@ -458,8 +539,7 @@ export function ScreenerTable({
     () => view.rows.slice(0, LIVE_SYMBOL_LIMIT).map((row) => row.symbol),
     [view.rows],
   );
-  const liveState = useLiveTicks({ runId, symbols: liveSymbols, enabled: live });
-  const liveTicks = live ? liveState.ticks : NO_TICKS;
+  const [liveStatus, setLiveStatus] = useState<LiveStatus>("idle");
 
   const activeSort = sorting[0];
   const sortId = activeSort?.id;
@@ -528,7 +608,14 @@ export function ScreenerTable({
       });
   }, [view.rows]);
 
-  const columns = useMemo(() => buildColumns(onOpenStock), [onOpenStock]);
+  // Read through a ref so the columns, and the memoized rows, do not change when the callback does.
+  const onOpenStockRef = useRef(onOpenStock);
+  onOpenStockRef.current = onOpenStock;
+  const openStock = useCallback((symbol: string, company: string | null) => {
+    onOpenStockRef.current?.(symbol, company);
+  }, []);
+
+  const columns = useMemo(() => buildColumns(openStock), [openStock]);
 
   const table = useTable({
     features,
@@ -607,22 +694,9 @@ export function ScreenerTable({
     }
   };
 
-  /**
-   * Enter or Space on a focused row opens its stock, the same as the symbol control. Keys pressed on
-   * a control inside the row are left to that control, so the stock opens once.
-   */
-  const openRowFromKey = (event: KeyboardEvent<HTMLTableRowElement>, row: Row) => {
-    if (event.target !== event.currentTarget) {
-      return;
-    }
-    if (event.key !== "Enter" && event.key !== " ") {
-      return;
-    }
-    event.preventDefault();
-    onOpenStock?.(row.symbol, row.company);
-  };
-
-  const visibleColumnCount = table.getVisibleLeafColumns().length;
+  const visibleLeafColumns = table.getVisibleLeafColumns();
+  const visibleColumnCount = visibleLeafColumns.length;
+  const visibleKey = visibleLeafColumns.map((column) => column.id).join(",");
   const virtualRows = virtualizer.getVirtualItems();
   const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
   const paddingBottom =
@@ -635,8 +709,8 @@ export function ScreenerTable({
         <p className="text-sm text-text-muted" aria-live="polite">
           Showing {view.rows.length} of {view.total}
           {view.status === "loading" ? " · Updating…" : ""}
-          {live && liveState.status === "live" ? " · Live prices" : ""}
-          {live && liveState.status === "unavailable" ? " · Live prices unavailable" : ""}
+          {live && liveStatus === "live" ? " · Live prices" : ""}
+          {live && liveStatus === "unavailable" ? " · Live prices unavailable" : ""}
         </p>
         <div className="flex flex-wrap items-center gap-3">
           {onFiltersChange ? (
@@ -668,7 +742,7 @@ export function ScreenerTable({
           />
         </div>
       </div>
-      {live && liveState.status === "reconnecting" ? (
+      {live && liveStatus === "reconnecting" ? (
         <StateView kind="reconnecting" message="Live prices reconnecting. Showing the last saved prices." />
       ) : null}
       {view.status === "error" ? (
@@ -678,7 +752,7 @@ export function ScreenerTable({
         </p>
       ) : null}
 
-      <LiveTicksContext.Provider value={liveTicks}>
+      <LiveTicksScope runId={runId} symbols={liveSymbols} enabled={live} onStatus={setLiveStatus}>
         <ClosesContext.Provider value={closes}>
           <div
             ref={scrollRef}
@@ -754,25 +828,15 @@ export function ScreenerTable({
                 {virtualRows.map((virtualRow) => {
                   const row = tableRows[virtualRow.index];
                   return (
-                    <tr
+                    <TableRow
                       key={row.id}
-                      data-index={virtualRow.index}
-                      ref={virtualizer.measureElement}
-                      tabIndex={0}
-                      onKeyDown={(event) => openRowFromKey(event, row.original)}
-                      className="border-t border-border focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus"
-                    >
-                      {row.getVisibleCells().map((cell) => {
-                        const id = cell.column.id as ColumnId;
-                        const align = NUMERIC_COLUMNS.has(id) ? "text-right" : "text-left";
-                        const stick = id === "symbol" ? "sticky left-0 z-10 bg-surface" : "";
-                        return (
-                          <td key={cell.id} className={`overflow-hidden text-ellipsis px-3 py-2 ${align} ${stick}`}>
-                            <table.FlexRender cell={cell} />
-                          </td>
-                        );
-                      })}
-                    </tr>
+                      row={row}
+                      table={table}
+                      index={virtualRow.index}
+                      visibleKey={visibleKey}
+                      measureElement={virtualizer.measureElement}
+                      onOpenStock={openStock}
+                    />
                   );
                 })}
                 {paddingBottom > 0 ? (
@@ -784,7 +848,7 @@ export function ScreenerTable({
             </table>
           </div>
         </ClosesContext.Provider>
-      </LiveTicksContext.Provider>
+      </LiveTicksScope>
 
       {remaining > 0 ? (
         <div className="flex flex-wrap items-center gap-3">
