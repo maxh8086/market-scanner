@@ -873,7 +873,7 @@ async function renderSetup() {
       <label for="sec-${f.key}" style="display:block;font-weight:600">${esc(f.label)}${f.required ? " *" : ""}
         <span style="font-weight:400;opacity:.7">${f.set ? " (saved)" : ""}</span></label>
       <input id="sec-${f.key}" data-key="${f.key}" type="${f.secret ? "password" : "text"}" autocomplete="off"
-        value="${esc(f.value)}" placeholder="${f.set && f.secret ? "Saved. Type to replace, or - to clear" : ""}"
+        value="" placeholder="${f.set ? esc(f.value) + " (saved). Type to replace, or - to clear" : ""}"
         style="width:100%;max-width:520px">
       <div style="font-size:.85em;opacity:.7">${esc(f.help)}</div>
     </div>`;
@@ -908,7 +908,8 @@ async function renderSetup() {
 
 async function saveSecrets() {
   const values = {};
-  $$("input[data-key]").forEach(i => { values[i.dataset.key] = i.value; });
+  // Empty means unchanged: saved values are shown only as a mask, never prefilled.
+  $$("input[data-key]").forEach(i => { if (i.value !== "") values[i.dataset.key] = i.value; });
   const res = await fetch("/api/secrets", {method: "PUT", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({values})});
   const msg = $("#sec-msg");

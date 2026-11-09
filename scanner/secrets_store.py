@@ -84,13 +84,19 @@ def save(values: dict[str, str | None]) -> None:
     apply()
 
 
+def mask(val: str) -> str:
+    """Show only the last 4 characters; values of 4 characters or fewer show nothing."""
+    if len(val) <= 4:
+        return ""
+    return "•" * (len(val) - 4) + val[-4:]
+
+
 def status() -> dict:
-    """Which keys are set, never their values (secrets are write-only from the UI)."""
+    """Which keys are set, and a mask of each value. Full values are never returned."""
     stored = read()
     fields = []
     for k, meta in FIELDS.items():
         val = stored.get(k) or os.environ.get(k, "")
-        fields.append({"key": k, **meta, "set": bool(val),
-                       "value": "" if meta["secret"] else val})
+        fields.append({"key": k, **meta, "set": bool(val), "value": mask(val)})
     missing = [f["key"] for f in fields if f["required"] and not f["set"]]
     return {"fields": fields, "needs_setup": bool(missing), "missing": missing}
