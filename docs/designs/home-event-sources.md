@@ -23,7 +23,7 @@ Screen: Home, shortlist and event feed (`docs/designs/ui-redesign-spec.md` secti
 1. Fetch RSS items from the sources in section 4.2 on a schedule. Fetching does not depend on the LLM. Each new item is written to an intake queue with: source, URL, published time, normalised title, and a content hash. The queue stores the title, the link, and the page's headline and summary (the page's og:title or title, and its og:description or meta description). It does not store article body text.
 2. Deduplicate by URL and by content hash, at queue insert.
 3. Keyword prefilter (the draft filter in section 6). Items with no keyword and no watchlist symbol are marked "prefiltered_out" and do not call the LLM.
-4. When the LLM is available, a worker drains the queue in batches, oldest first. Each remaining item is classified once, using the local LLM through tokenfrugal (`thinker` role). No model name is hardcoded in the app. The model returns compact JSON only: `{"relevant": true|false, "category": "<tier or macro>", "symbols": [], "sectors": [], "stance": null|"hawkish"|"dovish"|"neutral", "reason": "<max 25 words>"}`.
+4. When the LLM is available, a worker drains the queue in batches, oldest first. Each remaining item is classified once, using the local LLM at `LLM_URL`. No model name is hardcoded in the app. The endpoint may move to OpenRouter later (see Failure behaviour, third-party risk). The model returns compact JSON only: `{"relevant": true|false, "category": "<tier or macro>", "symbols": [], "sectors": [], "stance": null|"hawkish"|"dovish"|"neutral", "reason": "<max 25 words>"}`.
 5. Items with `relevant` set to true are written to the event tracker (section 2.1 below). Items marked not relevant are marked "rejected" in the queue and kept only as counts.
 6. Each run records counts: queued, prefiltered_out, sent_to_llm, relevant, rejected, expired.
 
@@ -43,10 +43,12 @@ Screen: Home, shortlist and event feed (`docs/designs/ui-redesign-spec.md` secti
 - If the LLM is down or times out, queued items wait. Nothing is dropped while they wait. A queued item expires after 48 hours if it has still not been processed. Expired items are counted as "expired" and never shown. The dashboard shows a "news filter unavailable" marker with the time of the last successful run, once the LLM has been down for more than one hour.
 - Exchange filings (section 4.1) and the economic calendar (section 8) do not depend on the LLM and keep updating.
 - The Haiku fallback in CLAUDE.md applies to development tasks, not to runtime classification.
+- **Third-party risk.** If `LLM_URL` moves to OpenRouter, every headline and summary in the queue is sent to a third party. That move needs its own decision and a note in this section before it happens.
+- **Empty-day rule.** When no relevant item has been recorded for the day, the Home feed shows the most recent recorded events by date, with the line "No new news since [time of the last successful classification run]".
 
 **Verification before launch**
 - Build a labelled set of at least 100 items (relevant or not) from real feed output, and measure precision and recall of the LLM filter against it.
-- Set the acceptance thresholds before measuring. They are an open decision (see section 7, Still open).
+- Use the acceptance thresholds in section 7 (precision 0.85, recall 0.90).
 - Re-measure after any change to the prompt, the model or the criteria.
 
 **Consequences**
@@ -162,7 +164,13 @@ Tier 3 (sector terms, optional):
 
 Search string (draft): ("Letter of Award" OR "LoA" OR "LOI" OR "Work Order" OR "Bagged") AND ("Crore" OR "Lakh" OR "Contract" OR "Order")
 
-Test on the first Telegram batch (9 Nov 2026, 21 headlines chosen by the user): 0 of 21 match the draft filter above. The filter covers order wins only. The batch is macro, market and corporate news, so the filter would mark all 21 as prefiltered_out. Before the prefilter goes live, add a macro keyword set (Fed, RBI, inflation, CPI, sanctions, tariffs, rate decision). All 21 were chosen by the user, so this batch cannot measure false positives.
+Test on the first Telegram batch (9 Nov 2026, 21 headlines chosen by the user): 0 of 21 match the draft filter above. The filter covers order wins only. The batch is macro, market and corporate news, so the filter would mark all 21 as prefiltered_out. Macro keyword set (added 2026-11-09). The prefilter matches any of these, case-insensitive, as whole words or phrases:
+
+- Central banks: RBI, Reserve Bank, Monetary Policy, Repo Rate, MPC, Fed, Federal Reserve, FOMC, rate cut, rate hike, rate decision
+- Inflation releases: inflation, CPI, PCE
+- Geopolitical and trade (wider than the section 2 criteria; kept so the LLM sees them, to be confirmed): sanctions, tariff, tariffs
+
+Test result on the macro set: 2 of 21 entries match. Matched: 11 (Gold, quoted headline, Fed and inflation) and 21 (Trump, URL slug, sanctions and tariffs). Not matched: 19. Two LinkedIn posts and one Inshorts promo have no text and cannot match. 16 of 21 entries used the URL slug instead of a headline; for four of those, the slug is a share-link ID, so they cannot match either. All 21 were chosen by the user, so this batch cannot measure false positives.
 
 ## 7. Decisions from brainstorm (answered 2026-11-09)
 
@@ -191,7 +199,7 @@ The shortlist is the intersection of these three. On the 2026-09-28 full run thi
 
 **Decided on 2026-11-09 (continued):**
 - **Cap rationale:** the cap of 3 events per stock applies to the Home feed only. It keeps the Home feed readable, so one stock with many filings in a week does not push other shortlisted stocks off screen. Every event for a stock is still shown on that stock's own timeline, in the event tracker. This matters because a user who opens a single stock can scan its full event history there, and the Home feed is only the entry point.
-- **News-filter acceptance targets (set on 2026-11-09):** measured on a labelled set of at least 100 items from real feed output (section 2). Precision of at least 0.85, because the dashboard shows only items marked relevant, so each false positive is visible noise. Recall of at least 0.70, because exchange filings remain the primary source and a missed news item is less costly. Re-measure after any change to the prompt, model, or criteria.
+- **News-filter acceptance targets (set on 2026-11-09):** measured on a labelled set of at least 100 items from real feed output (section 2). Precision of at least 0.85, because the dashboard shows only items marked relevant, so each false positive is visible noise. Recall of at least 0.90. The news feed is now the only route for news items to the dashboard, so a missed relevant item is not seen anywhere else. Exchange filings remain the primary source for filings. Re-measure after any change to the prompt, model, or criteria.
 - **Exchange feed licence:** no licence terms apply. Use is for personal use only.
 - **India CPI source:** the MoSPI advance release calendar (section 8.1), as recommended in this document.
 - **X / Twitter: out of scope.** Decided 2026-11-09: no X API tier, no manual paste of X posts into the intake queue, and no scraping or automating a logged-in X session. No X content enters the feed or the event tracker.
