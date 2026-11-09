@@ -154,5 +154,37 @@ class FetchTests(unittest.TestCase):
             _run(sc.fetch_page(_client_with(handler), "ACME"))
 
 
+class SectorPathTests(unittest.TestCase):
+    def test_full_four_level_breadcrumb(self):
+        html = (
+            '<div class="breadcrumb">'
+            '<a href="/market/IN05/">Financial Services</a>'
+            '<a href="/market/IN05/IN0501/">Financial Services</a>'
+            '<a href="/market/IN05/IN0501/IN050102/">Banks</a>'
+            '<a href="/market/IN05/IN0501/IN050102/IN050102002/">Private Sector Bank</a>'
+            '</div>'
+        )
+        self.assertEqual(sc.parse_sector_path(html), {
+            "screener_sector": "Financial Services",
+            "screener_industry": "Financial Services",
+            "screener_basic_industry": "Banks",
+            "screener_sub_industry": "Private Sector Bank",
+        })
+
+    def test_missing_breadcrumb_gives_all_none(self):
+        self.assertEqual(sc.parse_sector_path("<p>no links</p>"), {
+            "screener_sector": None,
+            "screener_industry": None,
+            "screener_basic_industry": None,
+            "screener_sub_industry": None,
+        })
+
+    def test_partial_chain_uses_only_levels_with_names(self):
+        html = '<a href="/market/IN08/">Information Technology</a>'
+        result = sc.parse_sector_path(html)
+        self.assertEqual(result["screener_sector"], "Information Technology")
+        self.assertIsNone(result["screener_industry"])
+
+
 if __name__ == "__main__":
     unittest.main()

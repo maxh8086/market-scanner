@@ -300,6 +300,45 @@ def parse_shareholding(html: str) -> dict[str, Any]:
     return {"quarters": quarters, "rows": rows}
 
 
+SECTOR_PATH_KEYS = (
+    "screener_sector",
+    "screener_industry",
+    "screener_basic_industry",
+    "screener_sub_industry",
+)
+
+
+def parse_sector_path(html: str) -> dict[str, Optional[str]]:
+    """The company's classification breadcrumb, one name per level.
+
+    Screener links each level as /market/IN05/IN0501/IN050102/IN050102002/. The link
+    texts give the names. The longest chain whose every prefix has a link is used.
+    Returns all four keys, with None for levels the page does not show.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    names: dict[tuple[str, ...], str] = {}
+    for a in soup.find_all("a", href=True):
+        href = a["href"].split("?")[0].split("#")[0]
+        m = re.search(r"/market/((?:IN\d+/?)+)$", href)
+        if not m:
+            continue
+        codes = tuple(c for c in m.group(1).split("/") if c)
+        text = _clean(a.get_text(" "))
+        if text:
+            names.setdefault(codes, text)
+
+    best: tuple[str, ...] = ()
+    for codes in names:
+        if len(codes) > len(best) and all(codes[:i] in names for i in range(1, len(codes) + 1)):
+            best = codes
+
+    levels = [names[best[:i]] for i in range(1, len(best) + 1)][: len(SECTOR_PATH_KEYS)]
+    out: dict[str, Optional[str]] = {key: None for key in SECTOR_PATH_KEYS}
+    for key, name in zip(SECTOR_PATH_KEYS, levels):
+        out[key] = name
+    return out
+
+
 def debt_to_equity(html: str) -> Optional[float]:
     """Borrowings / (Equity Capital + Reserves), latest balance-sheet column. Screener's
     top ratios do not carry it. None when the rows are missing or equity is not positive."""
