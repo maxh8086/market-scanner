@@ -10,6 +10,7 @@ class _FakeConn:
     def __init__(self, existing):
         self.existing = existing
         self.inserted = []
+        self.registered = []
         self.committed = False
 
     def execute(self, sql, params=()):
@@ -18,6 +19,8 @@ class _FakeConn:
             result.fetchall.return_value = [{"source": s} for s in self.existing]
         elif sql.startswith("INSERT INTO collector_settings"):
             self.inserted.append(params[0])
+        elif sql.startswith("INSERT INTO collector_sources"):
+            self.registered.append(params[0])
         return result
 
     def commit(self):
@@ -52,6 +55,12 @@ class EnsureSourcesTests(unittest.TestCase):
         conn, added = self._run(existing=list(SOURCES))
         self.assertEqual(added, [])
         self.assertEqual(conn.inserted, [])
+        self.assertEqual(conn.registered, [])
+
+    def test_each_new_source_is_registered_before_its_settings_row(self):
+        conn, added = self._run(existing=["candles_eod"])
+        self.assertEqual(sorted(conn.registered), sorted(added))
+        self.assertEqual(sorted(conn.inserted), sorted(added))
 
 
 if __name__ == "__main__":

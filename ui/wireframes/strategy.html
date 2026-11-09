@@ -2248,7 +2248,7 @@ body.st-page #st-handle{display:flex}
     <div class="evdetail" id="ev-detail"></div>
     <p class="chart-cap" id="ch-alt"></p>
     <p class="chart-cap" id="ct-help">Chart tools: scroll to zoom, drag to pan, double-click to reset, right-click for more. <span class="tipl" data-tip="ct_heikin" tabindex="0">Heikin Ashi</span> and <span class="tipl" data-tip="ct_hollow" tabindex="0">hollow candles</span> are in the chart type menu. The <span class="tipl" data-tip="ct_pct_scale" tabindex="0">% scale</span> shows change from the first visible bar. <span class="tipl" data-tip="ct_auto_scale" tabindex="0">Auto scale</span> refits the price axis as you move. <span class="tipl" data-tip="ct_alert" tabindex="0">Alerts</span> message you on WhatsApp and never place an order.</p>
-    <p class="chart-cap">Sample prices. The product draws this chart with KLineChart from our own database, themed to match the site. Moving averages are always the daily ones, so the 200 DMA means 200 days on every timeframe.</p>
+    <p class="chart-cap">Sample prices. The product draws this chart with TradingView lightweight-charts v5 from our own database, themed to match the site. Moving averages are always the daily ones, so the 200 DMA means 200 days on every timeframe.</p>
   </section>
 
   <section class="card tech" id="st-tech" aria-labelledby="tech-h" hidden>
@@ -3619,7 +3619,7 @@ const chs={tf:"D",n:253,off:0,cn:false,cs:false,log:false,pct:false,auto:true,lo
   ov:{e50:1,exit:1,ath:1,vol:1,rsi:1},x:{bb:0,macd:0,vwap:0,st:0,don:0},hid:{},style:{},alerts:[],set:{legend:1,events:1,last:1,lg:1},ev:{R:1,D:1,S:1,B:1,F:1,V:1}};
 const TPER={D:1,W:5,M:21}, TDEF={D:253,W:1260,M:"all"};
 const TYN={candle:"Candles",hollow:"Hollow candles",ha:"Heikin Ashi",bars:"Bars",line:"Line",area:"Area"};
-/* ----- indicator registry. live: drawn from the sample series. The rest are previews (the product draws them with KLineChart). ----- */
+/* ----- indicator registry. live: drawn from the sample series. The rest are previews (the product draws them with lightweight-charts v5). ----- */
 const IND=[
   {k:"e50",name:"50 EMA",live:1,tabs:["Trend"],col:"#D9730D",w:1.8,opt:"cw",desc:"Exponential average of the last 50 closes. Always the daily one."},
   {k:"exit",name:"Exit line (200 DMA)",live:1,tabs:["Trend"],col:"#BE123C",w:1.6,opt:"cw",desc:"The 200 DMA the strategy uses as its exit line."},
@@ -4177,14 +4177,14 @@ function renderInd(){
   if(!L.length){ diList.innerHTML=`<p class="ct-empty">${q?`No indicators match "${esc(indQ.trim())}".`:"No favorites yet. Use the star on any indicator to keep it here."}</p>`; return; }
   diList.innerHTML=`<ul class="ct-ul">${L.map(i=>{
     const on=!!indState(i.k), fv=f.includes(i.k), btn=i.live?(on?"Remove":"Add"):"Preview";
-    return `<li class="ct-ir${on?" is-on":""}" data-k="${i.k}"><button type="button" class="ct-star" data-a="fav" aria-pressed="${fv}" title="${fv?"Remove from":"Add to"} favorites" aria-label="${fv?"Remove":"Add"} ${esc(i.name)} ${fv?"from":"to"} favorites">${cti("star")}</button><div class="ct-in"><span class="ct-iname">${esc(i.name)}${on?`<span class="ct-badge on">On chart</span>`:""}${i.live?"":`<span class="ct-badge">Preview</span>`}</span><span class="ct-idesc">${esc(i.desc)}</span></div><button type="button" class="ct-ia${on?" is-rm":""}" data-a="${i.live?"tog":"prev"}" aria-label="${btn} ${esc(i.name)}" title="${i.live?(on?"Remove from the chart":"Add to the chart"):"The product draws this indicator with KLineChart"}">${btn}</button></li>`; }).join("")}</ul>`;
+    return `<li class="ct-ir${on?" is-on":""}" data-k="${i.k}"><button type="button" class="ct-star" data-a="fav" aria-pressed="${fv}" title="${fv?"Remove from":"Add to"} favorites" aria-label="${fv?"Remove":"Add"} ${esc(i.name)} ${fv?"from":"to"} favorites">${cti("star")}</button><div class="ct-in"><span class="ct-iname">${esc(i.name)}${on?`<span class="ct-badge on">On chart</span>`:""}${i.live?"":`<span class="ct-badge">Preview</span>`}</span><span class="ct-idesc">${esc(i.desc)}</span></div><button type="button" class="ct-ia${on?" is-rm":""}" data-a="${i.live?"tog":"prev"}" aria-label="${btn} ${esc(i.name)}" title="${i.live?(on?"Remove from the chart":"Add to the chart"):"The product draws this indicator with lightweight-charts v5"}">${btn}</button></li>`; }).join("")}</ul>`;
 }
 function refocusInd(k,a){ const b=diList.querySelector(`.ct-ir[data-k="${k}"] [data-a="${a}"]`); if(b) b.focus({preventScroll:true}); }
 function setInd(k,v){ if(k in chs.ov) chs.ov[k]=v?1:0; else chs.x[k]=v?1:0; delete chs.hid[k]; }
 diList.addEventListener("click",ev=>{
   const b=ev.target.closest("button[data-a]"); if(!b) return; const row=b.closest(".ct-ir"), k=row.dataset.k, i=INDM[k], st=diList.scrollTop, a=b.dataset.a;
   if(a==="fav"){ let f=favs(); f=f.includes(k)?f.filter(x=>x!==k):f.concat(k); LS.set(K_FAV,f); renderInd(); diList.scrollTop=st; refocusInd(k,"fav"); diLive.textContent=i.name+(f.includes(k)?" added to favorites":" removed from favorites"); return; }
-  if(a==="prev"){ ctToast(`Preview. The product draws ${i.name} with KLineChart. It is not drawn in this wireframe.`); return; }
+  if(a==="prev"){ ctToast(`Preview. The product draws ${i.name} with lightweight-charts v5. It is not drawn in this wireframe.`); return; }
   if(a==="tog"){ const on=!indState(k); setInd(k,on); drawChart(); renderInd(); diList.scrollTop=st; refocusInd(k,"tog"); diLive.textContent=i.name+(on?" added to the chart":" removed from the chart"); }
 });
 diQ.addEventListener("input",()=>{ indQ=diQ.value; renderInd(); });
