@@ -13,13 +13,13 @@ Updated 2026-11-09. This section is updated at each milestone.
 | 1. Audit | Done | `docs/designs/ui-redesign-audit.md` |
 | 2. Brief | Done | `docs/designs/ui-redesign-brief.md` |
 | 3. Direction | Done | Option D confirmed by you on 2026-11-09 |
-| 4. Design system and spec | Draft, awaiting your approval | This document. Text and signal contrast measured (section 2.1). Open decisions in section 9 |
+| 4. Design system and spec | Draft, awaiting your final approval | This document. Text and signal contrast measured (section 2.1). Section 9 decisions 1, 2, 3 and 5 answered on 2026-11-09 |
 | 5. Implementation (slices) | Not started | Blocked until this spec is approved |
 | 6. Audit and optimize | Not started | |
 
-Next action: measure border and neutral contrast, and get your answers on section 9.
+Next action: measure border and neutral contrast, install the chosen skills, and get your final approval of this spec.
 
-Stack, as recorded in the brief: Node.js + TypeScript + Fastify backend. Vite + React + TypeScript frontend, built to static files and served by Fastify. TanStack Table with row virtualization. TanStack Query. TradingView Lightweight Charts v5 only. Tailwind v4 and shadcn/ui are **not yet confirmed by you** (see section 9).
+Stack: Node.js + TypeScript + Fastify backend. Vite + React + TypeScript frontend, built to static files and served by Fastify. TanStack Table with row virtualization. TanStack Query. TradingView Lightweight Charts v5 only. Tailwind v4 and shadcn/ui, confirmed by you on 2026-11-09 (section 9).
 
 ## 1. Principles
 
@@ -180,11 +180,11 @@ Every data view uses `StateView` and handles these states:
 
 ## 9. Open decisions
 
-1. **WebSocket for live tickers.** Recorded as in v1 scope in the brief. The live, reconnecting and pre-open states need a live data source. Which Upstox market-data feed and at what cost? (Brief, Blocker 3.)
-2. **Tailwind v4 and shadcn/ui.** Not yet confirmed. Options: confirm both, or use plain CSS variables with no framework.
-3. **Authentication for write endpoints.** The audit found that config and secret writes are open on all interfaces (audit item 1). This must be fixed before the new backend goes live. Which approach: a local-only bind, or a token?
+1. **WebSocket for live tickers. Answered 2026-11-09: Upstox market-data feed.** Live, reconnecting and pre-open states depend on it. Before use, the Upstox data-sharing licence terms must be checked (brief, Blocker 3). Cost is still unknown.
+2. **Tailwind v4 and shadcn/ui. Answered 2026-11-09: Tailwind v4 + shadcn/ui.**
+3. **Authentication for write endpoints. Answered 2026-11-09: local-only bind, no token.** The audit found that config and secret writes are open on all interfaces (audit item 1). The bind to 127.0.0.1 stops other machines on the network. It does not stop a web page open in the same browser from calling localhost. Accepted risk, recorded here so it is a known trade-off.
 4. **Border and neutral contrast.** Text pairs are measured (section 2.1). `--border` against surfaces and `--neutral` on `--bg` are still to measure.
-5. **Skills not installed.** The brief's financial-ui and shadcn skills are not installed. Their rules are written into this spec (sections 2 to 4). Install them, or proceed with the spec alone?
+5. **Skills. Answered 2026-11-09: install shadcn/ui, Vercel agent-skills, and financial-ui-patterns and styles.** Install is pending. The brief says to remove them after implementation. Their rules are also written into this spec (sections 2 to 4).
 
 ## 10. WCAG AA checklist (to complete before approval)
 
