@@ -206,12 +206,12 @@ Every data view uses `StateView` and handles these states:
 
 - [x] Text and signal token pairs measured in light and dark (section 2.1).
 - [x] `--border` against surfaces (3:1) and `--neutral` on `--bg` measured. `--border-ui` added for controls.
-- [ ] Gain and loss have a sign and an arrow everywhere (section 3).
-- [ ] Table rows are keyboard reachable. Enter and Space open the stock. Visible focus ring on every interactive element.
-- [ ] Sticky table header has a real scroll container (audit item 16).
-- [ ] `prefers-reduced-motion` replaces the flash with the static bar.
-- [ ] Layout works at 375px wide with no horizontal page scroll, and the data-age stamp stays visible.
-- [ ] Colour is never the only signal for state (stale, closed, error).
+- [ ] Gain and loss have a sign and an arrow everywhere (section 3). Open until the scan table (slice 2) shows gain and loss.
+- [ ] Table rows are keyboard reachable. Enter and Space open the stock. Visible focus ring on every interactive element. Open until the scan table (slice 2). The shell's controls already have a focus ring.
+- [ ] Sticky table header has a real scroll container (audit item 16). Open until the scan table (slice 2).
+- [ ] `prefers-reduced-motion` replaces the flash with the static bar. Open until live cell updates (slice 2 or later).
+- [x] Layout works at 375px wide with no horizontal page scroll, and the data-age stamp stays visible. Checked 2026-11-09 in the browser (commit `efc09fb`): stamp fully visible, no horizontal overflow.
+- [ ] Colour is never the only signal for state (stale, closed, error). Open until the states slice (slice 6).
 
 ## 11. Next steps after approval
 
