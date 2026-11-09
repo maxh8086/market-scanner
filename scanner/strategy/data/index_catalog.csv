@@ -1,0 +1,15 @@
+index_name,upstox_key,kind,constituents_file,priority,verified_on
+Nifty Private Bank,NSE_INDEX|Nifty Pvt Bank,sector,,1,2026-11-09
+Nifty PSU Bank,NSE_INDEX|Nifty PSU Bank,sector,,2,2026-11-09
+Nifty Pharma,NSE_INDEX|Nifty Pharma,sector,,3,2026-11-09
+Nifty Healthcare,NSE_INDEX|NIFTY HEALTHCARE,sector,,4,2026-11-09
+Nifty Oil & Gas,NSE_INDEX|NIFTY OIL AND GAS,sector,,5,2026-11-09
+Nifty Energy,NSE_INDEX|Nifty Energy,sector,,6,2026-11-09
+Nifty Auto,NSE_INDEX|Nifty Auto,sector,,7,2026-11-09
+Nifty Consumer Durables,NSE_INDEX|NIFTY CONSR DURBL,sector,,8,2026-11-09
+Nifty FMCG,NSE_INDEX|Nifty FMCG,sector,,9,2026-11-09
+Nifty IT,NSE_INDEX|Nifty IT,sector,,10,2026-11-09
+Nifty Media,NSE_INDEX|Nifty Media,sector,,11,2026-11-09
+Nifty Metal,NSE_INDEX|Nifty Metal,sector,,12,2026-11-09
+Nifty Realty,NSE_INDEX|Nifty Realty,sector,,13,2026-11-09
+Nifty Financial Services,NSE_INDEX|Nifty Fin Service,sector,,14,2026-11-09
