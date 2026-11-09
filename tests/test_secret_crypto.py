@@ -107,6 +107,12 @@ class MasterKeyFileTests(unittest.TestCase):
         sc.write_new_key_file(p)
         self.assertEqual(p.stat().st_mode & 0o777, 0o600)
 
+    def test_unset_env_var_fails_closed(self):
+        env = {k: v for k, v in os.environ.items() if k != sc.KEY_FILE_ENV}
+        with mock.patch.dict(os.environ, env, clear=True):
+            with self.assertRaises(sc.MasterKeyError):
+                sc.load_master_key()
+
     def test_env_var_selects_key_path(self):
         p = self.dir / "env.key"
         sc.write_new_key_file(p)

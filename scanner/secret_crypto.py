@@ -16,8 +16,7 @@ from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-KEY_FILE_ENV = "APP_MASTER_KEY_FILE"
-DEFAULT_KEY_FILE = "/run/secrets/app_master_key"
+KEY_FILE_ENV = "APP_MASTER_KEY_FILE"   # no default path: the location is set per machine
 KEY_BYTES = 32
 NONCE_BYTES = 12
 
@@ -31,7 +30,10 @@ class DecryptError(ValueError):
 
 
 def key_path() -> Path:
-    return Path(os.environ.get(KEY_FILE_ENV, DEFAULT_KEY_FILE))
+    value = os.environ.get(KEY_FILE_ENV, "").strip()
+    if not value:
+        raise MasterKeyError(f"{KEY_FILE_ENV} is not set; point it at the master key file")
+    return Path(value)
 
 
 def load_master_key(path: Path | None = None) -> bytes:

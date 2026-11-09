@@ -72,14 +72,16 @@ Stored encrypted in `app_secret` as an app-level key, set by the admin (decision
 
 - Code: `scanner/secret_crypto.py` (AES-256-GCM, fresh 96-bit nonce per write, associated data `table|name|owner|key_version`). Tests: `tests/test_secret_crypto.py` (16 tests, offline; the mode test is skipped on Windows).
 - The UI app's lifespan calls `check_master_key()`, so the API refuses to start without a valid key. Checked in the container: it starts with the key and exits with "Application startup failed" without one.
-- Key file: `./secrets/app_master_key` (a 32-byte random value in base64, mode 0600). It is gitignored and excluded from the build context. Only the `ui` service mounts it, at `/run/secrets/app_master_key`.
-- Create the key once, on the host, with this command (it refuses to overwrite an existing file):
+- Key location: no path is hardcoded. The host folder is set by `APP_MASTER_KEY_DIR` in `.env`. Compose mounts that folder read-only into the `ui` service at `/run/app-keys`, and `APP_MASTER_KEY_FILE` points the code at `/run/app-keys/app_master_key`. If `APP_MASTER_KEY_DIR` is unset, `docker compose` refuses to start. If `APP_MASTER_KEY_FILE` is unset, the code refuses to load a key.
+- The key file is a 32-byte random value in base64. It is never in git, the image, or the build context (`.dockerignore` excludes `secrets/`). Only the `ui` service mounts the folder.
+- Create the key once, on the host, with `APP_MASTER_KEY_DIR` set in the shell to the folder you chose. The command refuses to overwrite an existing file.
 
 ```bash
-.venv/Scripts/python.exe -c "from pathlib import Path; from scanner.secret_crypto import write_new_key_file as w; w(Path('secrets/app_master_key'))"
+.venv/Scripts/python.exe -c "import os; from pathlib import Path; from scanner.secret_crypto import write_new_key_file as w; w(Path(os.environ['APP_MASTER_KEY_DIR']) / 'app_master_key')"
 ```
 
 - Back up the key file separately from the database. Losing it makes every stored secret unreadable. Holding the key next to a database dump defeats the encryption.
+- Tradeoff: a OneDrive folder syncs the key file to Microsoft's cloud. The encrypted values stay in local `data/`, so the cloud copy alone cannot read them, but the key does leave the machine. Keep the file downloaded (not "online only"), or the container cannot read it.
 - Not in S1: the `app_secret` table (S2), the CLI (S3), import and migration (S4), and loaders (S5).
 
 ## Open items for the brainstorm
