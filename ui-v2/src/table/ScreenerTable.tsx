@@ -214,6 +214,8 @@ export function ScreenerTable({ runId, onOpenStock, filters = NO_FILTERS, onClea
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>({});
   const [view, setView] = useState<ViewState>(INITIAL_VIEW);
+  // Bumped by the Retry action so the same results request runs again.
+  const [retryNonce, setRetryNonce] = useState(0);
   // Bumped on every reset so a stale "load more" response is discarded.
   const generation = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -258,7 +260,7 @@ export function ScreenerTable({ runId, onOpenStock, filters = NO_FILTERS, onClea
       });
 
     return () => controller.abort();
-  }, [runId, sortId, sortOrder, filters]);
+  }, [runId, sortId, sortOrder, filters, retryNonce]);
 
   const columns = useMemo(() => buildColumns(onOpenStock), [onOpenStock]);
 
@@ -290,22 +292,21 @@ export function ScreenerTable({ runId, onOpenStock, filters = NO_FILTERS, onClea
       return <StateView kind="loading" message="Loading results…" />;
     }
     if (view.status === "error") {
-      return <StateView kind="error" message={`Could not load results. ${view.error ?? ""}`.trim()} />;
+      return (
+        <StateView
+          kind="error"
+          message={`Could not load results. ${view.error ?? ""}`.trim()}
+          action={{ label: "Retry", onClick: () => setRetryNonce((count) => count + 1) }}
+        />
+      );
     }
     if (hasActiveFilters(filters)) {
       return (
-        <div className="space-y-3">
-          <StateView kind="empty" message="No results match these filters." />
-          {onClearFilters ? (
-            <button
-              type="button"
-              onClick={onClearFilters}
-              className="rounded-(--radius-control) border border-border-ui px-3 py-1 text-sm text-text"
-            >
-              Clear filters
-            </button>
-          ) : null}
-        </div>
+        <StateView
+          kind="empty"
+          message="No results match these filters."
+          action={onClearFilters ? { label: "Clear filters", onClick: onClearFilters } : undefined}
+        />
       );
     }
     return <StateView kind="empty" message="No results for this run." />;

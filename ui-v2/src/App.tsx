@@ -4,8 +4,9 @@ import { fetchLatestRun, LatestRunError, type LatestRun } from "./api/latestRun"
 import { FilterBar } from "./filters/FilterBar";
 import { type FilterState } from "./filters/filterState";
 import { PresetsMenu } from "./filters/PresetsMenu";
+import { getMarketSession, runAgeDays } from "./lib/marketSession";
 import { AppShell } from "./shell/AppShell";
-import { StateView } from "./shell/StateView";
+import { StateView, type StateKind } from "./shell/StateView";
 import type { TabItem } from "./shell/TabStrip";
 import { StockPage } from "./stock/StockPage";
 import { SectorHeatmap } from "./sectors/SectorHeatmap";
@@ -37,8 +38,36 @@ type FilterOptionsState =
   | { status: "ready"; options: FilterOptions }
   | { status: "error" };
 
+const CLOCK_REFRESH_MS = 60_000;
+
+interface SessionBanner {
+  kind: Extract<StateKind, "market_closed" | "pre_open" | "stale">;
+  message: string;
+}
+
+/**
+ * The one banner above the Home table. Market closed wins. Otherwise stale wins over the
+ * pre-open notice, so a stale run is still flagged during pre-open and open hours.
+ */
+function sessionBanner(runDate: string, now: Date): SessionBanner | null {
+  const session = getMarketSession(now);
+  if (session.status === "closed") {
+    return { kind: "market_closed", message: `Market closed. Last close: ${session.lastCloseLabel}` };
+  }
+  const age = runAgeDays(runDate, now);
+  if (age > 0) {
+    return { kind: "stale", message: `Data is ${age} trading day(s) old (run date ${runDate})` };
+  }
+  if (session.status === "pre_open") {
+    return { kind: "pre_open", message: "Pre-open session, 09:00 to 09:15 IST" };
+  }
+  return null;
+}
+
 export default function App() {
   const [activeTabId, setActiveTabId] = useState("home");
+  // Only re-renders the clock; the time itself is read on each render below.
+  const [, setClockTick] = useState(0);
   const [stockTabs, setStockTabs] = useState<StockTab[]>([]);
   const [latest, setLatest] = useState<LatestRunState>({ status: "loading" });
   const [filterOptions, setFilterOptions] = useState<FilterOptionsState>({ status: "loading" });
@@ -59,6 +88,14 @@ export default function App() {
     setStockTabs((current) => current.filter((tab) => tab.id !== id));
     setActiveTabId((current) => (current === id ? "home" : current));
   }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockTick((tick) => tick + 1), CLOCK_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const now = new Date();
+  const banner = latest.status === "ready" ? sessionBanner(latest.run.runDate, now) : null;
 
   const readyRunId = latest.status === "ready" ? latest.run.runId : null;
 
@@ -141,6 +178,7 @@ export default function App() {
             {latest.status === "ready" && (
               <div className="flex flex-col gap-3">
                 <p className="text-sm text-text-muted">Run date: {latest.run.runDate}</p>
+                {banner ? <StateView kind={banner.kind} message={banner.message} /> : null}
                 <FilterBar
                   value={filters}
                   onChange={setFilters}

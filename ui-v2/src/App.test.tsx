@@ -200,6 +200,22 @@ describe("App Home screen", () => {
     expect(screen.getByRole("tab", { name: "Sectors", selected: true })).toBeInTheDocument();
   });
 
+  it("shows the stale banner when the run is older than the most recent trading day", async () => {
+    // Monday 2026-11-09 10:00 IST, market open. Monday's run is not due, so Friday is expected.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-09T04:30:00Z"));
+    try {
+      vi.stubGlobal("fetch", routeFetch(jsonResponse({ runId: "run-42", runDate: "2026-11-05" })));
+
+      render(<App />);
+
+      const banner = await screen.findByText("Data is 1 trading day(s) old (run date 2026-11-05)");
+      expect(banner.closest("[data-state]")).toHaveAttribute("data-state", "stale");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows the error state when the latest run request fails", async () => {
     vi.stubGlobal("fetch", routeFetch(new TypeError("Failed to fetch")));
 

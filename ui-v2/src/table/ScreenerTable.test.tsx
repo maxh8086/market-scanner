@@ -167,6 +167,31 @@ describe("ScreenerTable", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Run not found");
   });
 
+  it("offers Clear filters in the no-results state and calls the handler", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(pageBody([])));
+    const onClearFilters = vi.fn();
+    render(<ScreenerTable runId={RUN_ID} filters={{ bucket: "A" }} onClearFilters={onClearFilters} />);
+
+    expect(await screen.findByText("No results match these filters.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+
+    expect(onClearFilters).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries the results request when Retry is clicked after an error", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: "Database offline" }, 500));
+    render(<ScreenerTable runId={RUN_ID} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Database offline");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByRole("button", { name: "RELIANCE" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(lastUrl(fetchMock)).toBe(`/api/runs/${RUN_ID}/results?page=1&perPage=50`);
+  });
+
   it("shows the no-run message when runId is empty and does not fetch", () => {
     render(<ScreenerTable runId="" />);
 
