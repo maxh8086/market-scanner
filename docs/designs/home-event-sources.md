@@ -93,7 +93,12 @@ BSE XML (`bseindia.com`):
 - `data/xml/notices.xml`: notices. Board-meeting notices are excluded; check for other content
 - `Data/XML/AnnualReportFeed.aspx`: parked
 
-Open: NSE and BSE feed terms of use, rate limits, and whether scraping these endpoints is allowed for an internal dashboard. Not yet checked.
+Terms check (read 2026-11-09):
+- NSE (website Terms of Use, https://www.nseindia.com/static/nse-terms-of-use): content must not be copied, stored (in hardcopy or an electronic retrieval system), aggregated, adapted or distributed without NSE's prior written permission. The exception covers content that is available for download, and the terms do not say whether RSS items fall under it, so it cannot be relied on for RSS. Systematic or automated data collection, including scraping, data mining and data harvesting, is prohibited. The NSE Data Sharing and Usage Policy (market data) was not read.
+- BSE: the BSE terms page returned HTTP 403 and was not read. The announcements disclaimer says information is provided "AS IS" without warranty, and BSE does not pre-verify company announcements. No redistribution or scraping terms were found in search results.
+- Impact: a collector that stores NSE items conflicts with the NSE clauses above, even for personal use. Section 7 records the user's decision (option a, 2026-11-09): collect for personal use only, accepting the terms risk.
+- Rate limits: not checked.
+- Status: not decided. See section 7.
 
 ### 4.2 News RSS — beat/miss and broker ratings
 
@@ -200,7 +205,7 @@ The shortlist is the intersection of these three. On the 2026-09-28 full run thi
 **Decided on 2026-11-09 (continued):**
 - **Cap rationale:** the cap of 3 events per stock applies to the Home feed only. It keeps the Home feed readable, so one stock with many filings in a week does not push other shortlisted stocks off screen. Every event for a stock is still shown on that stock's own timeline, in the event tracker. This matters because a user who opens a single stock can scan its full event history there, and the Home feed is only the entry point.
 - **News-filter acceptance targets (set on 2026-11-09):** measured on a labelled set of at least 100 items from real feed output (section 2). Precision of at least 0.85, because the dashboard shows only items marked relevant, so each false positive is visible noise. Recall of at least 0.90. The news feed is now the only route for news items to the dashboard, so a missed relevant item is not seen anywhere else. Exchange filings remain the primary source for filings. Re-measure after any change to the prompt, model, or criteria.
-- **Exchange feed licence:** no licence terms apply. Use is for personal use only.
+- **Exchange feed licence (decided 2026-11-09):** the user chose option (a): collect NSE and BSE filing items for personal use only, accepting the terms risk in section 4.1. This is the same stance as the news sites. The NSE website terms prohibit storing, copying and automated collection of content without written permission. The earlier note "no licence terms apply" was written before those terms were read and is withdrawn. The collector must not redistribute items, and it must keep only the fields the Home feed needs. Rate limits are still unchecked.
 - **India CPI source:** the MoSPI advance release calendar (section 8.1), as recommended in this document.
 - **X / Twitter: out of scope.** Decided 2026-11-09: no X API tier, no manual paste of X posts into the intake queue, and no scraping or automating a logged-in X session. No X content enters the feed or the event tracker.
 - **Live-feed testing.** Decided 2026-11-09: live-feed tests are opt-in and run outside the offline test command. The offline test command (`.venv/Scripts/python.exe -m unittest discover -s tests -t . -q`) uses recorded samples only and never calls the network. The live-feed tests need an explicit flag or environment variable to run, and they are not part of the default test run.
