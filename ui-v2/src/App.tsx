@@ -102,6 +102,8 @@ export default function App() {
 
   const now = new Date();
   const banner = latest.status === "ready" ? sessionBanner(latest.run.runDate, now) : null;
+  // Live prices stream only in the open session (09:15 to 15:30 IST) with a run loaded.
+  const liveEnabled = latest.status === "ready" && getMarketSession(now).status === "open";
 
   const readyRunId = latest.status === "ready" ? latest.run.runId : null;
 
@@ -199,6 +201,7 @@ export default function App() {
                   filters={filters}
                   onClearFilters={clearFilters}
                   onOpenStock={openStock}
+                  live={liveEnabled}
                 />
               </div>
             )}

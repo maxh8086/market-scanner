@@ -1,4 +1,12 @@
-export type StateKind = "idle" | "loading" | "empty" | "error" | "market_closed" | "pre_open" | "stale";
+export type StateKind =
+  | "idle"
+  | "loading"
+  | "empty"
+  | "error"
+  | "market_closed"
+  | "pre_open"
+  | "stale"
+  | "reconnecting";
 
 export interface StateViewAction {
   label: string;
@@ -12,7 +20,12 @@ export interface StateViewProps {
   action?: StateViewAction;
 }
 
-const CAUTION_KINDS: ReadonlySet<StateKind> = new Set<StateKind>(["market_closed", "pre_open", "stale"]);
+const CAUTION_KINDS: ReadonlySet<StateKind> = new Set<StateKind>([
+  "market_closed",
+  "pre_open",
+  "stale",
+  "reconnecting",
+]);
 const SKELETON_ROWS = 3;
 
 /** Placeholder panel for loading, empty, error, no-selection and market-session states. */

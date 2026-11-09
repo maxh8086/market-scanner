@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Row } from "../api/results";
 import { ScreenerTable } from "./ScreenerTable";
@@ -197,5 +197,116 @@ describe("ScreenerTable", () => {
 
     expect(screen.getByText("No run selected.")).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  describe("live prices", () => {
+    type Listener = (event: { data: unknown }) => void;
+
+    class FakeEventSource {
+      static CLOSED = 2;
+      static instances: FakeEventSource[] = [];
+
+      readyState = 0;
+      onerror: (() => void) | null = null;
+      readonly url: string;
+      private listeners = new Map<string, Listener[]>();
+
+      constructor(url: string) {
+        this.url = url;
+        FakeEventSource.instances.push(this);
+      }
+
+      addEventListener(type: string, listener: Listener): void {
+        const existing = this.listeners.get(type) ?? [];
+        this.listeners.set(type, [...existing, listener]);
+      }
+
+      close(): void {
+        this.readyState = FakeEventSource.CLOSED;
+      }
+
+      emit(type: string, body: unknown): void {
+        for (const listener of this.listeners.get(type) ?? []) {
+          listener({ data: JSON.stringify(body) });
+        }
+      }
+    }
+
+    function latestSource(): FakeEventSource {
+      const source = FakeEventSource.instances[FakeEventSource.instances.length - 1];
+      if (!source) {
+        throw new Error("No EventSource was created.");
+      }
+      return source;
+    }
+
+    beforeEach(() => {
+      FakeEventSource.instances = [];
+      vi.stubGlobal("EventSource", FakeEventSource);
+    });
+
+    afterEach(() => {
+      FakeEventSource.instances = [];
+      vi.unstubAllGlobals();
+    });
+
+    it("does not open a live stream when the live prop is off", async () => {
+      render(<ScreenerTable runId={RUN_ID} />);
+      await screen.findByRole("button", { name: "RELIANCE" });
+
+      expect(FakeEventSource.instances).toHaveLength(0);
+      expect(screen.queryByText(/Live prices/)).not.toBeInTheDocument();
+    });
+
+    it("opens the live stream for the loaded rows and shows Live prices after a live status", async () => {
+      render(<ScreenerTable runId={RUN_ID} live />);
+      await screen.findByRole("button", { name: "RELIANCE" });
+
+      expect(FakeEventSource.instances).toHaveLength(1);
+      expect(latestSource().url.startsWith("/api/live/ticks?runId=")).toBe(true);
+
+      act(() => latestSource().emit("status", { status: "live" }));
+
+      expect(screen.getByText(/Live prices/)).toBeInTheDocument();
+      expect(screen.queryByText(/unavailable/)).not.toBeInTheDocument();
+    });
+
+    it("updates the LTP for a row when a tick arrives and flashes the changed price", async () => {
+      render(<ScreenerTable runId={RUN_ID} live />);
+      await screen.findByRole("button", { name: "RELIANCE" });
+      expect(screen.getByText("₹2,950.50")).toBeInTheDocument();
+
+      act(() =>
+        latestSource().emit("tick", { symbol: "RELIANCE", ltp: 2960.25, ltt: null, cp: null }),
+      );
+
+      const priceCell = await waitFor(() => {
+        const cell = screen.getByText("₹2,960.25");
+        expect(cell).toHaveAttribute("data-flash", "up");
+        return cell;
+      });
+      expect(priceCell.tagName).toBe("SPAN");
+      expect(screen.queryByText("₹2,950.50")).not.toBeInTheDocument();
+    });
+
+    it("shows the reconnecting state with the last saved prices message", async () => {
+      render(<ScreenerTable runId={RUN_ID} live />);
+      await screen.findByRole("button", { name: "RELIANCE" });
+
+      act(() => latestSource().emit("status", { status: "reconnecting" }));
+
+      const status = await screen.findByRole("status");
+      expect(status).toHaveAttribute("data-state", "reconnecting");
+      expect(status).toHaveTextContent("Live prices reconnecting. Showing the last saved prices.");
+    });
+
+    it("says Live prices unavailable when the feed is not configured", async () => {
+      render(<ScreenerTable runId={RUN_ID} live />);
+      await screen.findByRole("button", { name: "RELIANCE" });
+
+      act(() => latestSource().emit("status", { status: "unconfigured" }));
+
+      expect(await screen.findByText(/Live prices unavailable/)).toBeInTheDocument();
+    });
   });
 });
