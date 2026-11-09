@@ -123,7 +123,7 @@ Sources: the official Upstox pages named below, and one live call with the analy
 Effect on the open checks below:
 - The ROA basis check was run in item 8 and **fails for Reliance**. Total assets are available from Upstox's balance sheet endpoint, so the check no longer needs Screener's page. Quick Ratio is still unchecked (no current assets or liabilities in the response).
 - The live analytics-token call is **done** (item 2).
-- The daily-limit check is **partly done**: the official limit is recorded, but the daily cap is not measured.
+- The quota check is **done**: Upstox applies no daily limit. The limits are per second, per minute and per 30 minutes, per API and per user (confirmed by the project owner, 2026-11-10).
 
 ## Failure states
 
@@ -146,7 +146,7 @@ Each Upstox value stores an as-of date. Fundamentals change quarterly, so the co
 - **Screener fixture.** Save one Screener page for the same stock as the Upstox fixture.
 - **Upstox analytics token (checked 2026-11-10).** Documented as 1 year, read-only, Fundamentals supported, no static IP. Live fundamentals call done 2026-11-10 (see "Checks run" above). Expiry date still to be recorded (see secrets-and-roles.md, "Open items").
 - **No Upstox login credentials (decided 2026-11-10).** The app stores and uses no Upstox user ID, password, PIN or TOTP secret.
-- **Quota.** The official per-second, per-minute and per-30-minute limits are recorded (see "Checks run"). Measure the daily limit before the collector is scheduled, because the docs state none.
+- **Quota.** Closed 2026-11-10. Upstox applies no daily limit. The per-second, per-minute and per-30-minute limits (see "Checks run") are the only ones the collector must respect.
 - **ROE and ROCE basis.** Confirm whether Upstox ROE and ROCE use the same period and formula as Screener, using a second stock (Reliance) for comparison. Until then Upstox ROE and ROCE are not used as a cross-check.
 - **Quick Ratio name.** Confirm the exact name and meaning with Upstox support, because the official docs omit it.
 - **Rollback.** The migration grants SELECT, INSERT and UPDATE only, with no DELETE. Decide how bad Upstox rows are removed, and who runs that step.

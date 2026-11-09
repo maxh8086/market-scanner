@@ -134,7 +134,7 @@ What is stored: headline and summary only, as for RSS items in section 2. No art
 Checks still open:
 - Terms: not read. Read the Upstox developer terms and the News API terms before the build, and record the result here. Until then this source is blocked, as section 4.2 is for its licence check.
 - `positions` and `holdings` categories: returned 0 records with no error in the 2026-11-10 test. Not used for now. The design needs only `instrument_keys`.
-- Rate limits: assumed to fall under Upstox's "Other Standard APIs" class (50/s, 500/min, 2000 per 30 min per user), which the fundamentals doc uses. The News page was not checked for its own class. No daily limit is stated. Measure it before the first build.
+- Rate limits: assumed to fall under Upstox's "Other Standard APIs" class (50/s, 500/min, 2000 per 30 min per user), which the fundamentals doc uses. The News page was not checked for its own class. No daily limit applies (confirmed by the project owner, 2026-11-10). The per-second, per-minute and per-30-minute limits are the ones to respect.
 
 Proposed defaults, for the user to confirm:
 - Same age limit as RSS: items older than 1 week are dropped (section 7).
