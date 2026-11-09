@@ -134,8 +134,11 @@ services:
       - .env
     environment:
       <<: *scanner-db-env
+      APP_MASTER_KEY_FILE: /run/app-keys/app_master_key   # container path; the UI process holds the master key
     volumes:
       - ./data:/app/data
+      # Host folder that holds the master key (set APP_MASTER_KEY_DIR in .env). Read-only, never baked into the image.
+      - ${APP_MASTER_KEY_DIR:?set APP_MASTER_KEY_DIR in .env to the folder that holds app_master_key}:/run/app-keys:ro
     ports:
       - "127.0.0.1:8080:8080"            # loopback only: the UI has no login
     restart: always

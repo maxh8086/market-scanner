@@ -1,14 +1,29 @@
 """Market Scanner UI: FastAPI server-rendered shell with vanilla JS SPA."""
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+from scanner.secret_crypto import load_master_key
 from ui.app import api
 
-app = FastAPI(title="Market Scanner UI", docs_url=None, redoc_url=None, openapi_url=None)
+
+def check_master_key() -> None:
+    """Fail closed: the API holds the app-secret master key and must not start without it."""
+    load_master_key()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    check_master_key()
+    yield
+
+
+app = FastAPI(title="Market Scanner UI", docs_url=None, redoc_url=None, openapi_url=None,
+              lifespan=lifespan)
 
 # Mount static files
 static_dir = Path(__file__).parent / "static"

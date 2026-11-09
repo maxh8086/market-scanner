@@ -1,0 +1,40 @@
+{
+  "status": "success",
+  "data": [
+    {
+      "name": "P/E",
+      "company_value": "17.41",
+      "sector_value": "-9.5"
+    },
+    {
+      "name": "P/B",
+      "company_value": "7.58",
+      "sector_value": "7.64"
+    },
+    {
+      "name": "ROA",
+      "company_value": "27.18%",
+      "sector_value": "-15.91%"
+    },
+    {
+      "name": "ROE",
+      "company_value": "43.37%",
+      "sector_value": "5.73%"
+    },
+    {
+      "name": "ROCE",
+      "company_value": "53.06%",
+      "sector_value": "66.62%"
+    },
+    {
+      "name": "Quick Ratio",
+      "company_value": "2.23",
+      "sector_value": "11.28"
+    },
+    {
+      "name": "EV/EBITDA",
+      "company_value": "11.92",
+      "sector_value": "-199.08"
+    }
+  ]
+}
