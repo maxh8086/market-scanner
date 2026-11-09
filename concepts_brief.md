@@ -21,8 +21,8 @@ The concept and the on-disk brief (`docs/designs/ui-redesign-brief.md`, 2026-11-
 ### Blockers
 
 1. **No-verdict rule conflicts with approved decisions.** `docs/wireframe-review-2026-11-01.md` approved BUY, HOLD, EXIT and REJECT, plus a Trim, Add and Hold action set. `ui/wireframes/strategy.html` styles those labels. The brief gives holdings buy, add, hold, trim, sell or rebalance labels. The stance values CONSTRUCTIVE, MIXED and CAUTIOUS (`scanner/conclude.py`, `db/migrations/001_core.sql`) are part of the stance filter. Needed: a written decision on which rule governs, a banned-word list, and neutral wording.
-2. **Scope is unbounded.** The brief adds at least eight subsystems. Suggested v1: scanner table and stock page on existing endpoints, delayed or end-of-day data, five states, no chart, no websocket, no portfolio.
-3. **No live data path exists.** The app is REST only, with no WebSocket, SSE, polling or setInterval. Stored data is end-of-day from Upstox REST. The live, reconnecting and pre-open states cannot be built or tested on real data. Upstox supports live market data, but live data is not required for v1. WebSocket on Fastify is therefore deferred until live tickers are scoped. Broker licence terms for sharing data with others are still unchecked.
+2. **Scope is unbounded.** The brief adds at least eight subsystems. Suggested v1: scanner table and stock page on existing endpoints, delayed or end-of-day data, five states, WebSocket live tickers on Fastify, no chart, no portfolio.
+3. **No live data path exists.** The app is REST only, with no WebSocket, SSE, polling or setInterval. Stored data is end-of-day from Upstox REST. The live, reconnecting and pre-open states cannot be built or tested on real data. Upstox supports live market data, but live data is not required for v1. WebSocket live tickers on Fastify are in v1 scope by owner decision. Broker licence terms for sharing data with others are still unchecked.
 4. **Backend and stack:** resolved by the owner. Backend is Node.js + TypeScript + Fastify, replacing FastAPI. Frontend is Vite + React + TypeScript, built to static files and served by Fastify. Fastify handles WebSocket connections for live stock tickers. Tailwind/shadcn/ui: not yet confirmed by owner.
 5. **Chart library:** resolved by the owner. TradingView Lightweight Charts v5 only. KLineChart is rejected and must not appear in new code or designs. Chart.js is the alternative only if Lightweight Charts cannot meet a need.
 6. **Baseline UI is ambiguous.** There is a root `ui/app/` (FastAPI, port 8080), a nested `app/` git repo, and a third copy at `ui/wireframes/strategy.html`. A OneDrive path was named but not checked. No screenshots exist.
@@ -61,8 +61,8 @@ The concept and the on-disk brief (`docs/designs/ui-redesign-brief.md`, 2026-11-
 
 ## Goals vs. Non-Goals
 
-* **In-Scope Goals (proposed v1):** Scanner table and stock page on existing endpoints. Delayed or end-of-day data. Five states. No chart, no websocket, no portfolio.
-* **Out-of-Scope Non-Goals:** Portfolio, broker feeds, Telegram alerts, policy RSS, concall summaries, Home feed, websocket. Pending your decision.
+* **In-Scope Goals (proposed v1):** Scanner table and stock page on existing endpoints. Delayed or end-of-day data. Five states. WebSocket live tickers on Fastify. No chart, no portfolio.
+* **Out-of-Scope Non-Goals:** Portfolio, broker feeds, Telegram alerts, policy RSS, concall summaries, Home feed. Pending your decision.
 
 ## Key Decisions & Staging for Next Steps
 
