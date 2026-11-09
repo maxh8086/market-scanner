@@ -29,6 +29,14 @@ import {
   buildListPresetsQuery,
   validatePresetInput,
 } from "./presets.js";
+import {
+  buildIsinLookupQuery,
+  createWsSocket,
+  formatSseEvent,
+  nseEquityKey,
+  parseLiveSymbols,
+} from "./live/liveRoute.js";
+import { createLiveFeed, type FeedListeners, type LiveFeed } from "./live/upstoxFeed.js";
 
 export interface QueryResult {
   rows: Array<Record<string, unknown>>;
@@ -36,10 +44,37 @@ export interface QueryResult {
 
 export type QueryFn = (sql: string, values: unknown[]) => Promise<QueryResult>;
 
+export type CreateFeedFn = (options: {
+  accessToken: string | undefined;
+  instrumentKeys: string[];
+  listeners: FeedListeners;
+}) => LiveFeed;
+
+export interface LiveDeps {
+  /** Upstox access token. When absent the live route streams nothing and reports "unconfigured". */
+  accessToken?: string;
+  /** Feed factory. Tests inject a fake; production uses the Upstox WebSocket client. */
+  createFeed?: CreateFeedFn;
+}
+
 export interface AppDeps {
   query: QueryFn;
   logger?: boolean;
+  live?: LiveDeps;
 }
+
+const defaultCreateFeed: CreateFeedFn = (options) =>
+  createLiveFeed({
+    ...options,
+    deps: {
+      fetch: (url, init) => fetch(url, init),
+      createSocket: createWsSocket,
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    },
+  });
+
+const HEARTBEAT_MS = 15_000;
 
 type ResultsQueryString = Omit<ResultsParams, "runId">;
 
@@ -208,6 +243,79 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         return reply.code(404).send({ error: "Preset not found" });
       }
       return reply.code(204).send();
+    },
+  );
+
+  // Server-sent live last-traded prices for a bounded symbol list in one run. Symbols map to Upstox
+  // instrument keys through stock_snapshots.isin. Events: `status` (feed state), `tick` (one price).
+  // The browser never sees the Upstox token or talks to Upstox directly.
+  app.get<{ Querystring: { runId?: unknown; symbols?: unknown } }>(
+    "/api/live/ticks",
+    async (request, reply) => {
+      const parsed = parseLiveSymbols(request.query.symbols);
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: parsed.error });
+      }
+      const runId = typeof request.query.runId === "string" ? request.query.runId : "";
+      const lookup = buildRunLookupQuery(runId);
+      if (!lookup) {
+        return reply.code(404).send({ error: "Run not found" });
+      }
+      const found = await deps.query(lookup.sql, lookup.values);
+      const resolvedRunId = found.rows[0]?.run_id;
+      if (resolvedRunId === undefined || resolvedRunId === null) {
+        return reply.code(404).send({ error: "Run not found" });
+      }
+
+      const isins = buildIsinLookupQuery(String(resolvedRunId), parsed.symbols);
+      const isinRows = await deps.query(isins.sql, isins.values);
+      const symbolByKey = new Map<string, string>();
+      for (const row of isinRows.rows) {
+        if (row.symbol && row.isin) {
+          symbolByKey.set(nseEquityKey(String(row.isin)), String(row.symbol));
+        }
+      }
+      if (symbolByKey.size === 0) {
+        return reply.code(404).send({ error: "No instruments found for symbols" });
+      }
+
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+
+      let closed = false;
+      const write = (chunk: string) => {
+        if (!closed) reply.raw.write(chunk);
+      };
+      const createFeed = deps.live?.createFeed ?? defaultCreateFeed;
+      const feed = createFeed({
+        accessToken: deps.live?.accessToken,
+        instrumentKeys: [...symbolByKey.keys()],
+        listeners: {
+          onTick: (tick) => {
+            const symbol = symbolByKey.get(tick.instrumentKey);
+            if (symbol) {
+              write(formatSseEvent("tick", { symbol, ltp: tick.ltp, ltt: tick.ltt, cp: tick.cp }));
+            }
+          },
+          onStatus: (status) => write(formatSseEvent("status", { status })),
+        },
+      });
+
+      const heartbeat = setInterval(() => write(": ping\n\n"), HEARTBEAT_MS);
+      // ServerResponse 'close' fires when the browser disconnects; request 'close' can fire early for GET.
+      reply.raw.on("close", () => {
+        closed = true;
+        clearInterval(heartbeat);
+        feed.stop();
+      });
+
+      write(formatSseEvent("status", { status: feed.status() }));
+      feed.start();
+      return reply;
     },
   );
 
