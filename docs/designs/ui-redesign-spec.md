@@ -108,7 +108,9 @@ These rules apply everywhere a number is shown.
 
 | Component | Source | Notes |
 |---|---|---|
-| `AppShell` | custom | Top bar with search (Ctrl/Cmd+K), tab strip, data-age stamp |
+| `AppShell` | custom | Top bar with search (Ctrl/Cmd+K), tab strip, data-age stamp. Holds the two-column layout below |
+| `ResizablePanels` | custom | Left panel and main area, split by a drag handle. Slice 1 (decision 6) |
+| `WatchlistPanel` | custom | Left panel listing watchlist symbols. Slice 1 (decision 6). Empty state when no symbols |
 | `TabStrip` | custom | Open stock tabs. Ctrl-click or middle-click opens a stock in a new browser tab at its own URL |
 | `ScreenerTable` | TanStack Table | Sortable, filterable, row virtualization, sticky header and first column, column hide and resize |
 | `ColumnFilterPopover` | shadcn/ui Popover (if confirmed) | Replaces the current filter popover |
@@ -193,6 +195,12 @@ Every data view uses `StateView` and handles these states:
 3. **Authentication for write endpoints. Answered 2026-11-09: local-only bind, no token.** The audit found that config and secret writes are open on all interfaces (audit item 1). The bind to 127.0.0.1 stops other machines on the network. It does not stop a web page open in the same browser from calling localhost. Accepted risk, recorded here so it is a known trade-off.
 4. **Border and neutral contrast. Closed 2026-11-09.** `--neutral` passes. `--border` failed 3:1, so `--border-ui` was added for control outlines (section 2).
 5. **Skills. Answered 2026-11-09: install shadcn/ui, Vercel agent-skills, and financial-ui-patterns and styles.** Install is pending. The brief says to remove them after implementation. Their rules are also written into this spec (sections 2 to 4).
+6. **Watchlist and resizable panels. Answered 2026-11-09: slice 1.** Layout rules for slice 1:
+   - At 768px and wider: a left panel (default 240px, min 200px, max 480px) and the main area. A vertical separator with `role="separator"` sits between them. Arrow keys move it 16px. Pointer drag works too. The width is saved in `localStorage` under `ms-watchlist-width`, with try/catch. Storage can fail, and the layout must still work without it.
+   - Below 768px: the watchlist stacks above the main area, full width, with no resize handle.
+   - Watchlist content: the panel takes a list of symbols as a prop. Slice 1 passes an empty list, so it shows "No symbols on the watchlist yet." No fake symbols. Adding and removing symbols belongs to the scan table slice, which brings the data source.
+   - Persistence of the watchlist itself (localStorage or server) is an open question for that later slice.
+7. **TypeScript, Vite and Vitest major versions.** Open. The build is on TypeScript 7.0.2, Vite 8.3.6 and Vitest 5.1.0. Waiting for your choice (see the chat message of 2026-11-09).
 
 ## 10. WCAG AA checklist (to complete before approval)
 

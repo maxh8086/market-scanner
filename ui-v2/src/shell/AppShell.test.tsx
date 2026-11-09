@@ -55,4 +55,10 @@ describe("AppShell", () => {
 
     expect(screen.getByText("Data as of 09 Nov 2026, 14:35 IST")).toBeInTheDocument();
   });
+
+  it("shows the empty watchlist text by default", () => {
+    renderShell();
+
+    expect(screen.getByText("No symbols on the watchlist yet.")).toBeInTheDocument();
+  });
 });
