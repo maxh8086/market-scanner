@@ -1,8 +1,10 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import {
   buildCountQuery,
+  buildLatestRunQuery,
   buildResultsQuery,
   buildRunLookupQuery,
+  formatRunDate,
   isIsoDate,
   normalizePaging,
   type ResultsParams,
@@ -45,6 +47,18 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const app = Fastify({ logger: deps.logger ?? false });
 
   app.get("/api/health", async () => ({ ok: true }));
+
+  // Registered before any /api/runs/:runId route so "latest" is not read as an id.
+  app.get("/api/runs/latest", async (_request, reply) => {
+    const latest = buildLatestRunQuery();
+    const found = await deps.query(latest.sql, latest.values);
+    const row = found.rows[0];
+    if (!row) {
+      return reply.code(404).send({ error: "No current run" });
+    }
+    const runDate = formatRunDate(row.run_date);
+    return { runId: String(row.run_id), runDate };
+  });
 
   app.get<{ Params: { runId: string }; Querystring: ResultsQueryString }>(
     "/api/runs/:runId/results",

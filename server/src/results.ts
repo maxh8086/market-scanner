@@ -160,3 +160,33 @@ export function buildRunLookupQuery(runId: string): Built | null {
   }
   return null;
 }
+
+/**
+ * The current run the home page shows (same SQL as ui/app/api.py).
+ * That query already ends in LIMIT 1, so no extra limit is added.
+ */
+export function buildLatestRunQuery(): Built {
+  return {
+    sql: "SELECT run_id, run_date FROM runs WHERE is_current = true ORDER BY run_date DESC LIMIT 1",
+    values: [],
+  };
+}
+
+/**
+ * Formats a run_date value as YYYY-MM-DD. pg returns DATE columns as a Date
+ * at local midnight, so local getters are used; strings are trimmed to 10 chars.
+ * Returns null when the value cannot be read as a date.
+ */
+export function formatRunDate(value: unknown): string | null {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, "0");
+    const d = String(value.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10);
+  }
+  return null;
+}
