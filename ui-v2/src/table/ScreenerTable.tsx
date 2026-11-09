@@ -11,13 +11,19 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { fetchResults, ResultsError, type Row, type SortOrder } from "../api/results";
 import { formatInr, formatPercentWithArrow } from "../lib/format";
+import { hasActiveFilters, type FilterState } from "../filters/filterState";
 import { StateView } from "../shell/StateView";
 
 export interface ScreenerTableProps {
   runId: string;
   onOpenStock?: (symbol: string) => void;
+  /** Filters sent with every results request. Pass a stable object; a new object refetches. */
+  filters?: FilterState;
+  /** Clears the filters. Offered from the no-results state. */
+  onClearFilters?: () => void;
 }
 
+const NO_FILTERS: FilterState = {};
 const PAGE_SIZE = 50;
 const ROW_HEIGHT_ESTIMATE = 40;
 
@@ -184,7 +190,7 @@ const INITIAL_VIEW: ViewState = {
   moreError: null,
 };
 
-export function ScreenerTable({ runId, onOpenStock }: ScreenerTableProps) {
+export function ScreenerTable({ runId, onOpenStock, filters = NO_FILTERS, onClearFilters }: ScreenerTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>({});
   const [view, setView] = useState<ViewState>(INITIAL_VIEW);
@@ -206,7 +212,7 @@ export function ScreenerTable({ runId, onOpenStock }: ScreenerTableProps) {
 
     fetchResults(
       runId,
-      { page: 1, perPage: PAGE_SIZE, sort: sortId, order: sortId ? sortOrder : undefined },
+      { ...filters, page: 1, perPage: PAGE_SIZE, sort: sortId, order: sortId ? sortOrder : undefined },
       { signal: controller.signal },
     )
       .then((page) => {
@@ -232,7 +238,7 @@ export function ScreenerTable({ runId, onOpenStock }: ScreenerTableProps) {
       });
 
     return () => controller.abort();
-  }, [runId, sortId, sortOrder]);
+  }, [runId, sortId, sortOrder, filters]);
 
   const columns = useMemo(() => buildColumns(onOpenStock), [onOpenStock]);
 
@@ -266,6 +272,22 @@ export function ScreenerTable({ runId, onOpenStock }: ScreenerTableProps) {
     if (view.status === "error") {
       return <StateView kind="error" message={`Could not load results. ${view.error ?? ""}`.trim()} />;
     }
+    if (hasActiveFilters(filters)) {
+      return (
+        <div className="space-y-3">
+          <StateView kind="empty" message="No results match these filters." />
+          {onClearFilters ? (
+            <button
+              type="button"
+              onClick={onClearFilters}
+              className="rounded-(--radius-control) border border-border-ui px-3 py-1 text-sm text-text"
+            >
+              Clear filters
+            </button>
+          ) : null}
+        </div>
+      );
+    }
     return <StateView kind="empty" message="No results for this run." />;
   }
 
@@ -274,6 +296,7 @@ export function ScreenerTable({ runId, onOpenStock }: ScreenerTableProps) {
     setView((current) => ({ ...current, loadingMore: true, moreError: null }));
     try {
       const next = await fetchResults(runId, {
+        ...filters,
         page: view.page + 1,
         perPage: PAGE_SIZE,
         sort: sortId,

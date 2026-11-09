@@ -1,8 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
 const RUN = { runId: "run-42", runDate: "2026-11-09" };
+
+const FILTER_OPTIONS = { bucket: ["A", "B"], stance: ["Buy"] };
 
 const ROW = {
   symbol: "RELIANCE",
@@ -26,8 +28,8 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
-/** Routes the two API calls the Home screen makes. */
-function routeFetch(latest: Response | Error) {
+/** Routes the API calls the Home screen makes. */
+function routeFetch(latest: Response | Error, filterOptions: Response | Error = jsonResponse(FILTER_OPTIONS)) {
   return vi.fn(async (url: string) => {
     if (url === "/api/runs/latest") {
       if (latest instanceof Error) {
@@ -35,8 +37,17 @@ function routeFetch(latest: Response | Error) {
       }
       return latest;
     }
+    if (url === "/api/runs/run-42/filter-options") {
+      if (filterOptions instanceof Error) {
+        throw filterOptions;
+      }
+      return filterOptions;
+    }
     if (url.startsWith("/api/runs/run-42/results")) {
       return jsonResponse({ results: [ROW], total: 1, page: 1, perPage: 50 });
+    }
+    if (url === "/api/presets") {
+      return jsonResponse({ presets: [] });
     }
     throw new Error(`Unexpected request: ${url}`);
   });
@@ -87,6 +98,34 @@ describe("App Home screen", () => {
         expect.stringMatching(/^\/api\/runs\/run-42\/results/),
       ]),
     );
+  });
+
+  it("offers the bucket values from the filter options endpoint", async () => {
+    const fetchMock = routeFetch(jsonResponse(RUN));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const bucket = await screen.findByRole("combobox", { name: "Bucket" });
+    await waitFor(() => expect(within(bucket).getByRole("option", { name: "A" })).toBeInTheDocument());
+    expect(within(bucket).getByRole("option", { name: "B" })).toBeInTheDocument();
+    expect(within(bucket).getByRole("option", { name: "All" })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map((call) => call[0])).toContain("/api/runs/run-42/filter-options");
+  });
+
+  it("still renders the table with only All in the dropdowns when filter options fail", async () => {
+    const fetchMock = routeFetch(jsonResponse(RUN), jsonResponse({ error: "boom" }, 500));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "RELIANCE" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.map((call) => call[0])).toContain("/api/runs/run-42/filter-options"),
+    );
+    const bucket = screen.getByRole("combobox", { name: "Bucket" });
+    await waitFor(() => expect(within(bucket).getAllByRole("option")).toHaveLength(1));
+    expect(within(bucket).getByRole("option", { name: "All" })).toBeInTheDocument();
   });
 
   it("shows the empty state when there is no current run", async () => {
