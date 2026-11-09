@@ -20,8 +20,25 @@ const SCHEMA = {
         cp: { type: "double", id: 4 },
       },
     },
+    OHLC: {
+      fields: {
+        interval: { type: "string", id: 1 },
+        open: { type: "double", id: 2 },
+        high: { type: "double", id: 3 },
+        low: { type: "double", id: 4 },
+        close: { type: "double", id: 5 },
+        vol: { type: "int64", id: 6 },
+        ts: { type: "int64", id: 7 },
+      },
+    },
+    MarketOHLC: {
+      fields: { ohlc: { rule: "repeated", type: "OHLC", id: 1 } },
+    },
     MarketFullFeed: {
-      fields: { ltpc: { type: "LTPC", id: 1 } },
+      fields: {
+        ltpc: { type: "LTPC", id: 1 },
+        marketOHLC: { type: "MarketOHLC", id: 4 },
+      },
     },
     FullFeed: {
       fields: { marketFF: { type: "MarketFullFeed", id: 1 } },
@@ -55,6 +72,10 @@ export interface DecodedTick {
   ltt: number | null;
   /** Previous close, when the frame carries it. */
   cp: number | null;
+  /** Today's open, high and low. Only full-mode frames carry them (the 1-day OHLC candle). */
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
 }
 
 interface LtpcShape {
@@ -63,10 +84,28 @@ interface LtpcShape {
   cp?: number;
 }
 
+interface OhlcShape {
+  interval?: string;
+  open?: number;
+  high?: number;
+  low?: number;
+}
+
 interface FeedShape {
   ltpc?: LtpcShape;
-  fullFeed?: { marketFF?: { ltpc?: LtpcShape } };
+  fullFeed?: { marketFF?: { ltpc?: LtpcShape; marketOHLC?: { ohlc?: OhlcShape[] } } };
   firstLevelWithGreeks?: { ltpc?: LtpcShape };
+}
+
+/** The day candle in a full-mode frame, or nulls when the frame has none. */
+function dayCandle(feed: FeedShape): { open: number | null; high: number | null; low: number | null } {
+  const candle = feed.fullFeed?.marketFF?.marketOHLC?.ohlc?.find((item) => item.interval === "1d");
+  const positive = (value: number | undefined) => (typeof value === "number" && value > 0 ? value : null);
+  return {
+    open: positive(candle?.open),
+    high: positive(candle?.high),
+    low: positive(candle?.low),
+  };
 }
 
 interface FeedResponseShape {
@@ -89,20 +128,32 @@ export function decodeFeedFrame(bytes: Uint8Array): DecodedTick[] {
       // Protobuf fills absent numeric fields with 0, so 0 means "not in the frame" for these two.
       ltt: typeof ltpc.ltt === "number" && ltpc.ltt > 0 ? ltpc.ltt : null,
       cp: typeof ltpc.cp === "number" && ltpc.cp > 0 ? ltpc.cp : null,
+      ...dayCandle(feed),
     });
   }
   return ticks;
 }
 
 /** Test helper: encode a frame in the same shape, so tests can round-trip without a live feed. */
-export function encodeFeedFrame(ticks: Array<{ instrumentKey: string; ltp: number; ltt?: number; cp?: number }>): Uint8Array {
+export function encodeFeedFrame(
+  ticks: Array<{ instrumentKey: string; ltp: number; ltt?: number; cp?: number; open?: number; high?: number; low?: number }>,
+): Uint8Array {
   const feeds: Record<string, unknown> = {};
   for (const tick of ticks) {
-    feeds[tick.instrumentKey] = {
-      firstLevelWithGreeks: {
-        ltpc: { ltp: tick.ltp, ltt: tick.ltt ?? 0, cp: tick.cp ?? 0 },
-      },
-    };
+    const ltpc = { ltp: tick.ltp, ltt: tick.ltt ?? 0, cp: tick.cp ?? 0 };
+    feeds[tick.instrumentKey] =
+      tick.open === undefined
+        ? { firstLevelWithGreeks: { ltpc } }
+        : {
+            fullFeed: {
+              marketFF: {
+                ltpc,
+                marketOHLC: {
+                  ohlc: [{ interval: "1d", open: tick.open, high: tick.high ?? 0, low: tick.low ?? 0 }],
+                },
+              },
+            },
+          };
   }
   const message = FeedResponse.fromObject({ feeds, currentTs: Date.now() });
   return FeedResponse.encode(message).finish();

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchFilterOptions, type FilterOptions } from "./api/filterOptions";
 import { fetchLatestRun, LatestRunError, type LatestRun } from "./api/latestRun";
-import { FilterBar } from "./filters/FilterBar";
 import { type FilterState } from "./filters/filterState";
 import { PresetsMenu } from "./filters/PresetsMenu";
 import { getMarketSession, runAgeDays } from "./lib/marketSession";
@@ -189,16 +188,13 @@ export default function App() {
               <div className="flex flex-col gap-3">
                 <p className="text-sm text-text-muted">Run date: {latest.run.runDate}</p>
                 {banner ? <StateView kind={banner.kind} message={banner.message} /> : null}
-                <FilterBar
-                  value={filters}
-                  onChange={setFilters}
-                  bucketOptions={bucketOptions}
-                  stanceOptions={stanceOptions}
-                />
                 <PresetsMenu filters={filters} onApply={setFilters} />
                 <ScreenerTable
                   runId={latest.run.runId}
                   filters={filters}
+                  onFiltersChange={setFilters}
+                  bucketOptions={bucketOptions}
+                  stanceOptions={stanceOptions}
                   onClearFilters={clearFilters}
                   onOpenStock={openStock}
                   live={liveEnabled}

@@ -19,9 +19,17 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { fetchResults, ResultsError, type Row, type SortOrder } from "../api/results";
 import { formatInr, formatPercentWithArrow } from "../lib/format";
-import { hasActiveFilters, type FilterState } from "../filters/filterState";
+import {
+  hasActiveFilters,
+  readFilterValues,
+  writeFilterValues,
+  type FilterState,
+} from "../filters/filterState";
 import { LIVE_SYMBOL_LIMIT, useLiveTicks, type LiveTick } from "../live/useLiveTicks";
 import { StateView } from "../shell/StateView";
+import { ColumnFilter, type ColumnFilterKind } from "./ColumnFilter";
+import { ColumnChooser } from "./ColumnChooser";
+import { ColumnResizeHandle, useColumnWidths } from "./columnWidths";
 
 export interface ScreenerTableProps {
   runId: string;
@@ -33,6 +41,44 @@ export interface ScreenerTableProps {
   onClearFilters?: () => void;
   /** Streams live last-traded prices into the LTP column. Off outside market hours. */
   live?: boolean;
+  /**
+   * Called when a header filter or the Bucket select changes. Omit it to hide the filter controls.
+   * It receives the full next filter state.
+   */
+  onFiltersChange?: (next: FilterState) => void;
+  /** Bucket values offered by the server. */
+  bucketOptions?: readonly string[];
+  /** Stance values offered by the server. */
+  stanceOptions?: readonly string[];
+}
+
+const NO_OPTIONS: readonly string[] = [];
+
+interface ColumnFilterSpec {
+  label: string;
+  kind: ColumnFilterKind;
+  align: "left" | "right";
+  keys: readonly (keyof FilterState)[];
+  numeric: boolean;
+  options?: readonly string[];
+}
+
+/** Header filters. Columns without an entry have no funnel. Company is covered by the Symbol filter. */
+function columnFilterSpecs(stanceOptions: readonly string[]): Partial<Record<ColumnId, ColumnFilterSpec>> {
+  return {
+    symbol: { label: "Symbol or company", kind: "text", align: "left", keys: ["search"], numeric: false },
+    industry: { label: "Sector", kind: "text", align: "left", keys: ["industry"], numeric: false },
+    ltp: { label: "LTP", kind: "range", align: "right", keys: ["ltpMin", "ltpMax"], numeric: true },
+    distance_pct: {
+      label: "From ATH (%)",
+      kind: "range",
+      align: "right",
+      keys: ["distanceMin", "distanceMax"],
+      numeric: true,
+    },
+    ath_date: { label: "ATH date", kind: "dates", align: "right", keys: ["athFrom", "athTo"], numeric: false },
+    stance: { label: "Stance", kind: "select", align: "left", keys: ["stance"], numeric: false, options: stanceOptions },
+  };
 }
 
 const NO_FILTERS: FilterState = {};
@@ -51,6 +97,8 @@ const COLUMN_IDS = [
   "symbol",
   "company",
   "ltp",
+  "day_chg_abs",
+  "day_chg",
   "one_year_return_pct",
   "distance_pct",
   "ath_date",
@@ -68,16 +116,21 @@ const COLUMN_LABELS: Record<ColumnId, string> = {
   ath_date: "ATH date",
   industry: "Sector",
   stance: "Stance",
+  day_chg: "Chg %",
+  day_chg_abs: "Chg",
 };
 
 const NUMERIC_COLUMNS: ReadonlySet<ColumnId> = new Set<ColumnId>([
   "ltp",
   "one_year_return_pct",
   "distance_pct",
+  "day_chg",
+  "day_chg_abs",
 ]);
 
+/** Columns the API can sort on. "industry" is not in the sort whitelist; the day change columns are computed client-side. */
 const SERVER_SORTABLE: ReadonlySet<ColumnId> = new Set<ColumnId>(
-  COLUMN_IDS.filter((id) => id !== "industry"),
+  COLUMN_IDS.filter((id) => id !== "industry" && id !== "day_chg" && id !== "day_chg_abs"),
 );
 
 const features = tableFeatures({ rowSortingFeature, columnVisibilityFeature });
@@ -105,6 +158,27 @@ interface OpenStockCellProps {
   text: string;
   onOpen?: () => void;
   className: string;
+}
+
+/**
+ * Chevron on a sortable header. It is always shown, dimmed when the column is not sorted. An
+ * ascending sort turns it up and a descending sort points it down.
+ */
+function SortChevron({ direction }: { direction: "asc" | "desc" | null }) {
+  const turn = direction === "asc" ? "rotate-180" : "";
+  const tone = direction ? "text-accent" : "text-text-muted opacity-60";
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="12"
+      height="12"
+      aria-hidden="true"
+      focusable="false"
+      className={`shrink-0 transition-transform ${turn} ${tone}`}
+    >
+      <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 /** A cell that opens the stock tab on click, Enter or Space. */
@@ -162,6 +236,39 @@ function LtpCell({ symbol, fallback }: { symbol: string; fallback: number | null
 }
 
 /**
+ * Day change from the live feed: last traded price against the previous close the feed sends
+ * with each tick. Shows a dash when the table is not streaming or the tick has no previous close.
+ */
+function DayChgCell({ symbol, mode }: { symbol: string; mode: "points" | "percent" }) {
+  const ticks = useContext(LiveTicksContext);
+  const tick = ticks.get(symbol);
+  if (!tick || tick.cp === null || tick.cp <= 0) {
+    return <span className="tabular-nums text-text-muted">{EMPTY_TEXT}</span>;
+  }
+  const points = tick.ltp - tick.cp;
+  if (mode === "percent") {
+    const pct = (points / tick.cp) * 100;
+    return <span className={`tabular-nums ${trendClass(pct)}`}>{formatPercentWithArrow(pct)}</span>;
+  }
+  if (points === 0) {
+    return <span className="tabular-nums text-text-muted">0.00</span>;
+  }
+  const arrow = points > 0 ? "▲ " : "▼ ";
+  return (
+    <span className={`tabular-nums ${trendClass(points)}`}>
+      {arrow}
+      {SIGNED_INR.format(points)}
+    </span>
+  );
+}
+
+const SIGNED_INR = new Intl.NumberFormat("en-IN", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  signDisplay: "always",
+});
+
+/**
  * Column definitions. FlexRender renders each cell function as a component, so a new column
  * array remounts every cell. Keep this independent of the live ticks (see LiveTicksContext).
  */
@@ -204,6 +311,18 @@ function buildColumns(
       header: COLUMN_LABELS.ltp,
       sortDescFirst: false,
       cell: (info) => <LtpCell symbol={info.row.original.symbol} fallback={info.getValue()} />,
+    }),
+    helper.accessor("symbol", {
+      id: "day_chg_abs",
+      header: COLUMN_LABELS.day_chg_abs,
+      enableSorting: false,
+      cell: (info) => <DayChgCell symbol={info.row.original.symbol} mode="points" />,
+    }),
+    helper.accessor("symbol", {
+      id: "day_chg",
+      header: COLUMN_LABELS.day_chg,
+      enableSorting: false,
+      cell: (info) => <DayChgCell symbol={info.row.original.symbol} mode="percent" />,
     }),
     helper.accessor("one_year_return_pct", {
       id: "one_year_return_pct",
@@ -272,7 +391,13 @@ export function ScreenerTable({
   filters = NO_FILTERS,
   onClearFilters,
   live = false,
+  onFiltersChange,
+  bucketOptions = NO_OPTIONS,
+  stanceOptions = NO_OPTIONS,
 }: ScreenerTableProps) {
+  const filterSpecs = useMemo(() => columnFilterSpecs(stanceOptions), [stanceOptions]);
+  const columnWidths = useColumnWidths();
+  const hasManualWidths = Object.keys(columnWidths.widths).length > 0;
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>({});
   const [view, setView] = useState<ViewState>(INITIAL_VIEW);
@@ -421,29 +546,43 @@ export function ScreenerTable({
 
   return (
     <section aria-label="Scan results" className="space-y-3">
-      <fieldset className="text-sm text-text">
-        <legend className="mb-2 text-text-muted">Show columns</legend>
-        <div className="flex flex-wrap gap-x-4 gap-y-2">
-          {table.getAllLeafColumns().map((column) => (
-            <label key={column.id} className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={column.getIsVisible()}
-                onChange={column.getToggleVisibilityHandler()}
-                className="size-4 accent-accent"
-              />
-              {COLUMN_LABELS[column.id as ColumnId]}
-            </label>
-          ))}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <p className="text-sm text-text-muted" aria-live="polite">
+          Showing {view.rows.length} of {view.total}
+          {view.status === "loading" ? " · Updating…" : ""}
+          {live && liveState.status === "live" ? " · Live prices" : ""}
+          {live && liveState.status === "unavailable" ? " · Live prices unavailable" : ""}
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          {onFiltersChange ? (
+          <label className="inline-flex items-center gap-2 text-sm text-text-muted">
+            Bucket
+            <select
+              value={filters.bucket ?? ""}
+              onChange={(event) =>
+                onFiltersChange(writeFilterValues(filters, ["bucket"], [event.target.value], false))
+              }
+              className="rounded-(--radius-control) border border-border-ui bg-surface px-2 py-1 text-sm text-text"
+            >
+              <option value="">All</option>
+              {bucketOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          ) : null}
+          <ColumnChooser
+            columns={table.getAllLeafColumns().map((column) => ({
+              id: column.id,
+              label: COLUMN_LABELS[column.id as ColumnId],
+              visible: column.getIsVisible(),
+              onToggle: column.getToggleVisibilityHandler(),
+            }))}
+          />
         </div>
-      </fieldset>
-
-      <p className="text-sm text-text-muted" aria-live="polite">
-        Showing {view.rows.length} of {view.total}
-        {view.status === "loading" ? " · Updating…" : ""}
-        {live && liveState.status === "live" ? " · Live prices" : ""}
-        {live && liveState.status === "unavailable" ? " · Live prices unavailable" : ""}
-      </p>
+      </div>
       {live && liveState.status === "reconnecting" ? (
         <StateView kind="reconnecting" message="Live prices reconnecting. Showing the last saved prices." />
       ) : null}
@@ -458,7 +597,9 @@ export function ScreenerTable({
           ref={scrollRef}
           className="max-h-[60vh] overflow-auto rounded-md border border-border bg-surface"
         >
-          <table className="w-full border-collapse text-sm text-text">
+          <table
+            className={`w-full border-collapse text-sm text-text whitespace-nowrap ${hasManualWidths ? "table-fixed" : "table-auto"}`}
+          >
             <thead>
               {table.getHeaderGroups().map((group) => (
                 <tr key={group.id}>
@@ -466,15 +607,18 @@ export function ScreenerTable({
                     const id = header.column.id as ColumnId;
                     const sorted = header.column.getIsSorted();
                     const ariaSort = sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none";
-                    const indicator = sorted === "asc" ? "↑" : sorted === "desc" ? "↓" : "";
                     const align = NUMERIC_COLUMNS.has(id) ? "text-right" : "text-left";
                     const stick = id === "symbol" ? "left-0 z-30" : "z-20";
+                    const spec = onFiltersChange ? filterSpecs[id] : undefined;
+                    const currentValues = spec ? readFilterValues(filters, spec.keys) : [];
                     return (
                       <th
                         key={header.id}
+                        data-col={id}
                         scope="col"
                         aria-sort={header.column.getCanSort() ? ariaSort : undefined}
-                        className={`sticky top-0 whitespace-nowrap bg-surface-2 px-3 py-2 font-semibold ${align} ${stick}`}
+                        style={columnWidths.widths[id] !== undefined ? { width: columnWidths.widths[id] } : undefined}
+                        className={`sticky top-0 relative whitespace-nowrap bg-surface-2 px-3 py-2 font-semibold ${align} ${stick}`}
                       >
                         {header.column.getCanSort() && SERVER_SORTABLE.has(id) ? (
                           <button
@@ -482,14 +626,32 @@ export function ScreenerTable({
                             onClick={header.column.getToggleSortingHandler()}
                             className="inline-flex items-center gap-1 font-semibold text-text"
                           >
-                            {COLUMN_LABELS[id]}
-                            <span aria-hidden="true" className="text-text-muted">
-                              {indicator}
-                            </span>
+                            <span className="min-w-0 truncate">{COLUMN_LABELS[id]}</span>
+                            <SortChevron
+                              direction={sorted === "asc" || sorted === "desc" ? sorted : null}
+                            />
                           </button>
                         ) : (
-                          COLUMN_LABELS[id]
+                          <span className="block min-w-0 truncate">{COLUMN_LABELS[id]}</span>
                         )}
+                        {spec && onFiltersChange ? (
+                          <ColumnFilter
+                            label={spec.label}
+                            kind={spec.kind}
+                            align={spec.align}
+                            options={spec.options}
+                            value={[currentValues[0] ?? "", currentValues[1] ?? ""]}
+                            active={currentValues.some((value) => value !== "")}
+                            onApply={(next) =>
+                              onFiltersChange(writeFilterValues(filters, spec.keys, next, spec.numeric))
+                            }
+                          />
+                        ) : null}
+                        <ColumnResizeHandle
+                          label={COLUMN_LABELS[id]}
+                          onStart={(event) => columnWidths.startResize(event, id)}
+                          onReset={columnWidths.reset}
+                        />
                       </th>
                     );
                   })}
@@ -516,7 +678,7 @@ export function ScreenerTable({
                       const align = NUMERIC_COLUMNS.has(id) ? "text-right" : "text-left";
                       const stick = id === "symbol" ? "sticky left-0 z-10 bg-surface" : "";
                       return (
-                        <td key={cell.id} className={`px-3 py-2 ${align} ${stick}`}>
+                        <td key={cell.id} className={`overflow-hidden text-ellipsis px-3 py-2 ${align} ${stick}`}>
                           <table.FlexRender cell={cell} />
                         </td>
                       );

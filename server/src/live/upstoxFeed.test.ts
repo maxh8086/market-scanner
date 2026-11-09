@@ -96,7 +96,9 @@ describe("createLiveFeed", () => {
 
     const frame = encodeFeedFrame([{ instrumentKey: "NSE_EQ|INE002A01018", ltp: 100 }]);
     sockets[0].onmessage?.({ data: frame });
-    expect(ticks).toEqual([{ instrumentKey: "NSE_EQ|INE002A01018", ltp: 100, ltt: null, cp: null }]);
+    expect(ticks).toEqual([
+      { instrumentKey: "NSE_EQ|INE002A01018", ltp: 100, ltt: null, cp: null, open: null, high: null, low: null },
+    ]);
     expect(statuses).toEqual(["connecting", "live"]);
   });
 

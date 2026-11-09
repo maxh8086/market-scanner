@@ -33,6 +33,26 @@ export function buildIsinLookupQuery(runId: string, symbols: readonly string[]):
   };
 }
 
+/**
+ * Watchlist indices mapped to Upstox instrument keys. Keys marked "verified" appear in
+ * scanner/index_candles.py. The rest follow Upstox's naming and are not yet checked against the
+ * instrument master. Indices without a key show "—" in the watchlist. GIFT NIFTY has no key.
+ * Each index is listed once here, and the UI picks which ones to show per segment.
+ */
+export const INDEX_INSTRUMENT_KEYS: Readonly<Record<string, string>> = {
+  SENSEX: "BSE_INDEX|SENSEX",
+  "INDIA VIX": "NSE_INDEX|India VIX",
+  "NIFTY 50": "NSE_INDEX|Nifty 50",
+  "NIFTY NEXT 50": "NSE_INDEX|Nifty Next 50",
+  "NIFTY 100": "NSE_INDEX|Nifty 100",
+  "NIFTY 200": "NSE_INDEX|Nifty 200",
+  "NIFTY 500": "NSE_INDEX|Nifty 500",
+  "NIFTY BANK": "NSE_INDEX|Nifty Bank", // verified
+  "NIFTY MIDCAP 150": "NSE_INDEX|NIFTY MIDCAP 150", // verified
+  "NIFTY SMALLCAP 250": "NSE_INDEX|NIFTY SMLCAP 250", // verified
+  "NIFTY MICROCAP 250": "NSE_INDEX|NIFTY MICROCAP250", // verified
+};
+
 /** Upstox instrument key for an NSE equity: NSE_EQ|<ISIN>. */
 export function nseEquityKey(isin: string): string {
   return `NSE_EQ|${isin.trim()}`;

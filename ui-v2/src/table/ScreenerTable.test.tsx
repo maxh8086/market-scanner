@@ -137,6 +137,7 @@ describe("ScreenerTable", () => {
     await screen.findByRole("button", { name: "RELIANCE" });
     expect(screen.getByRole("columnheader", { name: "Company" })).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "Add or remove columns" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Company" }));
 
     expect(screen.queryByRole("columnheader", { name: "Company" })).not.toBeInTheDocument();
@@ -287,6 +288,22 @@ describe("ScreenerTable", () => {
       });
       expect(priceCell.tagName).toBe("SPAN");
       expect(screen.queryByText("₹2,950.50")).not.toBeInTheDocument();
+    });
+
+    it("shows the day change from the live tick's previous close", async () => {
+      render(<ScreenerTable runId={RUN_ID} live />);
+      await screen.findByRole("button", { name: "RELIANCE" });
+      expect(screen.getByRole("columnheader", { name: "Chg %" })).toBeInTheDocument();
+      expect(screen.getByRole("columnheader", { name: "Chg" })).toBeInTheDocument();
+      expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+
+      act(() =>
+        latestSource().emit("tick", { symbol: "RELIANCE", ltp: 2950.5, ltt: null, cp: 2800 }),
+      );
+
+      // (2950.5 - 2800) / 2800 = 5.375%
+      expect(await screen.findByText("▲ +5.38%")).toBeInTheDocument();
+      expect(screen.getByText("▲ +150.50")).toBeInTheDocument();
     });
 
     it("shows the reconnecting state with the last saved prices message", async () => {

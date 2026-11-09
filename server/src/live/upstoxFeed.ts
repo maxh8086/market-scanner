@@ -55,13 +55,18 @@ function extractRedirectUri(body: unknown): string | null {
   return typeof uri === "string" && uri.length > 0 ? uri : null;
 }
 
+/** `ltpc` carries last price and previous close. `full` also carries the day's open, high and low. */
+export type FeedMode = "ltpc" | "full";
+
 export function createLiveFeed(options: {
   accessToken: string | undefined;
   instrumentKeys: readonly string[];
+  mode?: FeedMode;
   deps: FeedDeps;
   listeners: FeedListeners;
 }): LiveFeed {
   const { accessToken, instrumentKeys, deps, listeners } = options;
+  const mode: FeedMode = options.mode ?? "ltpc";
   let status: FeedStatus = accessToken ? "stopped" : "unconfigured";
   let socket: FeedSocket | null = null;
   let retryTimer: unknown = null;
@@ -114,7 +119,7 @@ export function createLiveFeed(options: {
     socket = ws;
     ws.onopen = () => {
       // Upstox requires the subscribe request as a binary frame, not text.
-      ws.send(new TextEncoder().encode(JSON.stringify({ guid: "market-scanner-live", method: "sub", data: { mode: "ltpc", instrumentKeys } })));
+      ws.send(new TextEncoder().encode(JSON.stringify({ guid: "market-scanner-live", method: "sub", data: { mode, instrumentKeys } })));
       attempt = 0;
       setStatus("live");
     };

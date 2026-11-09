@@ -26,9 +26,10 @@ function queuedQuery(results: Array<Array<Record<string, unknown>>>) {
 function fakeFeed(onStart: (listeners: FeedListeners) => void) {
   let status: FeedStatus = "connecting";
   let stopped = false;
-  const captured: { keys: string[] } = { keys: [] };
-  const createFeed: CreateFeedFn = ({ instrumentKeys, listeners }) => {
+  const captured: { keys: string[]; mode?: string } = { keys: [] };
+  const createFeed: CreateFeedFn = ({ instrumentKeys, listeners, mode }) => {
     captured.keys = instrumentKeys;
+    captured.mode = mode;
     const feed: LiveFeed = {
       start: () => onStart(listeners),
       stop: () => {
@@ -112,6 +113,41 @@ describe("GET /api/live/ticks validation", () => {
     const res = await app.inject({ method: "GET", url: `/api/live/ticks?runId=${RUN_ID}&symbols=ZZZZ` });
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({ error: "No instruments found for symbols" });
+  });
+});
+
+describe("GET /api/live/indices stream", () => {
+  it("subscribes the index keys in full mode and streams OHL under the watchlist name", async () => {
+    const fake = fakeFeed((listeners) => {
+      listeners.onStatus("live");
+      listeners.onTick({ instrumentKey: "NSE_INDEX|Nifty 50", ltp: 25008.5, ltt: null, cp: 24986.4, open: 25010, high: 25055.2, low: 24960.1 });
+      listeners.onTick({ instrumentKey: "NSE_INDEX|UNKNOWN", ltp: 1, ltt: null, cp: null });
+    });
+    const app = buildApp({ query: queuedQuery([]).query, live: { accessToken: "token", createFeed: fake.createFeed } });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = app.server.address() as AddressInfo;
+
+    const controller = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${port}/api/live/indices`, { signal: controller.signal });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    while (!text.includes('event: tick\ndata: {"symbol":"NIFTY 50"')) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value);
+    }
+
+    expect(fake.captured.mode).toBe("full");
+    expect(fake.captured.keys).toContain("NSE_INDEX|Nifty 50");
+    expect(text).toContain(
+      'event: tick\ndata: {"symbol":"NIFTY 50","ltp":25008.5,"ltt":null,"cp":24986.4,"open":25010,"high":25055.2,"low":24960.1}',
+    );
+    expect(text).not.toContain("UNKNOWN");
+
+    controller.abort();
+    await waitUntil(() => fake.wasStopped());
+    await app.close();
   });
 });
 

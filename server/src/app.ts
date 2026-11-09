@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import {
   buildCountQuery,
   buildLatestRunQuery,
@@ -33,10 +33,12 @@ import {
   buildIsinLookupQuery,
   createWsSocket,
   formatSseEvent,
+  INDEX_INSTRUMENT_KEYS,
   nseEquityKey,
   parseLiveSymbols,
 } from "./live/liveRoute.js";
-import { createLiveFeed, type FeedListeners, type LiveFeed } from "./live/upstoxFeed.js";
+import { createLiveFeed, type FeedListeners, type FeedMode, type FeedStatus, type LiveFeed } from "./live/upstoxFeed.js";
+import { fetchKiteHoldings, type KiteFetch } from "./holdings/kiteHoldings.js";
 
 export interface QueryResult {
   rows: Array<Record<string, unknown>>;
@@ -47,6 +49,7 @@ export type QueryFn = (sql: string, values: unknown[]) => Promise<QueryResult>;
 export type CreateFeedFn = (options: {
   accessToken: string | undefined;
   instrumentKeys: string[];
+  mode?: FeedMode;
   listeners: FeedListeners;
 }) => LiveFeed;
 
@@ -57,10 +60,21 @@ export interface LiveDeps {
   createFeed?: CreateFeedFn;
 }
 
+export interface KiteDeps {
+  /** Kite API key and the current day's access token. Both stay on the server. */
+  apiKey?: string;
+  accessToken?: string;
+  /** Preferred over apiKey/accessToken: called on every holdings request. */
+  credentials?: () => { apiKey?: string; accessToken?: string };
+  /** Test seam. Production uses the global fetch. */
+  fetch?: KiteFetch;
+}
+
 export interface AppDeps {
   query: QueryFn;
   logger?: boolean;
   live?: LiveDeps;
+  kite?: KiteDeps;
 }
 
 const defaultCreateFeed: CreateFeedFn = (options) =>
@@ -246,6 +260,46 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     },
   );
 
+  // Zerodha Kite holdings for the holdings table. Live prices are NOT taken from here (they come from Upstox).
+  // The Kite token is read on the server and never sent to the browser.
+  app.get("/api/holdings", async (_request, reply) => {
+    // Credentials are read per request, so a token saved in the UI works without a server restart.
+    const creds = deps.kite?.credentials?.() ?? { apiKey: deps.kite?.apiKey, accessToken: deps.kite?.accessToken };
+    const result = await fetchKiteHoldings({
+      apiKey: creds.apiKey,
+      accessToken: creds.accessToken,
+      fetch: deps.kite?.fetch ?? ((url, init) => fetch(url, init)),
+    });
+    if (!result.ok) {
+      return reply.code(result.status).send({ error: result.error });
+    }
+    return { holdings: result.holdings };
+  });
+
+  // Server-sent index quotes for the default watchlist: LTP, previous close, and the day's open, high
+  // and low (full feed mode). Events match /api/live/ticks: `status`, `tick`, `heartbeat`.
+  app.get("/api/live/indices", async (_request, reply) => {
+    const symbolByKey = new Map(Object.entries(INDEX_INSTRUMENT_KEYS).map(([name, key]) => [key, name]));
+    const createFeed = deps.live?.createFeed ?? defaultCreateFeed;
+    streamLiveFeed(reply, (listeners) =>
+      createFeed({
+        accessToken: deps.live?.accessToken,
+        instrumentKeys: [...symbolByKey.keys()],
+        mode: "full",
+        listeners: {
+          onTick: (tick) => {
+            const symbol = symbolByKey.get(tick.instrumentKey);
+            if (symbol) {
+              listeners.onTick({ symbol, ltp: tick.ltp, ltt: tick.ltt, cp: tick.cp, open: tick.open ?? null, high: tick.high ?? null, low: tick.low ?? null });
+            }
+          },
+          onStatus: listeners.onStatus,
+        },
+      }),
+    );
+    return reply;
+  });
+
   // Server-sent live last-traded prices for a bounded symbol list in one run. Symbols map to Upstox
   // instrument keys through stock_snapshots.isin. Events: `status` (feed state), `tick` (one price).
   // The browser never sees the Upstox token or talks to Upstox directly.
@@ -279,45 +333,62 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         return reply.code(404).send({ error: "No instruments found for symbols" });
       }
 
-      reply.hijack();
-      reply.raw.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      });
-
-      let closed = false;
-      const write = (chunk: string) => {
-        if (!closed) reply.raw.write(chunk);
-      };
       const createFeed = deps.live?.createFeed ?? defaultCreateFeed;
-      const feed = createFeed({
-        accessToken: deps.live?.accessToken,
-        instrumentKeys: [...symbolByKey.keys()],
-        listeners: {
-          onTick: (tick) => {
-            const symbol = symbolByKey.get(tick.instrumentKey);
-            if (symbol) {
-              write(formatSseEvent("tick", { symbol, ltp: tick.ltp, ltt: tick.ltt, cp: tick.cp }));
-            }
+      streamLiveFeed(reply, (listeners) =>
+        createFeed({
+          accessToken: deps.live?.accessToken,
+          instrumentKeys: [...symbolByKey.keys()],
+          listeners: {
+            onTick: (tick) => {
+              const symbol = symbolByKey.get(tick.instrumentKey);
+              if (symbol) {
+                listeners.onTick({ symbol, ltp: tick.ltp, ltt: tick.ltt, cp: tick.cp });
+              }
+            },
+            onStatus: listeners.onStatus,
           },
-          onStatus: (status) => write(formatSseEvent("status", { status })),
-        },
-      });
-
-      const heartbeat = setInterval(() => write(": ping\n\n"), HEARTBEAT_MS);
-      // ServerResponse 'close' fires when the browser disconnects; request 'close' can fire early for GET.
-      reply.raw.on("close", () => {
-        closed = true;
-        clearInterval(heartbeat);
-        feed.stop();
-      });
-
-      write(formatSseEvent("status", { status: feed.status() }));
-      feed.start();
+        }),
+      );
       return reply;
     },
   );
 
   return app;
+}
+
+interface SseListeners {
+  onTick: (payload: object) => void;
+  onStatus: (status: FeedStatus) => void;
+}
+
+/** Opens a server-sent event stream, starts the feed it builds, and closes the feed when the browser leaves. */
+function streamLiveFeed(reply: FastifyReply, makeFeed: (listeners: SseListeners) => LiveFeed): void {
+  reply.hijack();
+  reply.raw.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  let closed = false;
+  const write = (chunk: string) => {
+    if (!closed) reply.raw.write(chunk);
+  };
+  const feed = makeFeed({
+    onTick: (payload) => write(formatSseEvent("tick", payload)),
+    onStatus: (status) => write(formatSseEvent("status", { status })),
+  });
+
+  // A named event, not a comment: the browser EventSource API does not expose comment lines,
+  // so the client needs an event it can watch for silence.
+  const heartbeat = setInterval(() => write(formatSseEvent("heartbeat", { ts: Date.now() })), HEARTBEAT_MS);
+  // ServerResponse 'close' fires when the browser disconnects; request 'close' can fire early for GET.
+  reply.raw.on("close", () => {
+    closed = true;
+    clearInterval(heartbeat);
+    feed.stop();
+  });
+
+  write(formatSseEvent("status", { status: feed.status() }));
+  feed.start();
 }

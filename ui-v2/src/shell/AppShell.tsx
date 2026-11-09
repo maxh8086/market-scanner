@@ -3,30 +3,30 @@ import { TabStrip, type TabItem } from "./TabStrip";
 import { TopBar } from "./TopBar";
 import { ResizablePanels } from "./ResizablePanels";
 import { WatchlistPanel } from "./WatchlistPanel";
+import { HoldingsPanel } from "./HoldingsPanel";
 
 export interface AppShellProps {
   tabs: TabItem[];
   activeTabId: string;
   onSelectTab: (id: string) => void;
   onCloseTab?: (id: string) => void;
-  watchlistSymbols?: string[];
   children: ReactNode;
 }
 
-export function AppShell({
-  tabs,
-  activeTabId,
-  onSelectTab,
-  onCloseTab,
-  watchlistSymbols = [],
-  children,
-}: AppShellProps) {
+export function AppShell({ tabs, activeTabId, onSelectTab, onCloseTab, children }: AppShellProps) {
   return (
     <div className="flex min-h-screen flex-col bg-bg text-text">
       <TopBar />
       <TabStrip tabs={tabs} activeId={activeTabId} onSelect={onSelectTab} onClose={onCloseTab} />
       <main id="main" className="min-w-0 flex-1 overflow-x-auto p-4">
-        <ResizablePanels left={<WatchlistPanel symbols={watchlistSymbols} />}>
+        <ResizablePanels
+          left={
+            <div className="space-y-4">
+              <WatchlistPanel />
+              <HoldingsPanel />
+            </div>
+          }
+        >
           {children}
         </ResizablePanels>
       </main>

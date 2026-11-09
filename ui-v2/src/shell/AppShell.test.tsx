@@ -56,9 +56,10 @@ describe("AppShell", () => {
     expect(screen.getByText("Data as of 09 Nov 2026, 14:35 IST")).toBeInTheDocument();
   });
 
-  it("shows the empty watchlist text by default", () => {
+  it("shows the default index watchlist and an empty custom list", () => {
     renderShell();
 
-    expect(screen.getByText("No symbols on the watchlist yet.")).toBeInTheDocument();
+    expect(screen.getByText("NIFTY 50")).toBeInTheDocument();
+    expect(screen.getByText("No custom symbols yet.")).toBeInTheDocument();
   });
 });
