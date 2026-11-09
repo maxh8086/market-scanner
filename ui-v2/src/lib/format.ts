@@ -89,3 +89,28 @@ export function formatCrore(valueInCr: number | null | undefined): string {
   const { negative, body } = formatMagnitude(valueInCr, 0);
   return `${negative ? MINUS : ""}${RUPEE}${body} Cr`;
 }
+
+const istDateTimeFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Kolkata",
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+/** ISO instant to IST wall-clock text: "09 Nov 2026, 14:35 IST". */
+export function formatIstDateTime(iso: string | null | undefined): string {
+  if (!iso) {
+    return EM_DASH;
+  }
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) {
+    return EM_DASH;
+  }
+  const parts = istDateTimeFormatter.formatToParts(instant);
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("day")} ${part("month")} ${part("year")}, ${part("hour")}:${part("minute")} IST`;
+}

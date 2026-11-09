@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatChange, formatCrore, formatInr, formatPercent } from "./format";
+import {
+  formatChange,
+  formatCrore,
+  formatInr,
+  formatIstDateTime,
+  formatPercent,
+} from "./format";
 
 describe("formatInr", () => {
   it("groups in lakh and crore style", () => {
@@ -69,5 +75,23 @@ describe("formatCrore", () => {
 
   it("returns an em dash for null", () => {
     expect(formatCrore(null)).toBe("—");
+  });
+});
+
+describe("formatIstDateTime", () => {
+  it("converts a UTC instant to IST wall-clock time", () => {
+    expect(formatIstDateTime("2026-11-09T09:05:00Z")).toBe("09 Nov 2026, 14:35 IST");
+  });
+
+  it("rolls over to the next day at IST midnight", () => {
+    expect(formatIstDateTime("2026-11-09T18:30:00Z")).toBe("10 Nov 2026, 00:00 IST");
+  });
+
+  it("returns an em dash for null", () => {
+    expect(formatIstDateTime(null)).toBe("—");
+  });
+
+  it("returns an em dash for an unparseable string", () => {
+    expect(formatIstDateTime("not a date")).toBe("—");
   });
 });

@@ -49,4 +49,10 @@ describe("AppShell", () => {
     expect(screen.getByText(/—/)).toBeInTheDocument();
     expect(screen.getByTitle("Not available")).toBeInTheDocument();
   });
+
+  it("shows the run timestamp formatted in IST", () => {
+    render(<DataAgeStamp runTimestamp="2026-11-09T09:05:00Z" />);
+
+    expect(screen.getByText("Data as of 09 Nov 2026, 14:35 IST")).toBeInTheDocument();
+  });
 });

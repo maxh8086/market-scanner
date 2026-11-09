@@ -1,10 +1,13 @@
+import { formatIstDateTime } from "../lib/format";
+
 export interface DataAgeStampProps {
   runDate?: string | null;
   runTimestamp?: string | null;
 }
 
 export function DataAgeStamp({ runDate, runTimestamp }: DataAgeStampProps) {
-  const dateLabel = runDate || runTimestamp;
+  const timestampLabel = formatIstDateTime(runTimestamp);
+  const dateLabel = timestampLabel !== "—" ? timestampLabel : runDate;
 
   if (!dateLabel) {
     return (
