@@ -10,6 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@tanstack/react-table": "9.3.1",
+    "@tanstack/react-virtual": "3.14.22",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
