@@ -3,7 +3,7 @@ import { encodeFeedFrame } from "./feedDecoder.js";
 import { AUTHORIZE_URL, createLiveFeed, type FeedSocket, type FeedStatus } from "./upstoxFeed.js";
 
 class FakeSocket implements FeedSocket {
-  sent: string[] = [];
+  sent: Array<string | Uint8Array> = [];
   closed = false;
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
@@ -87,7 +87,7 @@ describe("createLiveFeed", () => {
     expect(sockets).toHaveLength(1);
 
     sockets[0].onopen?.();
-    expect(JSON.parse(sockets[0].sent[0])).toEqual({
+    expect(JSON.parse(new TextDecoder().decode(sockets[0].sent[0] as Uint8Array))).toEqual({
       guid: "market-scanner-live",
       method: "sub",
       data: { mode: "ltpc", instrumentKeys: ["NSE_EQ|INE002A01018"] },
@@ -129,5 +129,19 @@ describe("createLiveFeed", () => {
 
     sockets[0].onclose?.();
     expect(timers).toHaveLength(0);
+  });
+
+  it("sends the subscribe request as a binary Uint8Array frame", async () => {
+    const { feed, sockets } = setup();
+    feed.start();
+    await flush();
+
+    sockets[0].onopen?.();
+
+    const payload = sockets[0].sent[0];
+    expect(payload).toBeInstanceOf(Uint8Array);
+    const decoded = JSON.parse(new TextDecoder().decode(payload as Uint8Array));
+    expect(decoded.method).toBe("sub");
+    expect(decoded.data.instrumentKeys).toEqual(["NSE_EQ|INE002A01018"]);
   });
 });

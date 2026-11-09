@@ -17,7 +17,7 @@ export type FeedStatus = "unconfigured" | "connecting" | "live" | "reconnecting"
 
 /** The subset of a WebSocket the client uses. The `ws` package satisfies it in production. */
 export interface FeedSocket {
-  send(data: string): void;
+  send(data: string | Uint8Array): void;
   close(): void;
   onopen: (() => void) | null;
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -113,7 +113,8 @@ export function createLiveFeed(options: {
     const ws = deps.createSocket(wsUrl);
     socket = ws;
     ws.onopen = () => {
-      ws.send(JSON.stringify({ guid: "market-scanner-live", method: "sub", data: { mode: "ltpc", instrumentKeys } }));
+      // Upstox requires the subscribe request as a binary frame, not text.
+      ws.send(new TextEncoder().encode(JSON.stringify({ guid: "market-scanner-live", method: "sub", data: { mode: "ltpc", instrumentKeys } })));
       attempt = 0;
       setStatus("live");
     };
