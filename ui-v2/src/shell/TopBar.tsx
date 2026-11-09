@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useTheme } from "../theme/ThemeProvider";
 import { DataAgeStamp, type DataAgeStampProps } from "./DataAgeStamp";
 import { EodRefreshButton } from "./EodRefreshButton";
+import { openCommandPalette } from "./CommandPalette";
 
 export interface TopBarProps extends DataAgeStampProps {
   /** Session notice (market closed, pre-open, stale) shown beside the search button. */
@@ -20,7 +21,9 @@ export function TopBar({ status, ...stampProps }: TopBarProps) {
 
       <button
         type="button"
-        className="whitespace-nowrap inline-flex items-center gap-2 rounded-(--radius-control) border border-border-ui px-3 py-1 text-sm text-text-muted"
+        aria-haspopup="dialog"
+        onClick={(event) => openCommandPalette({ returnFocusTo: event.currentTarget })}
+        className="whitespace-nowrap inline-flex items-center gap-2 rounded-(--radius-control) border border-border-ui px-3 py-1 text-sm text-text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--focus)"
       >
         <span>Search symbols</span>
         <kbd className="hidden sm:inline font-mono text-xs text-text">Ctrl K</kbd>
