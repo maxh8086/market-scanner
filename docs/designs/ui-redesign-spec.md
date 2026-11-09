@@ -200,7 +200,7 @@ Every data view uses `StateView` and handles these states:
    - Below 768px: the watchlist stacks above the main area, full width, with no resize handle.
    - Watchlist content: the panel takes a list of symbols as a prop. Slice 1 passes an empty list, so it shows "No symbols on the watchlist yet." No fake symbols. Adding and removing symbols belongs to the scan table slice, which brings the data source.
    - Persistence of the watchlist itself (localStorage or server) is an open question for that later slice.
-7. **TypeScript, Vite and Vitest major versions.** Open. The build is on TypeScript 7.0.2, Vite 8.3.6 and Vitest 5.1.0. Waiting for your choice (see the chat message of 2026-11-09).
+7. **TypeScript, Vite and Vitest major versions. Answered 2026-11-09: option B.** TypeScript stays at 7.0.2. Vite is pinned to 7.3.7 and Vitest to 4.1.12, because Vite 8.3.6 and Vitest 5.1.0 were released days before the decision. `@vitejs/plugin-react` is pinned to 5.2.0, because 6.x requires Vite 8. All three are exact pins. Revisit after the Vite 8 and Vitest 5 lines have had more time in use.
 
 ## 10. WCAG AA checklist (to complete before approval)
 
