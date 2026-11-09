@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchFilterOptions, type FilterOptions } from "./api/filterOptions";
 import { fetchLatestRun, LatestRunError, type LatestRun } from "./api/latestRun";
 import { type FilterState } from "./filters/filterState";
+import { CommandPalette } from "./shell/CommandPalette";
 import { PresetsMenu } from "./filters/PresetsMenu";
 import { getMarketSession, runAgeDays } from "./lib/marketSession";
 import { AppShell } from "./shell/AppShell";
@@ -210,6 +211,7 @@ export default function App() {
           </>
         )}
       </AppShell>
+      <CommandPalette runId={latest.status === "ready" ? latest.run.runId : null} onOpenStock={openStock} />
     </ThemeProvider>
   );
 }
