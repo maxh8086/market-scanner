@@ -3,9 +3,9 @@
  *
  * Clock times are read in Asia/Kolkata through Intl, never by adding a fixed offset.
  *
- * Limitation: exchange holidays are NOT handled. Every Monday to Friday is treated as a
- * trading day, so on a holiday the banner can say "open" or "pre-open" and a run from
- * before the holiday can count as one trading day old.
+ * Exchange holidays come from EXCHANGE_HOLIDAYS_2026 below. A holiday is a closed day, and the
+ * last-close and run-age logic skip it like a weekend. The list covers 2026 only. Dates after
+ * 2026-12-31 are treated as ordinary weekdays until the list is extended.
  *
  * Freshness rule: a run is expected once the session it describes has closed (15:30 IST).
  * The expected run date is the most recent weekday whose 15:30 close has passed. A run older
@@ -20,6 +20,35 @@ export interface MarketSession {
   /** For example "Fri 13 Nov, 15:30 IST". */
   lastCloseLabel: string;
 }
+
+/**
+ * NSE equity segment holidays for 2026 (weekday dates, YYYY-MM-DD).
+ *
+ * Source: a broker summary of the NSE holiday circulars (bajajbroking.in). Not yet checked
+ * against the NSE circular itself. Verify against the circular before relying on it, and
+ * update this list when the circular changes. Special sessions such as Muhurat trading are
+ * not modelled.
+ */
+export const EXCHANGE_HOLIDAYS_2026: readonly string[] = [
+  "2026-01-15", // Municipal Corporation Election, Maharashtra (unconfirmed)
+  "2026-01-26", // Republic Day
+  "2026-03-03", // Holi
+  "2026-03-26", // Shri Ram Navami
+  "2026-03-31", // Shri Mahavir Jayanti
+  "2026-04-03", // Good Friday
+  "2026-04-14", // Dr. Baba Saheb Ambedkar Jayanti
+  "2026-05-01", // Maharashtra Day
+  "2026-05-28", // Bakri Id
+  "2026-06-26", // Muharram
+  "2026-09-14", // Ganesh Chaturthi
+  "2026-10-02", // Mahatma Gandhi Jayanti
+  "2026-10-20", // Dussehra
+  "2026-11-10", // Diwali Balipratipada
+  "2026-11-24", // Prakash Gurpurb Sri Guru Nanak Dev
+  "2026-12-25", // Christmas
+];
+
+const HOLIDAY_SET: ReadonlySet<string> = new Set(EXCHANGE_HOLIDAYS_2026);
 
 const IST_TIME_ZONE = "Asia/Kolkata";
 const PRE_OPEN_START = 9 * 60; // 09:00
@@ -72,8 +101,12 @@ function readIstClock(now: Date): IstClock {
 }
 
 function isTradingDay(day: number): boolean {
-  const weekday = new Date(day * DAY_MS).getUTCDay();
-  return weekday !== 0 && weekday !== 6;
+  const date = new Date(day * DAY_MS);
+  const weekday = date.getUTCDay();
+  if (weekday === 0 || weekday === 6) {
+    return false;
+  }
+  return !HOLIDAY_SET.has(date.toISOString().slice(0, 10));
 }
 
 /** The most recent weekday whose 15:30 IST close has passed. */

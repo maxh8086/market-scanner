@@ -82,3 +82,25 @@ describe("isRunStale and runAgeDays", () => {
     expect(isRunStale("2026-11-13", SAT_1000_IST)).toBe(false);
   });
 });
+
+// 2026-11-10 (Tuesday) is in EXCHANGE_HOLIDAYS_2026 (Diwali Balipratipada).
+const TUE_HOL_1000_IST = new Date("2026-11-10T04:30:00Z");
+const WED_1000_IST = new Date("2026-11-11T04:30:00Z");
+const WED_1600_IST = new Date("2026-11-11T10:30:00Z");
+
+describe("exchange holidays", () => {
+  it("is closed at 10:00 IST on a listed weekday holiday", () => {
+    expect(getMarketSession(TUE_HOL_1000_IST).status).toBe("closed");
+  });
+
+  it("skips a holiday when naming the last close", () => {
+    // Wednesday before 15:30: the previous trading day is Monday, because Tuesday is a holiday.
+    expect(getMarketSession(WED_1000_IST).lastCloseLabel).toBe("Mon 9 Nov, 15:30 IST");
+  });
+
+  it("does not count a holiday as a trading day of run age", () => {
+    // Expected run date is Wednesday 11 Nov after its close. Monday and Wednesday count; Tuesday does not.
+    expect(runAgeDays("2026-11-06", WED_1600_IST)).toBe(2);
+    expect(isRunStale("2026-11-09", WED_1000_IST)).toBe(false);
+  });
+});
