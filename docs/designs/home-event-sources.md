@@ -146,7 +146,7 @@ India inflation data: **no source configured yet.** Candidate: MoSPI CPI (offici
 
 ## 5. Open risks
 
-1. **Beat/miss from news.** News articles describe a result as beat or miss in journalist wording. No consensus number is attached. Options: (a) accept the media wording and label the tag "per news"; (b) drop the beat/miss tag until a consensus source is found. Decision pending.
+1. **Beat/miss from news.** News articles describe a result as beat or miss in journalist wording. No consensus number is attached. Decision (2026-11-09): option (a). Keep the tag and label it "per news". Show the tag only when the article itself uses "beat", "miss" or "in line". Never infer it from numbers. Show the source headline and link next to the tag. Do not use the tag as a filter, alert or ranking input. Revisit (b) if the tag is ever used to drive a decision.
 2. **Feed rights.** News feed licences and NSE/BSE feed terms are unconfirmed. Check before building a collector.
 3. **Freshness.** Alerts should arrive within minutes. Polling interval for each feed still to set.
 4. **Market cap field.** Confirm which table and column holds market cap, and how often it refreshes. Needed for the order-win relative-size rule.
