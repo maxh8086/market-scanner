@@ -1,6 +1,6 @@
 # UI redesign: Phase 4 design system and spec
 
-Date: 2026-11-09. Status: draft for your approval. No code yet.
+Date: 2026-11-09. Status: approved by you on 2026-11-09. No code yet; Phase 5 starts in slices.
 Direction: Option D (screener table with a full stock page), from `docs/designs/ui-redesign-directions.md`.
 Inputs: `docs/designs/ui-redesign-brief.md`, `docs/designs/ui-redesign-audit.md`.
 
@@ -13,11 +13,11 @@ Updated 2026-11-09. This section is updated at each milestone.
 | 1. Audit | Done | `docs/designs/ui-redesign-audit.md` |
 | 2. Brief | Done | `docs/designs/ui-redesign-brief.md` |
 | 3. Direction | Done | Option D confirmed by you on 2026-11-09 |
-| 4. Design system and spec | Draft, awaiting your final approval | This document. Text and signal contrast measured (section 2.1). Section 9 decisions 1, 2, 3 and 5 answered on 2026-11-09 |
-| 5. Implementation (slices) | Not started | Blocked until this spec is approved |
+| 4. Design system and spec | Approved by you on 2026-11-09 | Contrast measured for all text, signal, neutral and border tokens (section 2). Section 9 decisions answered; decision 4 closed |
+| 5. Implementation (slices) | Unblocked, not started | Slices in order: tokens and shell, scan table, filter bar and presets, stock tab and chart, sector heatmap, states |
 | 6. Audit and optimize | Not started | |
 
-Next action: measure border and neutral contrast, install the chosen skills, and get your final approval of this spec.
+Next action: install the chosen skills (section 9, decision 5), then start Phase 5 slice 1 on your go-ahead.
 
 Stack: Node.js + TypeScript + Fastify backend. Vite + React + TypeScript frontend, built to static files and served by Fastify. TanStack Table with row virtualization. TanStack Query. TradingView Lightweight Charts v5 only. Tailwind v4 and shadcn/ui, confirmed by you on 2026-11-09 (section 9).
 
@@ -45,7 +45,14 @@ Measured 2026-11-09 with the WCAG 2.x relative-luminance formula (script in the 
 | `--caution` on `--bg` / `--surface` | 10.69 / 8.76 | 4.80 / 5.02 |
 | `--focus` on `--bg` / `--surface` | 8.96 / 7.34 | 9.49 / 9.93 |
 
-Not yet measured: border lines (`--border`) against surfaces for the 3:1 UI-boundary rule, and `--neutral` on `--bg`. Both must be checked before build.
+Measured 2026-11-09 for `--neutral` and borders:
+
+| Pair | Dark | Light | Result |
+|---|---|---|---|
+| `--neutral` on `--bg` / `--surface` | 6.96 / 5.71 | 7.24 / 7.58 | Passes 4.5:1 |
+| `--border` (`#334155` / `#CBD5E1`) on `--bg` / `--surface` / `--surface-2` | 1.72 / 1.41 / 1.21 | 1.42 / 1.48 / 1.36 | Fails 3:1 in both modes |
+
+Decision: `--border` is kept for decorative dividers only (WCAG 1.4.11 does not apply to them). A new token, `--border-ui`, carries every boundary that identifies a control or input. Its values are dark `#7C8A9E` (3.58:1 or better on all surfaces) and light `#7A8699` (3.36:1 or better on all surfaces). Both are shown in section 2.1.
 
 ### 2.1 Colour (semantic names, CSS variables on `:root`)
 
@@ -54,7 +61,8 @@ Not yet measured: border lines (`--border`) against surfaces for the 3:1 UI-boun
 | `--bg` | `#0F172A` | `#F8FAFC` | Page background |
 | `--surface` | `#1E293B` | `#FFFFFF` | Cards, panels, table body |
 | `--surface-2` | `#273449` | `#F1F5F9` | Table header, hover, tabs strip |
-| `--border` | `#334155` | `#CBD5E1` | Dividers, table lines |
+| `--border` | `#334155` | `#CBD5E1` | Decorative dividers and table lines only |
+| `--border-ui` | `#7C8A9E` | `#7A8699` | Input, select, button and tab outlines. Meets 3:1 on all surfaces (section 2) |
 | `--text` | `#E2E8F0` | `#0F172A` | Primary text |
 | `--text-muted` | `#94A3B8` | `#475569` | Labels, secondary text |
 | `--gain` | `#34D399` | `#047857` | Price up (always with ▲ and sign) |
@@ -183,13 +191,13 @@ Every data view uses `StateView` and handles these states:
 1. **WebSocket for live tickers. Answered 2026-11-09: Upstox market-data feed.** Live, reconnecting and pre-open states depend on it. Before use, the Upstox data-sharing licence terms must be checked (brief, Blocker 3). Cost is still unknown.
 2. **Tailwind v4 and shadcn/ui. Answered 2026-11-09: Tailwind v4 + shadcn/ui.**
 3. **Authentication for write endpoints. Answered 2026-11-09: local-only bind, no token.** The audit found that config and secret writes are open on all interfaces (audit item 1). The bind to 127.0.0.1 stops other machines on the network. It does not stop a web page open in the same browser from calling localhost. Accepted risk, recorded here so it is a known trade-off.
-4. **Border and neutral contrast.** Text pairs are measured (section 2.1). `--border` against surfaces and `--neutral` on `--bg` are still to measure.
+4. **Border and neutral contrast. Closed 2026-11-09.** `--neutral` passes. `--border` failed 3:1, so `--border-ui` was added for control outlines (section 2).
 5. **Skills. Answered 2026-11-09: install shadcn/ui, Vercel agent-skills, and financial-ui-patterns and styles.** Install is pending. The brief says to remove them after implementation. Their rules are also written into this spec (sections 2 to 4).
 
 ## 10. WCAG AA checklist (to complete before approval)
 
 - [x] Text and signal token pairs measured in light and dark (section 2.1).
-- [ ] `--border` against surfaces (3:1) and `--neutral` on `--bg` measured.
+- [x] `--border` against surfaces (3:1) and `--neutral` on `--bg` measured. `--border-ui` added for controls.
 - [ ] Gain and loss have a sign and an arrow everywhere (section 3).
 - [ ] Table rows are keyboard reachable. Enter and Space open the stock. Visible focus ring on every interactive element.
 - [ ] Sticky table header has a real scroll container (audit item 16).
