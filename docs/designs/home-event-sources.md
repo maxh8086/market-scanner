@@ -226,15 +226,15 @@ Purpose: show upcoming and recent releases that move rates and markets, so the d
 | CPI, October 2026 data | India | 12 Nov 2026 | [MoSPI advance release calendar](https://www.mospi.gov.in/uploads/documents/releaseCalender/1791356248513-ARC_2026_27_Sept_2026.pdf) | Confirmed in the Sept 2026 press release |
 | CPI, October 2026 data | US | 10 Nov 2026, 8:30 a.m. ET | [BLS CPI schedule](https://www.bls.gov/schedule/news_release/cpi.htm) | Confirmed on the BLS page (checked 2026-11-09) |
 | CPI, November 2026 data | US | 10 Dec 2026, 8:30 a.m. ET | [BLS CPI schedule](https://www.bls.gov/schedule/news_release/cpi.htm) | Confirmed on the BLS page (checked 2026-11-09) |
-| MPC decision | India (RBI) | 2–4 Dec 2026 (decision on 4 Dec) | [RBI MPC schedule FY27](https://www.rbi.org.in/SCRIPTs/Annualpolicy.aspx) | Listed in the RBI schedule per a search summary (press release dated 23 Mar 2026). RBI page not opened directly. Verify |
-| FOMC meeting | US (Fed) | 8–9 Dec 2026 (SEP meeting) | [Fed FOMC calendar](https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm) | Confirmed on the Fed page. The Dec statement date is not listed yet |
+| MPC decision | India (RBI) | 2–4 Dec 2026 (decision on 4 Dec) | [RBI MPC schedule FY27](https://www.rbi.org.in/SCRIPTs/Annualpolicy.aspx) | Dates come from secondary sources (5paisa, Angel One and others) that cite the RBI calendar of 23 Mar 2026. The RBI FY27 calendar page is not yet opened directly. Verify |
+| FOMC meeting | US (Fed) | 8–9 Dec 2026, statement 2:00 p.m. ET on 9 Dec | [Fed December 2026 calendar](https://www.federalreserve.gov/newsevents/2026-december.htm) | Confirmed on the Fed page (checked 2026-11-09). Press conference 2:30 p.m. ET; minutes due 30 Dec |
 
 ### 8.2 Conflicts to resolve before the dashboard goes live
 
-1. **RBI repo rate after the 5–7 Oct 2026 meeting (open).** One 5paisa article says the repo rate rose 25 bps to 5.50%. Other coverage still shows 5.25%. Neither was checked against an RBI resolution. Check the October 2026 RBI resolution before showing any rate on the dashboard.
-2. **FOMC December statement date (open).** The Fed page lists the 8–9 Dec meeting but not its statement date. Treat 9 Dec as the expected decision day until the Fed publishes it.
-3. **MoSPI release time (open).** Not found. Do not show a time until it is confirmed.
-4. **RBI dates (partly open).** The FY27 dates came from search summaries. Open the RBI page once before the dashboard uses them.
+1. **RBI repo rate after the 5–7 Oct 2026 meeting (resolved).** The RBI press release "Monetary Policy Statement, 2026-27, Resolution of the Monetary Policy Committee, October 5 to 7, 2026" (dated 7 Oct 2026) says the MPC raised the policy repo rate by 25 bps to 5.50%. SDF is 5.25%, MSF and Bank Rate 5.75%, stance changed to calibrated tightening. The 5.25% figures are stale. Checked 2026-11-09 on rbi.org.in.
+2. **FOMC December statement date (resolved).** The Fed's December 2026 page gives the statement at 2:00 p.m. ET on 9 Dec, the press conference at 2:30 p.m. ET, and minutes on 30 Dec. The 16 Dec date seen on one site is wrong. Checked 2026-11-09.
+3. **MoSPI release time (partly open).** Secondary sources (Bajaj Broking and others) say CPI moved to a 4:00 p.m. release from the October 2024 data, to match market close. Not confirmed on a MoSPI page. Do not show a time on the dashboard until the MoSPI release calendar or press release confirms it. The 12 Nov date in 8.1 also needs the same check, because one April 2026 release was embargoed to 4:00 p.m. on the 13th.
+4. **RBI FY27 calendar (partly open).** The October 2026 resolution is confirmed. The 2–4 Dec 2026 dates and the other FY27 meeting dates still come from secondary sources. Open the RBI FY27 calendar page once before the dashboard uses them.
 
 Resolved on 2026-11-09: the March 2026 FOMC date is 17–18 Mar (the earlier 19 Mar was wrong). US CPI dates 10 Nov and 10 Dec are confirmed on BLS.
 
