@@ -17,6 +17,7 @@ All notable changes to this project are recorded here. Newest first.
 - Wireframe: Bucket column sort cycles A to Z, Z to A, verdict rank, then default (alphabetical).
 - `docs/wireframe-review-2026-11-01.md`: full text of the five review-page sections removed from `#/review` on 2026-11-01.
 - `scripts/ensure_postgres.ps1`: checks Docker is up, starts `scanner-postgres` (`docker compose up -d`, a no-op if running) and waits up to 60 seconds until it is healthy. `start.ps1` calls it before the databases stage.
+- `docs/progress/rollback.md`: rollback procedure for orchestrator merges (2026-11-11). Each integration tags `origin/main` as `pre-task-<N>` before merging, so the merge can be reverted to that tag.
 
 ### Decisions
 - 2026-10-31, initial brief: Written by the brainstorm and Goldfish review (six lenses plus synthesizer). Covers one glossary file, one entry per column, formula checks, build warning, and the open questions.
