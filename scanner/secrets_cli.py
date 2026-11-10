@@ -6,6 +6,11 @@ Run inside the API container, where the master key is mounted:
     python -m scanner.secrets_cli set NAME [--created YYYY-MM-DD] [--expires YYYY-MM-DD|none] [--by WHO]
     python -m scanner.secrets_cli meta NAME
     python -m scanner.secrets_cli import-env [--dry-run]
+    python -m scanner.secrets_cli test NAME
+    python -m scanner.secrets_cli rotate NAME --created YYYY-MM-DD --expires YYYY-MM-DD|none [--by WHO]
+
+`test` runs the live check for the stored value (no write). `rotate` reads a new value from the
+hidden prompt, runs the live check on it, and saves it only if the check passes.
 
 A value is never a command-line argument. `set` reads it from a hidden prompt. `import-env`
 reads the plaintext data/secrets.env, stores the mapped values encrypted, and checks each one
@@ -23,6 +28,7 @@ import sys
 from typing import Callable
 
 from . import app_secrets, secret_crypto, secrets_store
+from . import secret_checks
 
 # Plaintext name in data/secrets.env -> app secret name. Screener is cut from v1 (decision 9).
 ENV_TO_APP = {
@@ -73,6 +79,47 @@ def cmd_set(conn, key: bytes, name: str, created: dt.date, expires: dt.date | No
     return 0
 
 
+def cmd_test(conn, key: bytes, name: str, checks: dict, out: Callable[[str], None]) -> int:
+    """Run the live check on the stored value. Never writes."""
+    check = checks.get(name)
+    if check is None:
+        out(f"no test for {name}")
+        return 2
+    try:
+        value = app_secrets.get_value(conn, key, name)
+    except app_secrets.SecretNotFound:
+        out(f"not found: {name}")
+        return 1
+    try:
+        check(value)
+    except secret_checks.SecretCheckFailed as exc:
+        out(f"test failed: {exc}")
+        return 1
+    out(f"test passed: {name}")
+    return 0
+
+
+def cmd_rotate(conn, key: bytes, name: str, created: dt.date, expires: dt.date | None, by: str,
+               read_value: Callable[[], str], checks: dict, out: Callable[[str], None]) -> int:
+    """Check the new value live, then save it. Nothing is written if the check fails."""
+    check = checks.get(name)
+    if check is None:
+        out(f"no test for {name}")
+        return 2
+    value = read_value()
+    try:
+        check(value)
+    except secret_checks.SecretCheckFailed as exc:
+        out(f"not saved: test failed: {exc}")
+        return 1
+    app_secrets.put(conn, key, name, value, created_on=created, expires_on=expires, updated_by=by)
+    if app_secrets.get_value(conn, key, name) != value:
+        out("stored, but the read-back check failed; check the master key")
+        return 1
+    out(f"rotated {name} (...{app_secrets.last4(value)}), created {created}, expires {expires or '-'}")
+    return 0
+
+
 def cmd_service_token(name: str, path: str, out: Callable[[str], None]) -> int:
     """Write a new random token for a service to a file. Never prints the token."""
     if os.path.exists(path):
@@ -115,7 +162,8 @@ def cmd_import_env(conn, key: bytes, env_values: dict[str, str], by: str, dry_ru
 
 def main(argv: list[str] | None = None, *, conn_factory=None, key_loader=None,
          read_value: Callable[[], str] | None = None, env_values: dict[str, str] | None = None,
-         today: dt.date | None = None, out: Callable[[str], None] = print) -> int:
+         today: dt.date | None = None, out: Callable[[str], None] = print,
+         checks: dict | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list")
@@ -126,7 +174,13 @@ def main(argv: list[str] | None = None, *, conn_factory=None, key_loader=None,
     i.add_argument("--by", default="admin")
     t = sub.add_parser("service-token"); t.add_argument("name", choices=["collector"])
     t.add_argument("--out", required=True)
+    te = sub.add_parser("test"); te.add_argument("name")
+    r = sub.add_parser("rotate"); r.add_argument("name")
+    r.add_argument("--created", required=True); r.add_argument("--expires", required=True)
+    r.add_argument("--by", default="admin")
     args = ap.parse_args(argv)
+    if checks is None:
+        checks = secret_checks.CHECKS
 
     if args.cmd == "service-token":  # file only: no database connection
         return cmd_service_token(args.name, args.out, out)
@@ -160,6 +214,20 @@ def main(argv: list[str] | None = None, *, conn_factory=None, key_loader=None,
             expires = None if args.expires in (None, "none") else _parse_date(args.expires)
             reader = read_value or (lambda: getpass.getpass(f"value for {name} (hidden): "))
             code = cmd_set(conn, key_loader(), name, created, expires, args.by, reader, out)
+            if code:
+                conn.rollback()
+            else:
+                conn.commit()
+            return code
+        if args.cmd == "test":
+            code = cmd_test(conn, key_loader(), args.name, checks, out)
+            conn.rollback()  # test never writes
+            return code
+        if args.cmd == "rotate":
+            created = _parse_date(args.created)
+            expires = None if args.expires in (None, "none") else _parse_date(args.expires)
+            reader = read_value or (lambda: getpass.getpass(f"new value for {args.name} (hidden): "))
+            code = cmd_rotate(conn, key_loader(), args.name, created, expires, args.by, reader, checks, out)
             if code:
                 conn.rollback()
             else:
