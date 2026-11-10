@@ -589,5 +589,125 @@ class RunCycleTests(unittest.TestCase):
                 self.assertEqual(session.calls, [feed.url for feed in order])
 
 
+class _PostOkThenRaise:
+    """Injected post for the hardening tests. Call 1 succeeds (inserted=len(rows)); later calls raise."""
+
+    def __init__(self):
+        self.calls = []
+        self.responses = []
+
+    def __call__(self, rows):
+        self.calls.append(list(rows))
+        if len(self.calls) == 1:
+            response = {"inserted": len(rows), "duplicates": 0, "invalid": 0}
+            self.responses.append(response)
+            return response
+        raise RuntimeError("api status 500")
+
+
+class RunCycleHardeningTests(unittest.TestCase):
+    def test_duplicate_keys_in_one_batch_posted_once(self):
+        # Same feed_code, source_url and published_at give the same dedupe_key (spec 4.2).
+        parsed = ParseResult(
+            items=[
+                make_item("RELIANCE", PUB_EARLY, "a"),
+                make_item("RELIANCE", PUB_EARLY, "a"),
+                make_item("TCS", PUB_LATE, "b"),
+            ],
+            dropped=0,
+        )
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [xml_ok()], feeds=ONE_FEED, parse_fn=ParseStub(result=parsed)
+        )
+        self.assertEqual(len(post.calls), 1)
+        rows = posted_rows(post)
+        self.assertEqual(len(rows), 2)
+        keys = [row["dedupe_key"] for row in rows]
+        self.assertEqual(len(set(keys)), len(keys))
+
+    def test_huge_int_param_is_config_error(self):
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [], params={"gap_min_s": 10**400, "gap_max_s": 8}
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertTrue(result["message"].startswith("config:"))
+        self.assertEqual(session.calls, [])
+
+    def test_invalid_rows_stop_loop_and_reset_per_spec(self):
+        # Invalid rows end the run (spec 5.2). Reset still happens: no block, no mid-run cooldown,
+        # and one feed succeeded (spec 5.1 step 5). Invalid is not excluded from that rule.
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [xml_ok(), xml_ok(), xml_ok()], post=FakePost(invalid=2)
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("invalid:2", result["message"])
+        self.assertEqual(len(post.calls), 1)
+        self.assertEqual(cooldown.resets, ["nse"])
+
+    def test_post_failure_on_later_feed_keeps_first_feed_counts(self):
+        parsed = ParseResult(
+            items=[make_item("RELIANCE", PUB_EARLY, "a"), make_item("TCS", PUB_LATE, "b")],
+            dropped=0,
+        )
+        post = _PostOkThenRaise()
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [xml_ok(), xml_ok(), xml_ok()], parse_fn=ParseStub(result=parsed), post=post
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["message"], "api_error")
+        self.assertEqual(len(post.calls), 2)
+        self.assertEqual(result["new"], post.responses[0]["inserted"])
+        first_feed_times = [as_datetime(row["published_at"]) for row in post.calls[0]]
+        self.assertEqual(as_datetime(result["from"]), min(first_feed_times))
+        self.assertEqual(as_datetime(result["to"]), max(first_feed_times))
+        self.assertEqual(cooldown.resets, [])
+
+    def test_all_rows_rejected_gives_none_bounds(self):
+        # None of the parsed symbols is in UNIVERSE, so every feed posts an empty batch (spec 5.1 step 4f).
+        parsed = ParseResult(
+            items=[make_item("INFY", PUB_EARLY, "a"), make_item("WIPRO", PUB_LATE, "b")],
+            dropped=0,
+        )
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [xml_ok(), xml_ok(), xml_ok()], parse_fn=ParseStub(result=parsed)
+        )
+        self.assertEqual(result["status"], "ok")
+        self.assertIsNone(result["from"])
+        self.assertIsNone(result["to"])
+        self.assertEqual(len(post.calls), 3)
+        self.assertEqual(post.calls, [[], [], []])
+
+    def test_deadline_exactly_gap_plus_timeout_starts_feed(self):
+        # The check stops only when clock() + gap_max_s + request_timeout_s > deadline_at, so equality starts the feed.
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [xml_ok()],
+            feeds=ONE_FEED,
+            params={"gap_max_s": 8, "request_timeout_s": 20, "run_deadline_s": 28},
+        )
+        self.assertGreaterEqual(len(session.calls), 1)
+
+    def test_deadline_just_below_gap_plus_timeout_starts_no_feed(self):
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [],
+            feeds=ONE_FEED,
+            params={"gap_max_s": 8, "request_timeout_s": 20, "run_deadline_s": 27.9},
+        )
+        self.assertEqual(session.calls, [])
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("deadline: 0 feeds fetched", result["message"])
+
+    def test_bool_and_nan_params_are_config_errors(self):
+        cases = (
+            ({"gap_min_s": True}, "config:gap_min_s"),
+            ({"request_timeout_s": float("nan")}, "config:request_timeout_s"),
+        )
+        for params, expected in cases:
+            with self.subTest(params=params):
+                result, session, sleep, post, cooldown = run_cycle_with([], params=params)
+                self.assertEqual(result["status"], "failed")
+                self.assertTrue(result["message"].startswith(expected))
+                self.assertEqual(session.calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()
