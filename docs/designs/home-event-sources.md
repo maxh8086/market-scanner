@@ -1,12 +1,12 @@
 # Home event feed: sources and decisions
 
-Status: draft, not approved. Decisions recorded 2026-11-09 and 2026-11-10 (section 7). Not approved: approval is pending the blocking items in section 8.
+Status: design approved by the user (confirmed 2026-11-11, ledger item 13). The split build specs (filings, news and Telegram, macro, Upstox news) are still draft, and the section 8 blocking items are still open. Decisions recorded 2026-11-09 and 2026-11-10 (section 7).
 Owner: Vaibhav Pavtekar
 Screen: Home, shortlist and event feed (`docs/designs/ui-redesign-spec.md` section 5.1, section 6)
 
 ## 1. Split docs
 
-This overview holds the cross-cutting decisions and the licence position. Each source group has its own design doc. The filings spec is at revision 4 (draft, not approved, 2026-11-10). The news, macro and Upstox docs have no build spec yet.
+This overview holds the cross-cutting decisions and the licence position. Each source group has its own design doc. The filings spec is at revision 4 (approved by the user, confirmed 2026-11-11). The news, macro and Upstox docs have no build spec yet.
 
 - `docs/designs/home-events-filings.md`: NSE and BSE exchange filings, the events table, keyword rules, order-win rules, retention and the market cap field.
 - `docs/designs/home-events-news-telegram.md`: news RSS feeds, the Telegram link bot, the news relevance filter (LLM stage) and the intake queue.
@@ -223,7 +223,7 @@ The shortlist is the intersection of the three. On the 2026-09-28 full run this 
 
 1. Status and "Still open" text: resolved by this rewrite.
 2. Licence wording: resolved (section 4).
-3. Split docs: open. The filings spec is at revision 4 (draft, not approved); the news, macro and Upstox docs have no build spec yet. Owner: each split doc (8.2 item 14).
+3. Split docs: open. The filings spec is at revision 4 (approved by the user); the news, macro and Upstox docs have no build spec yet. Owner: each split doc (8.2 item 14).
 4. Events DDL and dedupe key: drafted in `home-events-filings-spec.md` (revision 4), awaiting approval. BSE scrip code map: deferred with BSE (Z2). Owner: `home-events-filings.md` (item 11).
 5. Rate-limit and kill-switch policy: partly resolved (section 7.3). Open: per-host gap and cap numbers (8.2 item 9). The cooldown classes were set 2026-11-10 (section 7.3); the values are for split spec S2. The cycle budget is resolved (8.2 item 10).
 6. Wrong data facts: resolved here (`CPIMEDSL` removed, MoSPI 16:00 IST, `mcap_cr`). The split docs still carry old values (item 14).
