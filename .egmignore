@@ -1,0 +1,7 @@
+# Paths the EGM bootstrap skips (glob patterns, one per line).
+# Local state, generated output, design docs and test fixtures; none of them is source code.
+data/
+output/
+logs/
+docs/
+tests/fixtures/
