@@ -8,6 +8,7 @@ the parsers, and the fetch and run logic to this module.
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -257,8 +258,12 @@ def fetch_feed(
     if result is not None:
         return result
 
-    retry_cost = timedelta(seconds=cfg["backoff_s"] + cfg["request_timeout_s"])
-    if not (clock() + retry_cost <= deadline_at):
+    try:
+        retry_fits = clock() + timedelta(seconds=cfg["backoff_s"] + cfg["request_timeout_s"]) <= deadline_at
+    except OverflowError:
+        # The retry would end past the datetime range, so it cannot end before deadline_at.
+        retry_fits = False
+    if not retry_fits:
         return _transient(status)
 
     sleep(cfg["backoff_s"])
@@ -267,3 +272,231 @@ def fetch_feed(
     if result is not None:
         return result
     return _transient(status)
+
+
+# Run parameters and their defaults (spec 7). `enabled_feeds` defaults to the
+# feeds whose default_enabled is true, so it is not in this table.
+RUN_DEFAULTS: dict[str, float] = {
+    "gap_min_s": 5,
+    "gap_max_s": 8,
+    "request_timeout_s": 20,
+    "post_timeout_s": 15,
+    "backoff_s": 30,
+    "run_deadline_s": 240,
+}
+EXCHANGE = "nse"
+ROTATION_S = 300  # the start feed moves every 5 minutes (spec 5.1 step 3)
+
+
+class _ConfigError(Exception):
+    """A run parameter is invalid. `key` is named in the run message (spec 5.1 step 1)."""
+
+    def __init__(self, key: str) -> None:
+        super().__init__(key)
+        self.key = key
+
+
+def _run_config(params: dict, feeds: tuple[Feed, ...]) -> tuple[dict, tuple[Feed, ...]]:
+    """Merge `params` over the spec 7 defaults and validate them.
+
+    Returns (cfg, enabled): `cfg` holds the numeric values fetch_feed reads, and
+    `enabled` is the feeds to run in registry order. Raises _ConfigError on the
+    first bad key.
+    """
+    cfg: dict[str, float] = {}
+    for key, default in RUN_DEFAULTS.items():
+        value = params.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise _ConfigError(key)
+        try:
+            finite = math.isfinite(value)
+        except OverflowError:
+            finite = False
+        if not finite or value <= 0:
+            raise _ConfigError(key)
+        cfg[key] = value
+    if cfg["gap_min_s"] > cfg["gap_max_s"]:
+        raise _ConfigError("gap_min_s")
+
+    known = {feed.feed_code for feed in feeds}
+    wanted = params.get("enabled_feeds")
+    if wanted is None:
+        enabled = tuple(feed for feed in feeds if feed.default_enabled)
+    else:
+        if not isinstance(wanted, (list, tuple)):
+            raise _ConfigError("enabled_feeds")
+        if any(not isinstance(code, str) or code not in known for code in wanted):
+            raise _ConfigError("enabled_feeds")
+        chosen = set(wanted)
+        enabled = tuple(feed for feed in feeds if feed.feed_code in chosen)
+    if not enabled:
+        # Nothing to run. Refusing here also keeps the rotation from dividing by zero.
+        raise _ConfigError("enabled_feeds")
+    return cfg, enabled
+
+
+def _rotation(enabled: tuple[Feed, ...], now: datetime) -> list[Feed]:
+    """Feeds in visit order: start at the rotation index, then walk and wrap (spec 5.1 step 3)."""
+    start = int(now.timestamp() // ROTATION_S) % len(enabled)
+    return [enabled[(start + offset) % len(enabled)] for offset in range(len(enabled))]
+
+
+def _run_result(
+    status: str,
+    *,
+    fetched: int = 0,
+    new: int = 0,
+    times: list[datetime] | None = None,
+    message: str = "",
+) -> dict:
+    """Build the spec 5.1 result. `from` and `to` are the earliest and latest kept published_at, as ISO 8601."""
+    times = times or []
+    return {
+        "status": status,
+        "fetched": fetched,
+        "new": new,
+        "from": min(times).isoformat() if times else None,
+        "to": max(times).isoformat() if times else None,
+        "message": message,
+    }
+
+
+def run_cycle(
+    params: dict,
+    now: datetime,
+    *,
+    feeds: tuple[Feed, ...],
+    parse_fn: Callable[[str, bytes], ParseResult],
+    universe: dict[str, str],
+    session: Any,
+    post: Callable[[list[dict]], dict],
+    sleep: Callable[[float], None],
+    rng: Any,
+    clock: Callable[[], datetime],
+    cooldown: Cooldown,
+) -> dict:
+    """Run one NSE filings cycle (spec 5.1 to 5.4) and return the run result.
+
+    Order: validate params, read the cooldown, set the deadline, then visit the
+    enabled feeds from the rotation start. The random gap before each request is
+    drawn inside `fetch_feed`, so this function does not sleep itself. Cooldown
+    calls take `clock()` (the current time), not `now` (the run start).
+    """
+    try:
+        cfg, enabled = _run_config(params, feeds)
+    except _ConfigError as exc:
+        return _run_result("failed", message=f"config:{exc.key}")
+    if cooldown.active(EXCHANGE, clock()):
+        return _run_result("skipped", message="exchange_cooldown")
+
+    try:
+        deadline_at = clock() + timedelta(seconds=cfg["run_deadline_s"])
+    except OverflowError:
+        return _run_result("failed", message="config:run_deadline_s")
+    order = _rotation(enabled, now)
+    try:
+        per_feed_budget = timedelta(seconds=cfg["gap_max_s"] + cfg["request_timeout_s"])
+        # The feed loop computes clock() + per_feed_budget, so it must fit the datetime range now.
+        clock() + per_feed_budget
+    except OverflowError:
+        return _run_result("failed", message="config:gap_max_s")
+
+    fetched = new = invalid = dropped = universe_rejected = feeds_ok = 0
+    transient: list[str] = []
+    fatal: list[str] = []
+    kept_times: list[datetime] = []
+    blocked_code: str | None = None
+    post_failed = False
+    invalid_stop = False
+    mid_run_cooldown = False
+    deadline_left: int | None = None
+
+    for index, feed in enumerate(order):
+        if clock() + per_feed_budget > deadline_at:
+            deadline_left = len(order) - index
+            break
+        if cooldown.active(EXCHANGE, clock()):
+            mid_run_cooldown = True
+            break
+
+        outcome = fetch_feed(
+            feed,
+            session=session,
+            cfg=cfg,
+            parse_fn=parse_fn,
+            sleep=sleep,
+            rng=rng,
+            clock=clock,
+            deadline_at=deadline_at,
+        )
+        if outcome.outcome == "blocked":
+            blocked_code = feed.feed_code
+            cooldown.block(EXCHANGE, clock(), f"blocked:{feed.feed_code}")
+            break
+        if outcome.outcome == "transient":
+            transient.append(feed.feed_code)
+            continue
+        if outcome.outcome == "fatal":
+            fatal.append(feed.feed_code)
+            continue
+
+        feeds_ok += 1
+        fetched += len(outcome.items)
+        dropped += outcome.dropped
+        kept, counts = filter_items(outcome.items, universe)
+        universe_rejected += counts["universe"]
+        rows = [to_event_row(feed, item) for item in kept]
+        seen: set[str] = set()
+        unique: list[dict] = []
+        for row in rows:
+            key = row["dedupe_key"]
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(row)
+        rows = unique
+        try:
+            response = post(rows)
+        except Exception:
+            post_failed = True
+            break
+        new += int(response.get("inserted", 0))
+        feed_invalid = int(response.get("invalid", 0))
+        invalid += feed_invalid
+        kept_times.extend(item["published_at"] for item in kept)
+        if feed_invalid > 0:
+            invalid_stop = True
+            break
+
+    if blocked_code is not None:
+        return _run_result(
+            "failed", fetched=fetched, new=new, times=kept_times,
+            message=f"blocked:{blocked_code}",
+        )
+    if post_failed:
+        return _run_result("failed", fetched=fetched, new=new, times=kept_times, message="api_error")
+
+    # One reset per run, only when the exchange looked healthy throughout (spec 5.1 step 5).
+    if feeds_ok and not mid_run_cooldown:
+        cooldown.reset(EXCHANGE)
+    if mid_run_cooldown and feeds_ok == 0:
+        return _run_result("skipped", message="exchange_cooldown")
+    if invalid_stop:
+        return _run_result(
+            "failed", fetched=fetched, new=new, times=kept_times, message=f"invalid:{invalid}",
+        )
+
+    parts = [f"failed:{code}" for code in transient] + [f"fatal:{code}" for code in fatal]
+    if deadline_left is not None:
+        if feeds_ok == 0:
+            parts.insert(0, "deadline: 0 feeds fetched")
+        else:
+            parts.append(f"deadline: {deadline_left} feeds not fetched")
+    if mid_run_cooldown:
+        parts.append("exchange_cooldown")
+    parts.append(f"rejected parse={dropped} universe={universe_rejected}")
+    parts.append(f"invalid={invalid}")
+    status = "failed" if fatal or feeds_ok == 0 else "ok"
+    return _run_result(
+        status, fetched=fetched, new=new, times=kept_times, message="; ".join(parts),
+    )
