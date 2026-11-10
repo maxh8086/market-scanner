@@ -166,6 +166,20 @@ function Invoke-HostPython([string[]]$PyArgs) {
     }
 }
 
+# Like Invoke-Docker, but returns the exit code and stdout. $Stdin, when given, is piped to the
+# command: the events database stage sends its SQL this way, so no SQL text goes on the command line
+# (PowerShell 5.1 drops double quotes passed to native commands).
+function Invoke-DockerCapture([string[]]$DockerArgs, [string]$Stdin = $null) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        if ($null -ne $Stdin) { $out = $Stdin | & docker @DockerArgs } else { $out = & docker @DockerArgs }
+        return [pscustomobject]@{ Code = $LASTEXITCODE; Out = @($out) }
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 Write-Stage "Preflight"
 $code = Invoke-Docker @('info', '--format', '{{.ServerVersion}}')
 if ($code -ne 0) { Stop-Pipeline "Docker is not responding. Start Docker Desktop and retry." }
@@ -231,13 +245,49 @@ if ($RecordRun) {
     Write-Host "Subset run (-Symbols): not recorded in Postgres." -ForegroundColor Yellow
 }
 
+# Events database (home events, spec 4.5): create it when missing, before the migrate calls below.
+# No password is read and .env is not touched. The admin login is the postgres container's own
+# POSTGRES_USER; the app login and the events database name come from the scanner container's
+# environment (its env_file is .env). The owner is the app login, because on PostgreSQL 15 and later
+# a login that does not own a database cannot create tables in public. A failure is a warning.
+Write-Stage "Database: create the events database if missing"
+$names = Invoke-DockerCapture @('compose', 'run', '-T', '--rm', '--no-deps', '--entrypoint', 'sh', 'scanner', '-c', 'echo $POSTGRES_USER ${POSTGRES_EVENTS_DB:-market_scanner_events}')
+$words = @(("$($names.Out)").Trim() -split '\s+' | Where-Object { $_ })
+$appLogin = if ($words.Count -ge 1) { $words[0] } else { '' }
+$eventsDb = if ($words.Count -ge 2) { $words[1] } else { '' }
+$ident = '^[a-z_][a-z0-9_]{0,62}$'
+if ($names.Code -ne 0 -or $appLogin -cnotmatch $ident -or $eventsDb -cnotmatch $ident) {
+    Write-Host "Events database not checked: could not read the app login and database name from the scanner container (exit $($names.Code)) -- a warning." -ForegroundColor Yellow
+} else {
+    $psql = @('compose', 'exec', '-T', 'scanner-postgres', 'sh', '-c', 'psql -U $POSTGRES_USER -d postgres -tA -v ON_ERROR_STOP=1 -f -')
+    # Precondition: the app login must exist, or the owner clause fails.
+    $role = Invoke-DockerCapture $psql "SELECT count(*) FROM pg_roles WHERE rolname = '$appLogin';"
+    if ($role.Code -ne 0 -or ("$($role.Out)").Trim() -ne '1') {
+        Write-Host "Events database not created: the app login '$appLogin' was not found in Postgres (exit $($role.Code)) -- a warning." -ForegroundColor Yellow
+    } else {
+        # \gexec runs the generated CREATE only when the database is missing, so a second run changes nothing.
+        $create = "SELECT 'CREATE DATABASE $eventsDb OWNER $appLogin' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '$eventsDb') \gexec"
+        $code = (Invoke-DockerCapture $psql $create).Code
+        if ($code -ne 0) {
+            Write-Host "Events database create failed (exit $code) -- a warning; the events migrations will fail until this is fixed." -ForegroundColor Yellow
+        }
+    }
+}
+
 # Schema migrations: apply any pending db/migrations/*.sql before the steps that read the new tables.
 # Same ENTRYPOINT override as the steps below. Reported as a warning, not a stop, so a migration
 # problem does not block the rest of the run (check the message and re-run once it is fixed).
+# The scanner image copies db/ at build time (docker/scanner/Dockerfile). The build stage above runs
+# on every start, so db/events_migrations/ is in the image here; no separate rebuild is needed.
 Write-Stage "Database: apply pending migrations"
 $code = Invoke-Docker @('compose', 'run', '--rm', '--entrypoint', 'python', 'scanner', '-m', 'scanner.pg.migrate')
 if ($code -ne 0) {
     Write-Host "Migrations failed (exit $code) -- a warning; the schema may be behind until this is fixed." -ForegroundColor Yellow
+}
+# Events database: its own schema_migrations table (spec 4.5). Same warning-only handling.
+$code = Invoke-Docker @('compose', 'run', '--rm', '--entrypoint', 'python', 'scanner', '-m', 'scanner.pg.migrate', '--db', 'events')
+if ($code -ne 0) {
+    Write-Host "Events database migrations failed (exit $code) -- a warning; the home events tables may be missing until this is fixed." -ForegroundColor Yellow
 }
 
 # Index constituents: non-critical. A failure leaves the last good CSVs and the last loaded rows in place.
