@@ -15,8 +15,12 @@ import unittest
 import uuid
 
 
-def create(test_cls) -> str:
-    """test_cls is a TestCase class (setUpClass) or instance (setUp, one schema per test)."""
+def create(test_cls, target: str = "main") -> str:
+    """test_cls is a TestCase class (setUpClass) or instance (setUp, one schema per test).
+
+    target "main" (default) applies the main migrations exactly as before. target "events"
+    applies only the events-database migrations into the throwaway schema of the main test
+    database (the events SQL refers to nothing outside its own table, 4.5)."""
     from scanner.pg import db, migrate
 
     if not db.available():
@@ -39,6 +43,13 @@ def create(test_cls) -> str:
         with db.connect() as conn:
             conn.execute(f"DROP SCHEMA IF EXISTS {name} CASCADE")
 
-    (getattr(test_cls, 'addCleanup', None) or test_cls.addClassCleanup)(drop)
-    migrate.apply()
+    # A class (setUpClass) registers a class cleanup; an instance (setUp) a test cleanup.
+    # getattr(cls, 'addCleanup') is an unbound method, so the class check must come first.
+    register = test_cls.addClassCleanup if isinstance(test_cls, type) else test_cls.addCleanup
+    register(drop)
+    if target == "main":
+        migrate.apply()
+    else:
+        with db.connect() as conn:
+            migrate.apply_on(conn, target)
     return name
