@@ -10,6 +10,7 @@ from typing import Iterator, Optional
 from urllib.parse import unquote, urlsplit
 
 import psycopg
+from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 
 
@@ -40,14 +41,20 @@ def _check_dsn_agrees(dsn_text: str, env: dict) -> None:
                            + ". Remove POSTGRES_DSN or make them agree.")
 
 
-def dsn(env: Optional[dict] = None) -> str:
-    env = os.environ if env is None else env
+def dsn(dbname: Optional[str] = None) -> str:
+    """The connection string. dbname, when given, overrides the database name (used for the
+    events database, 4.5); the POSTGRES_DSN / POSTGRES_* agreement check is then skipped,
+    because the override is deliberate. Without dbname the behaviour is unchanged."""
+    env = os.environ
     if env.get("POSTGRES_DSN"):
-        _check_dsn_agrees(env["POSTGRES_DSN"], env)
-        return env["POSTGRES_DSN"]
+        if dbname is None:
+            _check_dsn_agrees(env["POSTGRES_DSN"], env)
+            return env["POSTGRES_DSN"]
+        return make_conninfo(env["POSTGRES_DSN"], dbname=dbname)
     try:
         return (f"host={env['POSTGRES_HOST']} port={env.get('POSTGRES_PORT', '5432')} "
-                f"dbname={env['POSTGRES_DB']} user={env['POSTGRES_USER']} "
+                f"dbname={dbname if dbname is not None else env['POSTGRES_DB']} "
+                f"user={env['POSTGRES_USER']} "
                 f"password={env['POSTGRES_PASSWORD']}")
     except KeyError as exc:
         raise RuntimeError(f"Postgres is not configured: {exc.args[0]} is unset. Set the POSTGRES_* "
@@ -60,16 +67,17 @@ def available(env: Optional[dict] = None) -> bool:
     return bool(env.get("POSTGRES_DSN") or env.get("POSTGRES_HOST"))
 
 
-def connect(**kw) -> psycopg.Connection:
+def connect(dbname: Optional[str] = None, **kw) -> psycopg.Connection:
     """A new connection; rows come back as dicts. Caller owns commit/close.
 
-    PG_SEARCH_PATH (tests only) points every statement at a throwaway schema, so a test
-    run can never write into the real tables.
+    dbname (optional) connects to another database on the same server (the events
+    database, 4.5). PG_SEARCH_PATH (tests only) points every statement at a throwaway
+    schema, so a test run can never write into the real tables.
     """
     schema = os.environ.get("PG_SEARCH_PATH")
     if schema and "options" not in kw:
         kw["options"] = f"-c search_path={schema},public"
-    return psycopg.connect(dsn(), row_factory=dict_row, **kw)
+    return psycopg.connect(dsn(dbname), row_factory=dict_row, **kw)
 
 
 @contextmanager

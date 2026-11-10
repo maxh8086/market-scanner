@@ -22,14 +22,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
-from scanner import secrets_store
+from scanner import service_client
 
 # Collector source name for the ATH scan. Must be registered in scanner.collect.sources.SOURCES
 # before a request can be queued; until then request_run raises ValueError and nothing is marked.
 ATH_SCAN_SOURCE = "ath_scan"
 
-# Stored secret that must exist before the first run may start (required field in secrets_store).
-REQUIRED_KEY = "UPSTOX_ANALYTICS_ACCESS_TOKEN"
+# App secret that must be readable from the secrets API before the first run may start.
+REQUIRED_KEY = "upstox_analytics_token"
 
 # A run started within this many seconds that is still 'running' counts as in progress.
 RUN_TIMEOUT_SECONDS = 3600
@@ -51,8 +51,12 @@ def decide(details_present: bool, marker_present: bool, run_in_progress: bool) -
 
 
 def _details_present() -> bool:
-    """True when the required Upstox token is stored or in the environment."""
-    return REQUIRED_KEY not in secrets_store.status()["missing"]
+    """True when the secrets API returns the required Upstox token to this service."""
+    try:
+        service_client.fetch_secret(REQUIRED_KEY)
+    except service_client.SecretUnavailable:
+        return False
+    return True
 
 
 def _run_in_progress() -> bool:

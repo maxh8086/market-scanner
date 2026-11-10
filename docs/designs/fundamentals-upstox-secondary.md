@@ -174,7 +174,7 @@ Each Upstox value stores an as-of date. Fundamentals change quarterly, so the co
 
 ## Analytics token expiry alert (proposed 2026-11-10, needs your OK)
 
-Purpose: tell the user before the Upstox analytics token expires, in the same Telegram group the news-link bot reads from (section 4.2 of `home-event-sources.md`).
+Purpose: tell the user before the Upstox analytics token expires, in the same Telegram group the news-link bot reads from (overview section 7.6 of `home-event-sources.md`).
 
 - **Expiry date:** stored in `app_secret` with the token. The admin enters the token, its created date and its expiry date on the configuration screen (see secrets-and-roles.md, decision 4), and can update any of the three. The token lasts 1 year, and only one analytics token exists per account (Upstox docs, checked 2026-11-10).
 - **Current token (from the Developer Apps page, screenshot 2026-11-10):** created 2026-05-18, expires 2027-05-18. Alert dates: 2027-04-18 (30 days), 2027-05-11 (7 days), 2027-05-17 (1 day), and 2027-05-18 (expiry day).
@@ -188,3 +188,8 @@ Open for you:
 1. Confirm the alert days (30, 7, 1 and the expiry day).
 2. Provide the bot token and group chat ID through the admin screen once it exists, or tell me to add them to `app_secret` directly. Do not paste them in chat.
 3. Confirm this is built through the EGM process, since it touches config, a scheduled job and an external call.
+
+## Answers from the user (2026-11-10)
+- **Wait for Upstox answers before building.** Item 11 stays blocked until the ROA, Quick Ratio and EV/EBITDA answers are in and each passes its check.
+- **Cache lifetime: 24 hours** for stored Upstox values.
+- **Bad Upstox rows:** removed by a manual SQL delete run by the user, after a `pg_dump` backup is recorded in the ledger. The app never deletes rows (see the migration grants).

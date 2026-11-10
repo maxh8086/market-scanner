@@ -85,14 +85,24 @@ def _fetch_nse_feed(*, feed, gaps, url, save_fn, cached_fn, session, label) -> l
     return all_rows
 
 
-def _nse_session() -> requests.Session:
+# Shared header dict for the NSE feeds (home events). Same values as UA, which
+# already accepts XML and JSON.
+NSE_HEADERS: dict[str, str] = UA
+
+
+def nse_session() -> requests.Session:
     """Return a session with NSE cookies. A failed warm-up is logged, not fatal."""
     session = requests.Session()
     try:
-        session.get("https://www.nseindia.com", headers=UA, timeout=30)
+        session.get("https://www.nseindia.com", headers=NSE_HEADERS, timeout=30)
     except Exception as e:  # noqa: BLE001 - the API call itself will report the real failure
         print(f"  Warning: NSE cookie warm-up failed: {e}")
     return session
+
+
+def _nse_session() -> requests.Session:
+    """Return a session with NSE cookies. A failed warm-up is logged, not fatal."""
+    return nse_session()
 
 
 def _parse_date_str(date_str: str) -> date | None:

@@ -1,291 +1,326 @@
 # Home event feed: sources and decisions
 
-Status: brainstorm in progress. Not approved. No code written.
+Status: design approved by the user (confirmed 2026-11-11, ledger item 13). The split build specs (filings, news and Telegram, macro, Upstox news) are still draft, and the section 8 blocking items are still open. Decisions recorded 2026-11-09 and 2026-11-10 (section 7).
 Owner: Vaibhav Pavtekar
 Screen: Home, shortlist and event feed (`docs/designs/ui-redesign-spec.md` section 5.1, section 6)
 
-## 1. Decisions so far
+## 1. Split docs
 
-| # | Question | Decision | Source |
-|---|---|---|---|
-| 1 | Which events matter | Tiers 1 and 2 from the user's list (results, promoter and insider trades, regulatory actions, order wins, rating changes, corporate actions). Standard board-meeting notices are filtered out | User, 2026-11-09 |
-| 2 | Where events come from | Exchange filings (NSE and BSE) for the **High-Priority** and **Catalyst & Momentum** feed tiers only | User |
-| 3 | Beat/miss tag on results | From news RSS feeds. Open risk: the tag relies on media wording, not a verified consensus number | User; see section 5 |
-| 4 | Broker rating changes | From news RSS feeds | User |
-| 5 | Credit-rating agency actions | From exchange filings | User |
-| 6 | Order win relative to market cap | Market cap is available in our data. Confirm the exact field and its refresh rate | User; to confirm |
-| 7 | Upstox News as an extra news source | Proposed: add the Upstox News API as a per-stock source (section 4.5), using the analytics token. It runs through the same relevance filter (section 2) and the same 1-week age limit (section 7). Terms check pending | User, 2026-11-10 (request); proposal open for review |
+This overview holds the cross-cutting decisions and the licence position. Each source group has its own design doc. The filings spec is at revision 4 (approved by the user, confirmed 2026-11-11). The news, macro and Upstox docs have no build spec yet.
 
-## 2. Relevance filter for news feeds (decision)
+- `docs/designs/home-events-filings.md`: NSE and BSE exchange filings, the events table, keyword rules, order-win rules, retention and the market cap field.
+- `docs/designs/home-events-news-telegram.md`: news RSS feeds, the Telegram link bot, the news relevance filter (LLM stage) and the intake queue.
+- `docs/designs/home-events-upstox-news.md`: Upstox News per-stock source. Blocked until written confirmation from Upstox.
+- `docs/designs/home-events-macro-calendar.md`: macro panel (RBI, Fed, FRED, India CPI) and the economic calendar.
 
-**Decision (2026-11-09, updated the same day):** The dashboard shows only news and feed items that a local LLM marks as relevant to the criteria below. Raw RSS items never reach the dashboard, the events table or the API response. Items are processed whenever the LLM is available, and every relevant result is written to the event tracker and kept for future use.
+## 2. Ownership
 
-**Pipeline**
-1. Fetch RSS items from the sources in section 4.2 on a schedule. Fetching does not depend on the LLM. Each new item is written to an intake queue with: source, URL, published time, normalised title, and a content hash. The queue stores the title, the link, and the page's headline and summary (the page's og:title or title, and its og:description or meta description). It does not store article body text.
+Each rule has one owning doc. Where the owning doc does not yet carry the decided value, this overview keeps it, marked "held here", until the owning doc is updated (section 8). The overview stays owner of shared rules until each build spec is approved (A4, accepted 2026-11-10).
+
+| Rule | Owning doc | Decided value |
+|---|---|---|
+| Licence and feed rights | This overview | Here (section 4) |
+| Event tiers, feed tiers, shortlist, event fields, Home cap | This overview | Here (section 7.1, 7.2) |
+| Request policy: NSE and BSE | `home-events-filings.md` | Here (section 7.3) |
+| Request policy: other hosts | Each split doc for its own hosts (section 7.3) | Here; numbers not set |
+| Retention (3 years) and purge | `home-events-filings.md` | Here (section 7.4); purge deferred (8.2 item 4) |
+| Keyword lists (order-win, macro and geopolitical) | `home-events-filings.md` | Here (section 9) |
+| LLM contract and relevance filter | `home-events-news-telegram.md` | Here (section 6) |
+| Macro series and calendar rows | `home-events-macro-calendar.md` | Here (section 10) |
+| Upstox gating | `home-events-upstox-news.md` | Here (section 5.4) |
+
+## 3. Glossary
+
+- **ATH**: all-time high. The scanner rule is a new ATH today, or a last price within 26% of the ATH (`scanner/ath.py`, `classify_bucket`, `max_dist=26.0`).
+- **UPTREND**: trend class from `scanner/indicators.py` (`classify_trend`). Last price is above both the 50-day EMA and the 200-day SMA.
+- **Feed tier**: where an event sits on the Home screen. **High-Priority** is the top alert stream. **Catalyst** is the Catalyst and Momentum Feed (secondary).
+- **Keyword level**: A, B or C for an order-win or macro keyword term. Level A has the highest precision. This replaces the word "tier" for keyword lists.
+- **Event tier**: the user's tier 1 or tier 2 event types (section 7.1). Tier 1 and tier 2 events are the critical events.
+- **Intake queue**: the table where each fetched news or Telegram item waits before its relevance check.
+- **Analytics token**: `upstox_analytics_token`, the read-only Upstox token in the secret store (`secrets-and-roles.md`). It covers Upstox News.
+- **Blocker**: an item in the blocking list of the six-lens re-review (`docs/progress/home-event-sources-rereview.md`). Section 8.1 lists them.
+
+## 4. Licence and feed rights
+
+The terms of NSE, BSE and the news feeds restrict storing and scraping. The user reads them as allowing personal use and accepts that risk. No redistribution, no public display, no commercial use. Upstox News is blocked until the user has written confirmation from Upstox.
+
+### 4.1 Terms read
+
+Read 2026-11-09 and 2026-11-10. Summaries only.
+
+- NSE (website Terms of Use): no copying, storing, aggregating or distributing without prior written permission. The download exception does not clearly cover RSS. Automated collection and scraping are prohibited. The NSE Data Sharing and Usage Policy was not read.
+- BSE: the terms page returned HTTP 403 and was not read. The announcements disclaimer gives information "AS IS". No redistribution or scraping terms found.
+- Investing.com: prohibits using, storing, reproducing or distributing site data without written permission. The RSS index returned HTTP 403, so the feed's own terms are unread.
+- CNBC TV18: prohibits copying, storing, republishing, scraping and database use without written authorisation. Prohibits repeating stock-call information outside the site. No personal-use carve-out found.
+- User's reading (2026-11-09): the reproduction limit applies only when news is published under the user's name or on the user's website. The dashboard is an internal personal reference page. This does not address the storing, scraping and database clauses, which the collector triggers.
+- Upstox News: the News page gives no redistribution or storage terms, and forum replies conflict. Written confirmation from Upstox is needed.
+## 5. Source registry
+
+### 5.1 Exchange filings (NSE and BSE): Home feed, in scope
+
+Scope: High-Priority and Catalyst feed tiers only. Feed-to-field mapping is owned by the filings doc.
+
+- NSE RSS (`nsearchives.nseindia.com`): `Financial_Results.xml` and `Integrated_Filing_Financials.xml` (results, High-Priority); `Sast_Regulation29.xml` and `Sast_Regulation31.xml` (promoter and insider, High-Priority); `Corporate_action.xml` (Catalyst); `Corporate_Governance.xml` (governance, High-Priority); `Related_Party_Trans.xml` (High-Priority, to confirm); `Online_announcements.xml` (order-win matching, Catalyst); `Shareholding_Pattern.xml` (tier to confirm). `Annual_Reports.xml` is parked.
+- BSE XML (`bseindia.com`): `data/xml/announcements.aspx` (order-win matching, Catalyst); `data/XML/CorpActionFeed.aspx` (Catalyst); `Data/XML/FinancialResultsFeed.aspx` (results, High-Priority); `Data/XML/ShareholdingPattern_Feed.aspx` (tier to confirm); `data/xml/notices.xml` (board-meeting notices excluded; other content to check). `Data/XML/AnnualReportFeed.aspx` is parked.
+
+Update 2026-11-10 (filings spec revision 4): the first build requests 8 NSE feeds only. `Online_announcements.xml` (order-win) is deferred (Q2) and all five BSE feeds are deferred (Z2). `Related_Party_Trans.xml` and `Shareholding_Pattern.xml` are on by default with a provisional tier (Q4).
+
+### 5.2 News RSS: beat/miss and broker ratings
+
+- Investing.com (`in.investing.com/rss/`): `news_95`, `news_14`, `news_11`, `news_25`, `news_1061`, `news_1063`, `news_1062`.
+- CNBC TV18 (`cnbctv18.com/commonfeeds/v1/cne/rss/`): `economy.xml`, `politics.xml`, `market.xml`, `world.xml`.
+
+Use: beat/miss tag on results, and broker upgrades and downgrades. RSS is OFF by default.
+
+### 5.3 Telegram link bot: in scope, built later
+
+The user posts news links in a Telegram group where the bot is an admin (A8, accepted 2026-11-10; section 7.6). Each link is queued with its title, link, page headline and summary, and no article body. X links are ignored. LinkedIn links are not queued. The bot runs on the user's laptop for now (section 7.6).
+
+### 5.4 Upstox News (per stock): blocked
+
+Source: `GET https://api.upstox.com/v2/news`, called through `UpstoxClient._get` in `scanner/upstox.py` (D4 resolved 2026-11-10: no SDK dependency for News), authenticated with the read-only analytics token. No static IP is needed.
+
+- Category `instrument_keys`. Keys are `NSE_EQ|<ISIN>`, built from `symbol_sector.isin` (751 rows, all with an ISIN). Up to 30 keys per request, so the watchlist and scanner universe are batched in groups of 30. Each item is expected to carry its instrument key, so the symbol is known before the relevance check (section 6.1). Present or absent: unverified until a redacted sample is captured (decision D2 in `docs/progress/home-events-decisions-needed.md`).
+- The endpoint returns about the last 7 days. Poll once a day, store new items, dedupe by `article_link`. This is the one exception to the schedule in section 7.3: a daily poll loses nothing only while the collector runs at least once in each 7-day window (`collector-split-spec.md` section 5, risk 5). A host that is off for longer loses items older than the window.
+- Stored: headline, summary, link, source name `Upstox`, and the instrument key (present or absent: unverified, see D2). No article body. The 1-week age limit is proposed (section 8).
+- `positions` and `holdings` categories returned 0 records with no error (2026-11-10 test). Not used.
+- Rate limits: assumed to be Upstox's "Other Standard APIs" class (50/s, 500/min, 2000 per 30 minutes per user), as in the fundamentals doc. The News page class was not checked. No daily limit applies (project owner, 2026-11-10).
+- Status: OFF by default, and blocked until written confirmation from Upstox (section 4).
+
+### 5.5 Macro and calendar sources
+
+- RBI press releases: `rbi.org.in/pressreleases_rss.xml`, priority 1 (MPC resolutions, repo rate, stance, inflation projections, MPC votes). Keyword filter: "Monetary Policy", "Repo Rate", "Inflation", "MPC", "Stance". `Publication_rss.xml` and `speeches_rss.xml` are dropped (C4).
+- Federal Reserve: `federalreserve.gov/feeds/press_monetary.xml` (FOMC statements and monetary policy releases).
+- FRED API: key in the env var `FREDAPI_KEY` (in `.env`; not verified in this session). Series: `CPIAUCSL` and `FEDFUNDS` only (C4).
+- MoSPI India CPI calendar and press releases (section 10). BLS calendar for US CPI dates. Fed calendar page for FOMC dates.
+
+## 6. News relevance filter (LLM stage)
+
+Decision (A5, accepted 2026-11-10): the LLM stage is kept and in scope. Nothing reaches `news_events` or the API before the LLM stage exists. Keyword-only RSS is merged into the LLM phase, so RSS stays OFF until the LLM worker exists. The dashboard shows only news and feed items that a local LLM marks relevant. Raw RSS items never reach the dashboard, the events table or the API response.
+
+### 6.1 Pipeline
+
+1. Fetch RSS items on a schedule. Fetching does not depend on the LLM. Each new item goes into the intake queue with source, URL, published time, normalised title, content hash, the page's og:title (or title) and og:description (or meta description). No article body text.
 2. Deduplicate by URL and by content hash, at queue insert.
-3. Keyword prefilter (the draft filter in section 6). Items with no keyword and no watchlist symbol are marked "prefiltered_out" and do not call the LLM.
-4. When the LLM is available, a worker drains the queue in batches, oldest first. Each remaining item is classified once, using the local LLM at `LLM_URL`. No model name is hardcoded in the app. The endpoint may move to OpenRouter later (see Failure behaviour, third-party risk). The model returns compact JSON only: `{"relevant": true|false, "category": "<tier or macro>", "symbols": [], "sectors": [], "stance": null|"hawkish"|"dovish"|"neutral", "reason": "<max 25 words>"}`.
-5. Items with `relevant` set to true are written to the event tracker (section 2.1 below). Items marked not relevant are marked "rejected" in the queue and kept only as counts.
+3. Keyword prefilter (section 9). Items with no keyword and no watchlist symbol are marked `prefiltered_out` and do not call the LLM.
+4. When the LLM is available, a worker drains the queue in batches, oldest first. Each item is classified once by the local LLM at `LLM_URL`, with no model name hardcoded. The model returns compact JSON only: `{"relevant": true|false, "category": "<tier or macro>", "symbols": [], "sectors": [], "stance": null|"hawkish"|"dovish"|"neutral", "reason": "<max 25 words>"}`. The `stance` field depends on open item 1 (section 8).
+5. Relevant items are written to the event tracker (section 6.3). Items marked not relevant are marked `rejected` and kept as terminal `event_intake` rows for 30 days (A7, accepted 2026-11-10; section 6.3), then purged. Items marked `expired` are kept the same way.
 6. Each run records counts: queued, prefiltered_out, sent_to_llm, relevant, rejected, expired.
 
-**2.1 Event tracker storage**
-- Each relevant item becomes one event row with: event_id, source, source_url, published_at, classified_at, category, symbols, sectors, stance, reason, model_id, prompt_version, status.
-- Store the model_id and prompt_version on every row, so a later re-run can be compared with the first result.
-- Rows are kept for future use (history, review, and later back-testing). The dashboard reads only a recent window (for example the last 7 days). The window is a display setting, not a deletion rule.
-- News titles and links are not kept long term (no licence). Only critical events are kept, with their timeline and price-impact tracking. The window and the critical-event rule are in section 7.
+Criteria for relevant: an event tier 1 or tier 2 item (section 7.1); an item naming a symbol in the watchlist or scanner universe; or a macro item on RBI or Fed policy stance, or an India or US inflation release. Not relevant: general market commentary, opinion, sponsored content and duplicate wire copies.
 
-**Criteria for "relevant"**
-- A tier 1 or tier 2 event from section 1 (results, guidance, order wins, brokerage rating changes, rating-agency actions).
-- The item names a symbol in the watchlist or the scanner universe.
-- A macro item on RBI or Fed policy stance (section 4.3) or an India or US inflation release.
-- Anything else is not relevant. General market commentary, opinion pieces, sponsored content and duplicate wire copies are not relevant.
+### 6.2 Failure behaviour
 
-**Failure behaviour**
-- If the LLM is down or times out, queued items wait. Nothing is dropped while they wait. A queued item expires after 48 hours if it has still not been processed. Expired items are counted as "expired" and never shown. The dashboard shows a "news filter unavailable" marker with the time of the last successful run, once the LLM has been down for more than one hour.
-- Exchange filings (section 4.1) and the economic calendar (section 8) do not depend on the LLM and keep updating.
-- The Haiku fallback in CLAUDE.md applies to development tasks, not to runtime classification.
-- **Third-party risk.** If `LLM_URL` moves to OpenRouter, every headline and summary in the queue is sent to a third party. That move needs its own decision and a note in this section before it happens.
-- **Empty-day rule.** When no relevant item has been recorded for the day, the Home feed shows the most recent recorded events by date, with the line "No new news since [time of the last successful classification run]".
+- If the LLM is down or times out, queued items wait and nothing is dropped. A queued item expires after 48 hours if still unprocessed, is counted as `expired`, and is never shown. After the LLM has been down for more than one hour, the dashboard shows a "news filter unavailable" marker with the time of the last successful run.
+- Exchange filings and the economic calendar do not depend on the LLM. The Haiku fallback in CLAUDE.md applies to development tasks, not to runtime classification.
+- Third-party risk: if `LLM_URL` moves to OpenRouter, every headline and summary in the queue goes to a third party. That move needs its own decision, recorded here first.
+- Empty-day rule: when no relevant item has been recorded for the day, the Home feed shows the most recent recorded events by date, with the line "No new news since [time of the last successful classification run]".
+### 6.3 Event tracker storage
 
-**Verification before launch**
-- Build a labelled set of at least 100 items (relevant or not) from real feed output, and measure precision and recall of the LLM filter against it.
-- Use the acceptance thresholds in section 7 (precision 0.85, recall 0.90).
-- Re-measure after any change to the prompt, the model or the criteria.
+- **Storage decision (2026-11-10, user: "go ahead").** One separate events database holds events from all sources (filings spec D8). Only the Fastify API touches it (D9). Mongo is not used: Postgres `jsonb` holds raw payloads, and promotion from raw to processed stays in one transaction.
+  - `event_intake` (staging, new, to be specified): every raw news or macro item, with its `jsonb` payload, source, dedupe hash, status (`new`, `processing`, `kept`, `rejected`, `expired`) and an expiry date. Terminal rows (`rejected`, `expired`) are kept 30 days (A7, accepted 2026-11-10) so a re-polled item is not re-queued or re-classified. This is retention separate from the 3-year rule for event rows (section 7.4). Macro and calendar rows have no purge in v1; any later purge is owned by the filings doc (filings spec 5.5). No raw Telegram update JSON is stored.
+  - `home_events` (processed filings): as approved in the filings spec, NSE only, unchanged. Filings skip staging because they are structured and rule-filtered.
+  - Processed news rows and processed macro and calendar rows: separate tables in the same events database, because their columns differ from filings (no ISIN or symbol required; summary, category, stance and LLM fields). The Home feed merges them through Fastify. Table names, columns and migration numbers (`002` onward in the events series) are owned by the news, macro and Upstox docs, and the numbers must be allocated once.
+  - Superseded: the earlier idea of reusing `home_events` for news (news doc, "Storage and ingest" section) and of putting these tables in the main database.
+- **Events-database migration allocation (single source, 2026-11-10).** Series `db/events_migrations/`, own `schema_migrations`. Other docs cite this table and do not choose numbers. A new claimant adds a row here first.
 
-**Consequences**
-- Fewer items on screen, so each shown item has a classified reason the user can read.
-- Latency: processing lag is recorded per item as `classified_at` minus `published_at`. It grows during LLM outages and returns to normal when the LLM is back. Each shown event carries its `classified_at` time.
-- Items rejected by the LLM are not stored, so the user cannot see them. Per-run counts are the only audit trail for rejections.
+  | No. | Table | Owner doc | Status |
+  |---|---|---|---|
+  | 001 | `home_events` (NSE filings) | `home-events-filings-spec.md` 4.1 | built, merged (T2a, PR #75) |
+  | 002 | `event_intake` (staging for news and macro items; shared by the news, Upstox news and macro docs) | `home-events-news-telegram.md` | proposed |
+  | 003 | `news_events` (processed news, incl. Upstox news) | `home-events-news-telegram.md` | proposed |
+  | 004 | `macro_events` (processed macro releases and calendar entries) | `home-events-macro-calendar.md` | proposed |
+  | 005 | reserved: a separate calendar table, only if the macro doc splits 004 in two | `home-events-macro-calendar.md` | reserved |
+  | 006 onward | unallocated | | |
 
-## 3. Feed tiers (what the Home screen shows)
+  The main-database migration numbers are separate and are allocated in `collector-split-spec.md`. Each processed table is written only through a Fastify ingest route with its own token role (filings: `home-events-filings-spec.md` 4.6; pattern: `secrets-and-roles.md`).
+- Each relevant item becomes one event row with: event_id, source, source_url, published_at, classified_at, category, symbols, sectors, stance, reason, model_id, prompt_version, status. Every row stores model_id and prompt_version, so a re-run can be compared with the first result.
+Ingest routes and token roles (proposed). Decided 2026-11-10 (decision A1): each source has its own route and token. RSS and Telegram are two separate sources (confirmed by the user, 2026-11-10, decision A1).
 
-**High-Priority Alert Stream (top of feed)**
-- Earnings and financial results. Tag: beat or miss vs estimates (see section 5).
-- Regulatory and legal filings: SEBI orders, exchange clarifications, auditor resignations, governance flags.
-- Significant insider transactions: promoter open-market buys and sells above a threshold percentage.
+| Route (proposed) | Caller | Token role (proposed) |
+|---|---|---|
+| `POST /internal/events/intake/rss` | RSS fetcher | `rss_intake_ingest` |
+| `POST /internal/events/intake/telegram` | Telegram reader | `telegram_intake_ingest` |
+| `POST /internal/events/intake/upstox` | Upstox news poller | `upstox_news_ingest` |
+| `POST /internal/events/news/batch`, plus the claim and status routes | LLM worker | `news_events_ingest` |
+| `POST /internal/events/macro` | macro source | `macro_ingest` |
+| `POST /internal/events/batch` | filings | `home_events_ingest` |
 
-**Catalyst and Momentum Feed (secondary)**
-- Major order wins and joint ventures, filtered by contract value relative to market cap. Also flag back-to-back wins within a month or quarter.
-- Brokerage and credit-rating revisions, with target-price changes.
-- Corporate action ex-dates: buybacks, dividends, rights issues.
+### 6.4 Verification
 
-Excluded: standard board-meeting notices, routine compliance notices.
+- Test set: 30 real filings from the opt-in sample. This replaces the earlier 100-item set.
+- Acceptance: precision at least 0.85 and recall at least 0.90. Re-measure after any change to the prompt, the model or the criteria.
 
-## 4. Source registry
+## 7. Decisions recorded 2026-11-09 and 2026-11-10
 
-### 4.1 Exchange filings (NSE and BSE) — Home feed, in scope
+### 7.1 Event scope and display
 
-NSE RSS (`nsearchives.nseindia.com`):
-- `Financial_Results.xml`: results (High-Priority)
-- `Integrated_Filing_Financials.xml`: results (High-Priority)
-- `Sast_Regulation29.xml`, `Sast_Regulation31.xml`: promoter and insider disclosures (High-Priority)
-- `Corporate_action.xml`: ex-dates, buybacks, dividends (Catalyst)
-- `Corporate_Governance.xml`: governance flags (High-Priority)
-- `Related_Party_Trans.xml`: related-party transactions (High-Priority, to confirm)
-- `Online_announcements.xml`: general announcements. Use for order-win keyword matching (Catalyst)
-- `Shareholding_Pattern.xml`: shareholding changes (to confirm tier)
-- `Annual_Reports.xml`: not in the feed tiers yet (parked)
+- Events that matter: event tiers 1 and 2 (results, promoter and insider trades, regulatory actions, order wins, rating changes, corporate actions). Standard board-meeting notices and routine compliance notices are excluded.
+- Sources: exchange filings for the High-Priority and Catalyst tiers. Broker rating changes come from news RSS. Credit-rating agency actions come from exchange filings.
+- High-Priority Alert Stream (top of feed): results, with the beat/miss tag (section 7.5); regulatory and legal filings (SEBI orders, exchange clarifications, auditor resignations, governance flags); significant insider transactions, meaning promoter open-market buys and sells above a threshold percentage (threshold open).
+- Catalyst and Momentum Feed (secondary): major order wins and joint ventures, filtered by contract value relative to market cap (threshold open); back-to-back wins within a month or quarter, flagged (threshold open); brokerage and credit-rating revisions with target-price changes; corporate action ex-dates (buybacks, dividends, rights issues).
+- Critical events: event tier 1 and tier 2 events. They are kept long term and shown on the stock's timeline. The 30-day price-impact tracking is deferred (C5).
+- Event record fields: company, event type, time, headline, source link, tier, source name, plus the classification fields in section 6.3.
+- Home cap: at most 3 events per stock on the Home feed. This is a display cap only, not a storage limit. Every event stays on the stock's own timeline.
+### 7.2 Shortlist
 
-BSE XML (`bseindia.com`):
-- `data/xml/announcements.aspx`: general announcements (Catalyst, for order-win matching)
-- `data/XML/CorpActionFeed.aspx`: corporate actions (Catalyst)
-- `Data/XML/FinancialResultsFeed.aspx`: results (High-Priority)
-- `Data/XML/ShareholdingPattern_Feed.aspx`: shareholding changes (to confirm tier)
-- `data/xml/notices.xml`: notices. Board-meeting notices are excluded; check for other content
-- `Data/XML/AnnualReportFeed.aspx`: parked
+A stock is on the Home shortlist only if all three hold:
 
-Terms check (read 2026-11-09):
-- NSE (website Terms of Use, https://www.nseindia.com/static/nse-terms-of-use): content must not be copied, stored (in hardcopy or an electronic retrieval system), aggregated, adapted or distributed without NSE's prior written permission. The exception covers content that is available for download, and the terms do not say whether RSS items fall under it, so it cannot be relied on for RSS. Systematic or automated data collection, including scraping, data mining and data harvesting, is prohibited. The NSE Data Sharing and Usage Policy (market data) was not read.
-- BSE: the BSE terms page returned HTTP 403 and was not read. The announcements disclaimer says information is provided "AS IS" without warranty, and BSE does not pre-verify company announcements. No redistribution or scraping terms were found in search results.
-- Impact: a collector that stores NSE items conflicts with the NSE clauses above, even for personal use. Section 7 records the user's decision (option a, 2026-11-09): collect for personal use only, accepting the terms risk.
-- Rate limits: not checked.
-- Status: not decided. See section 7.
+1. It is an ATH-scan match (section 3): a new ATH today, or a last price within 26% of its all-time high.
+2. Its trend is UPTREND (section 3).
+3. It has at least one corporate-event factor: `bonus_issue`, `demerger`, `orderbook_signal` or `expansion_signal` (`scanner/factors.py`). `factors_matched` is a local count in the enrichment code, not a function.
 
-### 4.2 News RSS — beat/miss and broker ratings
+The shortlist is the intersection of the three. On the 2026-09-28 full run this gave 39 names (298 matches, of which 39 are UPTREND with at least one factor), per `handoff.md`. The event feed lists events; the shortlist lists stocks.
 
-Investing.com (`in.investing.com/rss/`):
-- `news_95`, `news_14`, `news_11`, `news_25`, `news_1061`, `news_1063`, `news_1062`
+### 7.3 Freshness, poll schedule and request policy
 
-CNBC TV18 (`cnbctv18.com/commonfeeds/v1/cne/rss/`):
-- `economy.xml`, `politics.xml`, `market.xml`, `world.xml`
-
-Use: beat/miss tag on results; broker upgrades and downgrades. Licence to use these feeds in an internal dashboard: **not confirmed**.
-X / Twitter: out of scope. No X API, no manual paste into the intake queue, and no scraping or automating a logged-in X session (see section 7).
-Telegram links: the user can send a news link to a Telegram bot. The bot queues it with the same fields as RSS items (title, link, page headline and summary). X links are ignored. Page fetch for the headline and summary is subject to the licence check in section 5.
-Terms check (read 2026-11-09):
-- Investing.com (terms page, risk disclosure section): prohibits using, storing, reproducing, displaying, modifying, transmitting or distributing the site's data without written permission from the site owner (Fusion Media) or the data provider. No RSS, syndication, personal-use or non-commercial clause found in the text read. The RSS index page returned HTTP 403, so the feed's own terms are unread.
-- CNBC TV18 (terms of use, sections 3 and 4): prohibits copying, storing, reproducing or republishing site content without written authorisation. Prohibits scraping, crawling or extracting data without express written permission. Prohibits using site content in a searchable or machine-readable form, including as a database, without written authorisation. Prohibits repeating stock-call information outside the site. No personal-use carve-out found.
-- User's reading (2026-11-09): the reproduction limit applies only when news is published under the user's name or on the user's website. The dashboard is an internal page for personal reference. It shows headline and summary with the source link, and is not published. The user's view is that the policies do not apply to it. This reading covers reproduction and publishing. It does not address the storing, using, scraping and database clauses above, which the dashboard's collector would trigger.
-- Status: decided 2026-11-09 (section 7). The user chose to fetch and store headlines and summaries from these sites for personal use, and accepts the terms risk described above.
-First Telegram batch (9 Nov 2026) publishers: Moneycontrol, Investing.com, NDTV Profit, Economic Times, Business Standard, Firstpost, pv-magazine India, The Verge, Inshorts, and Google share links (the publisher is not shown in the link). The batch also had two LinkedIn posts. LinkedIn is not a news source in this design, so LinkedIn links are not queued (its terms have not been checked).
-
-### 4.5 Upstox News (per-stock) — proposed, not built
-
-Source: Upstox News API (`GET https://api.upstox.com/v2/news`, the News endpoint of the official SDK). Auth: the analytics token (`upstox_analytics_token`, see `secrets-and-roles.md`). The token covers News, with no static IP needed, and is read-only.
-
-How it is queried:
-- Category `instrument_keys`. Keys are `NSE_EQ|<ISIN>`, built from `symbol_sector.isin` (751 rows, all with an ISIN).
-- Up to 30 keys per request. Batch the watchlist and scanner universe in groups of 30.
-- Window: the endpoint returns about the last 7 days. Poll once a day, store the new items, and dedupe by `article_link`.
-- Each item carries an ISIN-linked instrument key, so the symbol is known before the LLM runs. The item still goes through section 2 so the LLM can set the category, stance and reason.
-
-What is stored: headline and summary only, as for RSS items in section 2. No article body. The link is kept as the source link. Titles and links follow the same retention rule as section 2.1 (not kept long term unless critical).
-
-Checks still open:
-- Terms: checked 2026-11-10, still open. The News API page (https://upstox.com/developer/api-documentation/get-news/) gives no redistribution or storage terms. A search of the Upstox developer and API terms found no published text on news redistribution. Community forum replies conflict: one says data may be used for analysis and orders; another says distribution to Upstox users is allowed, and a third says only Upstox customers should consume it. None is official. Needed: written confirmation from Upstox on storing and showing headlines and summaries for personal use. Until then this source is blocked, as section 4.2 is for its licence check.
-- `positions` and `holdings` categories: returned 0 records with no error in the 2026-11-10 test. Not used for now. The design needs only `instrument_keys`.
-- Rate limits: assumed to fall under Upstox's "Other Standard APIs" class (50/s, 500/min, 2000 per 30 min per user), which the fundamentals doc uses. The News page was not checked for its own class. No daily limit applies (confirmed by the project owner, 2026-11-10). The per-second, per-minute and per-30-minute limits are the ones to respect.
-
-Proposed defaults, for the user to confirm:
-- Same age limit as RSS: items older than 1 week are dropped (section 7).
-- OFF by default, like the RSS module, until the terms check passes.
-- Keep the Upstox News link and the source name `Upstox` in the event record (section 7, Q5).
-
-### 4.3 Macro: rate decisions, stance and inflation — in scope, separate panel
-
-Scope note: the user moved these into scope on 2026-11-09 for rate decisions, stance and inflation. Placement (Home or a separate macro panel) is not decided. Recommend a separate macro panel, so stock events stay separate from macro data.
-
-RBI (India):
-- `rbi.org.in/pressreleases_rss.xml`: **Priority 1.** MPC resolutions, repo rate changes, stance, inflation projections, MPC voting records. Keyword filter: "Monetary Policy", "Repo Rate", "Inflation", "MPC", "Stance"
-- `rbi.org.in/Publication_rss.xml`: **Priority 2.** Monthly Bulletin, Monetary Policy Report, state-level inflation assessments, inflation expectations surveys. Poll weekly.
-- `rbi.org.in/speeches_rss.xml`: **Priority 3.** Governor and Deputy Governor speeches. Contextual.
-- `rbi.org.in/notifications_rss.xml`: **Ignore for rates.** Banking and compliance circulars.
-
-Federal Reserve (US):
-- `federalreserve.gov/feeds/press_monetary.xml`: FOMC statements and monetary policy press releases. Source of US stance.
-
-FRED API (US inflation data):
-- Key: `FREDAPI_KEY`, added to `.env` per the user's note. Not verified in this session.
-- Candidate series: `CPIAUCSL` (US CPI all items), `CPILFESL` (US core CPI). Confirm series IDs before use.
-
-India inflation data: **no source configured yet.** Candidate: MoSPI CPI (official, base 2024=100 from March 2026 data). Cadence: **monthly, not real time.** Release dates come from the MoSPI Advance Release Calendar, not a fixed day of the month. The usual pattern is the 12th, or the next working day, but dates can move (August 2026 data was set for 14 Sept). Next release: 12 Nov 2026, covering October 2026. Dates after that need to be read from the calendar PDF. Sources: [MoSPI September 2026 CPI press release](https://www.mospi.gov.in/uploads/latestreleasesfiles/1791801549227-Press%20Release%20for%20the%20month%20of%20September,%202026.pdf), [MoSPI advance release calendar 2026-27](https://www.mospi.gov.in/uploads/documents/releaseCalender/1791356248513-ARC_2026_27_Sept_2026.pdf). No official high-frequency India inflation series exists. The RBI projection and survey feeds in 3.3 cover India's forward view only.
-
-### 4.4 Stance definitions (reference)
-
-- **Hawkish:** prioritises inflation control. Signals readiness to raise rates or keep them high. Used when inflation runs persistently above target.
-- **Dovish:** prioritises growth. Signals readiness to cut rates or add liquidity. Used in slowdowns or when inflation is well below the ceiling.
-- **Neutral:** no bias. Future moves depend on incoming data.
-- **Action vs stance:** the action is the rate change (for example, a 25 bp cut). The stance is the signal that comes with it. A cut can come with a hawkish stance, and a hold can come with a dovish one. The panel should show both fields separately.
-
-## 5. Open risks
-
-1. **Beat/miss from news.** News articles describe a result as beat or miss in journalist wording. No consensus number is attached. Decision (2026-11-09): option (a). Keep the tag and label it "per news". Show the tag only when the article itself uses "beat", "miss" or "in line". Never infer it from numbers. Show the source headline and link next to the tag. Do not use the tag as a filter, alert or ranking input. Revisit (b) if the tag is ever used to drive a decision.
-2. **Feed rights (resolved 2026-11-09).** The user verified that the news feeds and NSE/BSE feed terms are open for personal use. This is the user's reading, recorded here. It covers personal use only. The storing and scraping clauses in section 4.2 still apply, as recorded there.
-3. **Freshness (resolved 2026-11-09).** Alerts should arrive within minutes. Poll every 5 minutes from 08:00 to 15:30 IST on trading days. Poll every hour at all other times, including when the market is closed. Times are IST, the market's time zone. Trading days follow the NSE/BSE calendar.
-4. **Market cap field (refresh rule decided 2026-11-09).** Market cap refreshes on the next fundamental data refresh. If the price source is Upstox, it also refreshes from the realtime and end-of-day Upstox feed. The repo does not store a market cap column under that name. It is computed in `scanner/fund_derive.py` (`market_cap_cr` = price x shares), and the shares come from equity capital divided by face value. Its `basis` label says "price x (TTM PAT / TTM EPS)", which does not match the code, so the label needs correcting. Storage decided 2026-11-09: company profile data goes in a separate table, keyed to the symbol, with the ISIN stored as a link field. Each Upstox fundamentals endpoint also gets its own table, keyed the same way: balance sheet, cash flow, income statement, share holdings, key ratios, corporate actions and competitors. The schema (DDL) for these tables is not built yet. The Upstox company profile endpoint (`/fundamentals/:isin/profile`) returns a business description, sector and sector market cap. It does not return the company's own market cap, so market cap still comes from the price times shares calculation. The exact column name is still to be set when the table is built. Needed for the order-win relative-size rule. The `basis` label fix in `scanner/fund_derive.py` is a code change, not yet made.
-5. **Order-win keywords (source corrected 2026-11-09).** The source is the coded rule in `scanner/factors.py` (exact category matches, an exclusion list, and attachment-text keywords such as "Order Win", "Letter of Award", "Bagged" and "Awarded"). Section 6 is a draft that differs from it (it adds LOI, L1 bidder and PPA, and its "contract" rule is narrower). The earlier entry that said section 6 is used as written was wrong. The two are to be reconciled before any change to `factors.py`. Testing against real filings to check false positives such as generic "contract" notices is still open. It needs a sample of real filings, which runs only with the user's opt-in, as set for live-feed tests.
-6. Page fetch. Fetching publisher pages for a headline and summary (RSS links and Telegram links) falls under the same licence check as the news feeds in section 4.2. Terms read 2026-11-09 (section 4.2). The user's personal-use reading does not cover the storing and scraping clauses. Decided 2026-11-09 (section 7): fetch and store, for personal use, accepting the terms risk.
-
-## 6. Draft order-win keyword filter
-
-Tier 1 (direct award or order; highest precision):
-- "Letter of Award", "LoA", "Award of order", "Receipt of order", "Work order", "Purchase order", "Bagged order", "Bags contract", "Order win"
-
-Tier 2 (tender and stage gates):
-- "LOI", "L1 bidder", "Lowest bidder", "Concession agreement", "Power Purchase Agreement", "PPA"
-- "Contract" only with "awarded", "secured" or "signed"
-
-Tier 3 (sector terms, optional):
-- Infra and power: "EPC contract", "Commercial operations"
-- Defence: "Ministry of Defence", "MoD", "Procurement order", "Supply contract"
-- IT: "Multi-year deal", "Digital transformation contract", "Managed services agreement"
-
-Search string (draft): ("Letter of Award" OR "LoA" OR "LOI" OR "Work Order" OR "Bagged") AND ("Crore" OR "Lakh" OR "Contract" OR "Order")
-
-Test on the first Telegram batch (9 Nov 2026, 21 headlines chosen by the user): 0 of 21 match the draft filter above. The filter covers order wins only. The batch is macro, market and corporate news, so the filter would mark all 21 as prefiltered_out. Macro keyword set (added 2026-11-09). The prefilter matches any of these, case-insensitive, as whole words or phrases:
-
-- Central banks: RBI, Reserve Bank, Monetary Policy, Repo Rate, MPC, Fed, Federal Reserve, FOMC, rate cut, rate hike, rate decision
-- Inflation releases: inflation, CPI, PCE
-- Geopolitical and trade (wider than the section 2 criteria; kept so the LLM sees them, to be confirmed): sanctions, tariff, tariffs
-
-Test result on the macro set: 2 of 21 entries match. Matched: 11 (Gold, quoted headline, Fed and inflation) and 21 (Trump, URL slug, sanctions and tariffs). Not matched: 19. Two LinkedIn posts and one Inshorts promo have no text and cannot match. 16 of 21 entries used the URL slug instead of a headline; for four of those, the slug is a share-link ID, so they cannot match either. All 21 were chosen by the user, so this batch cannot measure false positives.
-
-## 7. Decisions from brainstorm (answered 2026-11-09)
-
-**Q3. Freshness.** Use frequent polling with a visible timestamp (option C). Each item shows when it was fetched. The RSS source is built and tested, but it stays OFF by default because the laptop is not always on. Exchange filings and the economic calendar are the default sources.
-
-**RSS age limit (decided 2026-11-09).** RSS items older than 1 week are dropped and do not show on the Home panel. The done test for the RSS module is that RSS items appear on the Home panel.
-
-**Q4. What makes a stock "shortlisted".** Use the existing ATH scanner rule, not a new one. A stock is on the Home shortlist only if all three hold:
-1. It is an ATH-scan match: a new ATH today, or its last price is within 26% of its all-time high (`scanner/ath.py`, `classify_bucket`, default `max_dist=26.0`).
-2. Its trend is UPTREND: last price is above both the 50-day EMA and the 200-day SMA (`scanner/indicators.py`, `classify_trend`).
-3. It has at least one corporate-event factor: bonus issue, demerger, order-book signal or expansion signal (`scanner/factors.py`, `factors_matched`).
-The shortlist is the intersection of these three. On the 2026-09-28 full run this gave 39 names (298 matches, of which 39 are UPTREND with at least one factor), per `handoff.md`. The event feed is separate: it lists events, and the shortlist lists stocks that pass the three rules above.
-
-**Q5. Event record fields.** Use the fields you listed: company, event type, time, headline, source link, tier, source name. The classification fields in section 2.1 (category, stance, reason, model ID, prompt version, status) are kept as well.
-
-**Macro panel.** A separate panel for the economic calendar and its outcomes (scheduled date, then actual result once published), not part of the Home event feed.
-
-**Fed and RBI.** A rate decision triggers an alert and also appears in the feed.
-
-**Beat/miss.** Do not compute a beat or miss against a consensus number. Process the news and show it as met or failed, based on the wording, as the source reports it.
-
-**Licence and retention.** There is no licence for news content, so news titles and links are not kept long term. Keep only critical events, track their progress over time on the timeline, and track their price impact over a set period. The exact window is still open (see below).
-
-**Decided on 2026-11-09:**
-- **Critical events:** tier 1 and tier 2 events. Both are kept long term and tracked.
-- **Impact window:** price impact is tracked for 30 days after each critical event.
-- **Event cap per symbol:** show at most 3 events per stock on the Home feed. This is a Home display cap only. It is not a storage limit, and it does not apply to a stock's own timeline.
-
-**Decided on 2026-11-09 (continued):**
-- **Cap rationale:** the cap of 3 events per stock applies to the Home feed only. It keeps the Home feed readable, so one stock with many filings in a week does not push other shortlisted stocks off screen. Every event for a stock is still shown on that stock's own timeline, in the event tracker. This matters because a user who opens a single stock can scan its full event history there, and the Home feed is only the entry point.
-- **News-filter acceptance targets (set on 2026-11-09):** measured on a labelled set of at least 100 items from real feed output (section 2). Precision of at least 0.85, because the dashboard shows only items marked relevant, so each false positive is visible noise. Recall of at least 0.90. The news feed is now the only route for news items to the dashboard, so a missed relevant item is not seen anywhere else. Exchange filings remain the primary source for filings. Re-measure after any change to the prompt, model, or criteria.
-- **Exchange feed licence (decided 2026-11-09):** the user chose option (a): collect NSE and BSE filing items for personal use only, accepting the terms risk in section 4.1. This is the same stance as the news sites. The NSE website terms prohibit storing, copying and automated collection of content without written permission. The earlier note "no licence terms apply" was written before those terms were read and is withdrawn. The collector must not redistribute items, and it must keep only the fields the Home feed needs. Rate limits are still unchecked.
-- **India CPI source:** the MoSPI advance release calendar (section 8.1), as recommended in this document.
-- **X / Twitter: out of scope.** Decided 2026-11-09: no X API tier, no manual paste of X posts into the intake queue, and no scraping or automating a logged-in X session. No X content enters the feed or the event tracker.
-- **Live-feed testing.** Decided 2026-11-09: live-feed tests are opt-in and run outside the offline test command. The offline test command (`.venv/Scripts/python.exe -m unittest discover -s tests -t . -q`) uses recorded samples only and never calls the network. The live-feed tests need an explicit flag or environment variable to run, and they are not part of the default test run.
-- **Telegram link intake.** Decided 2026-11-09: the user can send news links to a Telegram bot. Each link is queued with the same fields as RSS items (title, link, page headline and summary, no article body). The bot ignores X links. The Telegram reader is a new service and needs its own plan before it is built. Hosting is open: a laptop-hosted bot can resume from the last update it confirmed (the `offset` in Telegram's getUpdates), not from a timestamp, because getUpdates has no time filter. The length of time Telegram keeps unconfirmed updates is not stated on the Bot API page and needs checking before a laptop-only setup is accepted.
-
-Telegram group flow (decided 2026-11-09). The user posts shortlisted links in a Telegram group. The bot is an admin of that group and is given the "delete messages" right only. It saves each link with its message date as it arrives. It deletes the message from the group only after its row is saved in the database, not after classification. Deletion does not wait for the LLM, because the row holds the raw URL until classification. Telegram only allows deleting messages sent less than 48 hours ago, so each link must be saved within that window.
-
-Hosting (decided 2026-11-09). The user is the only poster to the group, and the links are news they have already read. The bot runs on the user's laptop for now, with no always-on host. Links posted while the laptop is off are picked up when it next runs, from the last confirmed Telegram update. This depends on Telegram keeping unconfirmed updates long enough, which is still unchecked (see the retention note above). If the laptop is off longer than that window, those links are lost. Revisit an always-on host if that happens or if the posting pattern changes. Whether fetching a publisher page for its headline and summary is allowed is still open (section 5).
-- **Collector fetch and storage.** Decided 2026-11-09: the collector fetches each publisher page for its headline and summary, and stores them, for personal use. The user accepts the terms risk recorded in section 4.2 (Investing.com and CNBC TV18 storing and scraping clauses). Article body text is still not stored. This decision does not cover republishing or any use outside the user's personal reference page.
-
-**Still open:**
-- None.
-
-## 8. Economic calendar (market dashboard)
-
-Purpose: show upcoming and recent releases that move rates and markets, so the dashboard shows what is due next and what just came out.
-
-### 8.1 Calendar entries (as found on 2026-11-09, to verify against official pages)
-
-| Event | Country | Next date | Source of truth | Status |
+- Alerts arrive within minutes while the collector runs. Each item shows when it was fetched. When the laptop is off, nothing polls, and this is a stated known limit.
+- Each source has its own cron (A2, accepted 2026-11-10). The overview's earlier window, every 5 minutes from 08:00 to 15:30 IST on trading days and every hour at other times, is not used as the single cadence for all sources. Macro cron times stay open (C12). **Exchange filings (spec 5, 2026-11-10):** every 5 minutes, weekdays 08:00 to 20:55 IST (cron `*/5 8-20 * * 1-5`), because most results are filed after 15:30; the hourly off-hours poll is not built for filings. Trading days follow the NSE/BSE calendar. Upstox News is the exception and is polled once a day (section 5.4), after the 20:55 IST filings close, proposed 21:30 IST (to confirm), and relies on the client's 429 handling; a 403 or 429 also starts the shared `upstox` cooldown (A2, accepted 2026-11-10; section 7.3).
+- Exchange filings and the economic calendar are the default sources. RSS stays OFF by default. RSS items older than 1 week are dropped; the same limit is proposed for Upstox News (section 8).
+- NSE and BSE: 14 feeds were planned (section 5.1); the first build has 8 NSE feeds (see the section 5.1 update). They are requested one at a time per exchange, with a random gap of 5 to 8 seconds before each request, polled only on the schedule above. The 2 parked feeds are never requested. Exponential backoff on HTTP 429 or 403.
+- Cooldown on failure, by host class (2026-11-10): API hosts (`upstox`, `fred`) start at 3 minutes, double to 6 minutes, and cap at 15 minutes (user, 2026-11-10). All other hosts start at 15 minutes, double, and cap at 1 hour (user, 2026-11-10). The other class includes `nse`, `bse` and `rbi`, which are web scrapes (user, 2026-11-10). This replaces the earlier 3-hour cap. While paused, the dashboard shows a "source paused" marker. This replaces the earlier 24-hour kill switch. The policy is self-imposed; no NSE or BSE limit is published. Cooldown rows are requested for every collection host (A2, accepted 2026-11-10, widened 2026-11-10): Investing.com and CNBC TV18 (news); nse, bse, upstox and screener (split spec 4.3 exchange rows); RBI, the Federal Reserve calendar page, FRED, BLS and MoSPI (macro). The table is `source_cooldown`, keyed by host (renamed from `exchange_cooldown`; the split-spec owner decides). A host linked from a Telegram post gets its row the first time it appears in an accepted link, through a function (name proposed `ensure_source_row`; default class other, confirmed 2026-11-10; the function name is proposed; design rules in decisions A9). Backoff values are written by split spec S2.
+| Host | Owning doc | Gap | Cap | Status |
 |---|---|---|---|---|
-| CPI, October 2026 data | India | 12 Nov 2026 | [MoSPI advance release calendar](https://www.mospi.gov.in/uploads/documents/releaseCalender/1791356248513-ARC_2026_27_Sept_2026.pdf) | Confirmed in the Sept 2026 press release |
-| CPI, October 2026 data | US | 10 Nov 2026, 8:30 a.m. ET | [BLS CPI schedule](https://www.bls.gov/schedule/news_release/cpi.htm) | Confirmed on the BLS page (checked 2026-11-09) |
-| CPI, November 2026 data | US | 10 Dec 2026, 8:30 a.m. ET | [BLS CPI schedule](https://www.bls.gov/schedule/news_release/cpi.htm) | Confirmed on the BLS page (checked 2026-11-09) |
-| MPC decision | India (RBI) | 2–4 Dec 2026 (decision on 4 Dec) | [RBI MPC schedule FY27](https://www.rbi.org.in/SCRIPTs/Annualpolicy.aspx) | Dates come from secondary sources (5paisa, Angel One and others) that cite the RBI calendar of 23 Mar 2026. The RBI FY27 calendar page is not yet opened directly. Verify |
-| FOMC meeting | US (Fed) | 8–9 Dec 2026, statement 2:00 p.m. ET on 9 Dec | [Fed December 2026 calendar](https://www.federalreserve.gov/newsevents/2026-december.htm) | Confirmed on the Fed page (checked 2026-11-09). Press conference 2:30 p.m. ET; minutes due 30 Dec |
+| NSE, BSE | `home-events-filings.md` | 5 to 8 s random, one request per exchange | Cooldown above | Set |
+| Investing.com, CNBC TV18 (RSS) | `home-events-news-telegram.md` | Not set | Cooldown above (other class) | Open |
+| RBI, Federal Reserve, FRED, BLS, MoSPI | `home-events-macro-calendar.md` | Not set | Cooldown above (other class; FRED is API class) | Open |
+| Upstox | `home-events-upstox-news.md` | Not set | Cooldown above (API class); News rate-limit class still open | Open |
 
-### 8.2 Conflicts to resolve before the dashboard goes live
+### 7.4 Retention and storage
 
-1. **RBI repo rate after the 5–7 Oct 2026 meeting (resolved).** The RBI press release "Monetary Policy Statement, 2026-27, Resolution of the Monetary Policy Committee, October 5 to 7, 2026" (dated 7 Oct 2026) says the MPC raised the policy repo rate by 25 bps to 5.50%. SDF is 5.25%, MSF and Bank Rate 5.75%, stance changed to calibrated tightening. The 5.25% figures are stale. Checked 2026-11-09 on rbi.org.in.
-2. **FOMC December statement date (resolved).** The Fed's December 2026 page gives the statement at 2:00 p.m. ET on 9 Dec, the press conference at 2:30 p.m. ET, and minutes on 30 Dec. The 16 Dec date seen on one site is wrong. Checked 2026-11-09.
-3. **MoSPI release time (partly open; left open 2026-11-09).** The user chose to leave this open and observe actual releases, because MoSPI is the only available source for India CPI. Secondary sources (Bajaj Broking and others) say CPI moved to a 4:00 p.m. release from the October 2024 data, to match market close. Not confirmed on a MoSPI page. Do not show a time on the dashboard until the MoSPI release calendar or press release confirms it. The 12 Nov date in 8.1 also needs the same check, because one April 2026 release was embargoed to 4:00 p.m. on the 13th.
-4. **RBI FY27 calendar (resolved 2026-11-09).** The RBI schedule page (rbi.org.in/SCRIPTs/Annualpolicy.aspx, dated 23 Mar 2026) lists the meeting dates: 6–8 Apr, 3–5 Jun, 3–5 Aug, 5–7 Oct, 2–4 Dec 2026, and 3–5 Feb 2027. The October decision (7 Oct 2026) is on the page. The December decision has no date on the page yet, which is expected because the meeting has not happened. The dashboard can show 4 Dec as the decision date, marked as scheduled.
+- Retention is set by A7 in the decisions file. Event rows are kept 3 years, the policy stated in the filings spec; the purge is deferred (8.2 item 4). The 30-day rule for terminal intake rows is at line 192. There is no licence for news content, and the user accepts that risk.
+- Amended 2026-11-10 (section 6.3): news and macro items that are rejected or expired stay in `event_intake` as terminal rows for 30 days (A7, accepted 2026-11-10), only so they are not re-queued; they are then purged. Filings have no staging rows.
+- Rejected items are not stored as event rows (section 6.1 step 5 and section 6.3). Per-run counts are the only trace; for exchange filings they are kept in the run message (`collector_runs.message`), not in stored columns (filings spec 5.2).
 
-Resolved on 2026-11-09: the March 2026 FOMC date is 17–18 Mar (the earlier 19 Mar was wrong). US CPI dates 10 Nov and 10 Dec are confirmed on BLS.
+### 7.5 Beat/miss tag and market cap
 
-### 8.3 Design considerations
+- Vocabulary: "beat / miss / in line" everywhere (2026-11-10). The tag is labelled "per news" and shows only when the article itself uses one of those words. It is never inferred from numbers, and no consensus number is used. The source headline and link show next to it.
+- The tag is not a filter, alert or ranking input. Revisit this if it is ever used to drive a decision.
+- Market cap column: `mcap_cr` (approved 2026-11-10), in crore. It matches `scanner/fundamentals.py:38`, which maps "Market Cap" to `mcap_cr`. It is computed as price times shares, where shares are equity capital divided by face value (`scanner/fund_derive.py:195`; basis label checked 2026-11-10).
+- Refresh: on the next fundamental data refresh, and from the Upstox realtime and end-of-day feed when the price source is Upstox. The Upstox company profile does not return the company's own market cap.
+- Fundamentals tables (company profile, plus one table per Upstox endpoint: balance sheet, cash flow, income statement, share holdings, key ratios, corporate actions, competitors) are held here until moved to the filings doc (C3). No DDL is built.
 
-- **Source hierarchy.** Each row stores its official source URL and the date it was checked. Third-party dates are marked "unverified" until checked against the official page.
-- **Time zones.** Store every event in UTC with its local zone. Display in IST by default. US releases are 8:30 a.m. ET, which is 6:00 p.m. IST in winter and 7:00 p.m. IST in summer, so the timezone switch matters.
-- **Calendar refresh.** The official calendars are published in advance, so the dashboard should not scrape them daily. Refresh once when a new calendar is published, then re-check after each release in case a date moved.
-- **Holiday shifts.** Dates move when they fall on a holiday or a weekend (CPI: next working day). Keep the calendar as dated rows, not a formula.
-- **Lead time and alerts.** Show the next event with a countdown. Decide the alert lead time (for example, 1 day and 1 hour before). Alerts for rate decisions and CPI are macro alerts, separate from the stock event alerts.
-- **Actual versus expected.** Once a release is out, store the actual figure beside the scheduled date. Do not add a consensus forecast until a source is chosen (see section 5).
-- **Data source for the calendar (decided 2026-11-09).**
-  - **US release dates:** the BLS release calendar is the source of dates and times for CPI, jobs and PPI (decided 2026-11-09).
-  - **US release values and Fed series:** the FRED API (`fred/series/observations` for values) covers US economic series. FOMC meeting and statement dates stay on the Fed's own calendar page, because FRED does not carry them.
-  - **FRED terms:** the Terms of Use allow personal use. Series marked "Copyright" in their notes are owned by third parties, and using them outside personal use needs the owner's permission. The key is set as the environment variable `FREDAPI_KEY` and is not stored in the repo.
-  - **RBI data:** RBI press releases on rbi.org.in are the source for MPC dates, decisions and the repo rate.
-  - **India data releases (CPI, WPI):** the MoSPI calendar, as listed in 8.1.
-  - Investing.com data is not reused. Financial Modeling Prep and Trading Economics are not used for now, so the planned FMP key test is dropped.
-- **Scope.** Start with the four rows in 8.1 (India CPI, US CPI, RBI MPC, FOMC). Add others later (for example, India IIP, GDP, US payrolls) only if asked.
-- **Storage.** A table of calendar rows (event, country, scheduled UTC time, source URL, checked date, status). It is read through the Fastify API. The browser must not read the database directly (spec section 6).
+### 7.6 Telegram link intake and X
 
-## 9. Links
+- Telegram link intake is kept and in scope. The user posts shortlisted links in a Telegram group. The bot is a group admin and saves each link with its message date as it arrives. One bot, so one `getUpdates` poller per token. The group chat id gets its own secret name, chosen at build (A8, accepted 2026-11-10).
+- Delete rights are not decided (section 8). If granted, the bot deletes a message only after its row is saved, not after classification. Telegram only allows deleting messages sent less than 48 hours ago, so each link must be saved within that window.
+- Hosting: the bot runs on the user's laptop, with no always-on host. It resumes from the last confirmed update (`offset` in getUpdates), because getUpdates has no time filter. Links posted while the laptop is off are picked up only if Telegram keeps unconfirmed updates long enough (unchecked, section 8). Revisit an always-on host if links are lost or the posting pattern changes.
+- Page fetch: the collector fetches each publisher page for its headline and summary and stores them for personal use, accepting the terms risk in section 4. No article body text. This does not cover republishing.
+- The Telegram reader is a new service and needs its own plan before it is built.
+- X / Twitter: out of scope. No X API, no manual paste into the intake queue, no scraping or automating a logged-in X session. No X content enters the feed or the event tracker.
+
+### 7.7 Build order, testing and cuts
+
+- Build order (approved 2026-11-10, C6): filings first; then macro (the 4 calendar rows); then RSS keyword-only. Telegram, the LLM stage and Upstox come later.
+- Cuts approved 2026-11-10: C3 (fundamentals tables and keyword reconciliation move into the filings doc); C4 (macro uses 4 calendar rows seeded by hand, and FRED `CPIAUCSL` and `FEDFUNDS` only; RBI priorities 2 and 3, the speeches feed and stance extraction are dropped); C5 (30-day price-impact tracking deferred); C6 (build order above).
+- Not cut: the LLM stage (C1) and the Telegram bot (C2) are kept.
+- News build order (A5, accepted 2026-11-10): three news build specs in phase order, each written when its phase is next: (1) queue, dedupe and RSS; (2) LLM stage; (3) Telegram. Keyword-only RSS is merged into the LLM phase, so RSS stays OFF until the LLM worker exists. The Upstox build is last and waits for the licence answer. The build order bullet above is not changed here; it is superseded for the news sources by this bullet.
+- Live-feed tests are opt-in and run outside the offline test command. The offline command (`.venv/Scripts/python.exe -m unittest discover -s tests -t . -q`) uses recorded samples only and never calls the network.
+
+## 8. Open items
+
+### 8.1 Blocking items from the re-review
+
+1. Status and "Still open" text: resolved by this rewrite.
+2. Licence wording: resolved (section 4).
+3. Split docs: open. The filings spec is at revision 4 (approved by the user); the news, macro and Upstox docs have no build spec yet. Owner: each split doc (8.2 item 14).
+4. Events DDL and dedupe key: drafted in `home-events-filings-spec.md` (revision 4), awaiting approval. BSE scrip code map: deferred with BSE (Z2). Owner: `home-events-filings.md` (item 11).
+5. Rate-limit and kill-switch policy: partly resolved (section 7.3). Open: per-host gap and cap numbers (8.2 item 9). The cooldown classes were set 2026-11-10 (section 7.3); the values are for split spec S2. The cycle budget is resolved (8.2 item 10).
+6. Wrong data facts: resolved here (`CPIMEDSL` removed, MoSPI 16:00 IST, `mcap_cr`). The split docs still carry old values (item 14).
+7. Dangling and stale references: resolved here (sections renumbered). The split docs still cite old numbers (item 14).
+8. Undefined thresholds: open (items 6, 9 and 10).
+9. Governance rules: Telegram retention is open (8.2 item 2). The purge is deferred (8.2 item 4), and rejected-row retention is decided (8.2 item 3). "Critical" for retention is defined in section 7.1.
+
+### 8.2 Open items by owner
+
+1. **Open.** The `stance` field in the LLM contract and the macro stance definitions (section 10.1), now that C4 drops stance extraction. Owner: `home-events-news-telegram.md` (contract); `home-events-macro-calendar.md` (panel).
+2. **Open.** Whether the Telegram bot gets delete rights, and how long Telegram keeps unconfirmed updates (checked before laptop-only hosting is accepted). Owner: `home-events-news-telegram.md`.
+3. **Decided 2026-11-10 (A7, accepted).** Terminal `event_intake` rows (`rejected`, `expired`) are kept 30 days. No raw Telegram update JSON is stored. Owner: `home-events-news-telegram.md`.
+4. **Decided as deferred, 2026-11-10 (Z5).** Purge job: the future design is a purge inside the `home_filings` run (filings spec D5). Not built in the first build. Macro and calendar rows have no purge in v1; any later purge is owned by the filings doc (filings spec 5.5) (A7, accepted 2026-11-10). Owner: `home-events-filings.md`.
+5. **Proposed, not decided.** The meaning of "critical event" for impact tracking, once C5 is lifted. Owner: `home-events-filings.md`.
+6. **Proposed, not decided.** Thresholds to set before build: significant insider trade (percentage), order-to-market-cap ratio, and back-to-back wins. Owner: `home-events-filings.md`.
+7. **Proposed, not decided.** Trading-day calendar source. The working assumption is the NSE/BSE calendar. Owner: `home-events-macro-calendar.md`.
+8. **Proposed, not decided.** Upstox News 1-week age limit and OFF by default (section 5.4). Owner: `home-events-upstox-news.md`.
+9. **Open.** Request gap numbers for RSS, RBI, Federal Reserve, FRED, BLS, MoSPI and Upstox. Cooldown classes and caps are set 2026-11-10 (section 7.3; values for split spec S2). Decided (A2, accepted 2026-11-10): each source has its own cron, and cooldown rows are requested for every collection host in section 7.3 (widened 2026-11-10 by the user's host list); the Upstox run is once a day, proposed 21:30 IST (to confirm). Gap numbers stay open. Owner: each split doc.
+10. **Resolved 2026-11-10, revised.** Cycle budget: the first build has 8 NSE feeds per cycle, 40 to 64 s in gaps, worst case 224 s inside a 240 s run deadline (filings spec 5.3). Earlier figure: 14 feeds, 70 to 112 s. Owner: `home-events-filings.md`.
+11. **Drafted, awaiting approval.** Events DDL, NSE cookie and header handling, failure behaviour and dedupe key are in `home-events-filings-spec.md`. Feed-to-field mapping for the 8 first-build feeds waits for the samples (spec T0). BSE scrip code map: deferred (Z2). Owner: `home-events-filings.md`.
+12. **Open.** Keyword reconciliation: each term added to `scanner/factors.py` is reviewed one by one, the term table (section 9.1) moves to the filings doc (C3), and the "Contract" rule, "ORDER BOOK" and bare "AWARDED", L1 bidder and PPA terms, and optional level C terms are decided. Owner: `home-events-filings.md`.
+13. **Open.** LLM stage: the 30 labelled real filings from the opt-in sample (with negatives), the prompt, timeout, retries, malformed-JSON handling, injection defence for untrusted headlines, category enum and queue DDL. Owner: `home-events-news-telegram.md`.
+14. **Open.** Split docs still use stale section numbers and status text, and must match this overview. Owner: each split doc.
+15. **Open.** Terms not yet read: NSE Data Sharing and Usage Policy; BSE terms page (HTTP 403); Investing.com RSS terms (HTTP 403); Upstox API terms and developer agreement. Each source needs a recorded terms gate before it is enabled (A6, accepted 2026-11-10). Owner: `home-events-filings.md` (NSE, BSE); `home-events-news-telegram.md` (Investing.com); `home-events-upstox-news.md` (Upstox).
+16. **Open.** Macro: RBI and Fed poll cadence; alert lead times for rate decisions and CPI; the FRED pass condition for checking the series IDs. Owner: `home-events-macro-calendar.md`.
+17. **Open.** India CPI: ingestion job spec (source page, parsing, DDL, schedule, failure handling; the job is decided, its spec is not written). Dates after 12 Nov 2026 come from the MoSPI advance release calendar. Release time 16:00 IST (user-confirmed 2026-11-10); a MoSPI page must still confirm it. Owner: `home-events-macro-calendar.md`.
+18. **Blocked.** Written confirmation from Upstox that News may be stored and shown for personal use (section 4). Owner: `home-events-upstox-news.md`.
+19. **Open.** Upstox: batch failure handling for 30-key requests, and a check of the News page rate-limit class. Owner: `home-events-upstox-news.md`.
+20. **Open.** Approval of this overview waits for items 3 to 9 in section 8.1. Approval of each split doc waits for its build specs. Owner: this overview.
+
+## 9. Keyword lists
+
+### 9.1 Order-win terms: merged list
+
+Decision (2026-11-10): merge the draft list below with the production lists in `scanner/factors.py`. Each term added to `factors.py` is reviewed one by one before the change. Nothing in code changes from this doc.
+
+- Matching rule (as in `matches_orderbook`, `scanner/factors.py:828-847`, checked 2026-11-10): a row is excluded when its description is in `ORDERBOOK_DESC_EXCLUDE`. It is an order win when its description is in `ORDERBOOK_DESC_CATEGORIES` (exact match), or when its attachment text contains a keyword term as an uppercased substring. Descriptions are never matched by substring. The same rule applies to the merged list once it is in code.
+- Keyword level A (highest precision): "Letter of Award", "LoA", "Award of order", "Receipt of order", "Work order", "Purchase order", "Bagged order", "Bags contract", "Order win".
+- Keyword level B (tender and stage gates): "LOI", "L1 bidder", "Lowest bidder", "Concession agreement", "Power Purchase Agreement", "PPA". "Contract" only with "awarded", "secured" or "signed".
+- Keyword level C (sector terms, optional): "EPC contract", "Commercial operations", "Ministry of Defence", "MoD", "Procurement order", "Supply contract", "Multi-year deal", "Digital transformation contract", "Managed services agreement".
+Reconciliation with `scanner/factors.py` (checked 2026-11-10; held here until moved to the filings doc):
+
+- Already covered: Letter of Award, Receipt of order, Work order, Order win. Bagged is covered as a substring (`BAGGED`); keep the phrase too.
+- Add, after review: LoA (may match unrelated text); the "Award of order" form (`factors.py` has "AWARDING OF ORDER"); Purchase order (may appear in purchase-side disclosures); "Bags contract" (`factors.py` has only `BAGGING`); the LOI abbreviation, word-bounded (`factors.py` has the phrase only).
+- Review: L1 bidder and lowest bidder are tender stage, not wins. Concession agreement and PPA are sector terms, for the filings doc. The "Contract" rule is a word combination, not a keyword list.
+- In `factors.py` only: `ORDER BOOK`, `ORDER INFLOW`, `AWARDED` (alone), `BAGGING`, `SECURED AN ORDER`. `ORDER BOOK` and bare `AWARDED` can appear in results commentary. Keep or tighten after review.
+- Keep: `ORDERBOOK_DESC_CATEGORIES` ("BAGGING/RECEIVING OF ORDERS/CONTRACTS", "AWARDING OF ORDER(S)/CONTRACT(S)"), the strongest signals; and `ORDERBOOK_DESC_EXCLUDE` (the three "orders passed" or litigation categories), without which court and regulatory "orders" would read as wins.
+
+Test on the first Telegram batch (9 Nov 2026, 21 headlines chosen by the user): 0 of 21 match the order-win draft, because the batch is macro, market and corporate news. Testing against real filings for false positives, such as generic "contract" notices, is still open (section 8).
+
+### 9.2 Macro and geopolitical terms
+
+The prefilter matches any of these, case-insensitive, as whole words or phrases:
+
+- Central banks: RBI, Reserve Bank, Monetary Policy, Repo Rate, MPC, Fed, Federal Reserve, FOMC, rate cut, rate hike, rate decision.
+- Inflation releases: inflation, CPI, PCE.
+- Geopolitical and trade (wider than the criteria in section 6.1; kept so the LLM sees them, to be confirmed): sanctions, tariff, tariffs.
+
+Test on the 21-headline batch: 2 match (items 11 and 21). 16 of 21 entries used the URL slug instead of a headline, and 4 slugs are share-link IDs that cannot match. All 21 were chosen by the user, so the batch cannot measure false positives.
+
+## 10. Macro panel and economic calendar
+
+### 10.1 Macro panel
+
+- Scope: rate decisions, stance and inflation, in a separate panel from the stock event feed. Whether rate decisions also appear in the Home feed is open: section 7.1 sets no rule for it. See the macro doc Open list, item B2 (decisions file, C2).
+- RBI: priority 1 press releases only. Priorities 2 and 3 and stance extraction are dropped (C4).
+- Stance definitions, kept pending open item 1. Hawkish: prioritises inflation control, signals readiness to raise or keep rates high. Dovish: prioritises growth, signals readiness to cut rates or add liquidity. Neutral: no bias; future moves depend on incoming data.
+- Action and stance are separate fields. The action is the rate change (for example, a 25 bp cut). The stance is the signal that comes with it. A cut can come with a hawkish stance, and a hold with a dovish one.
+- FRED series: `CPIAUCSL` (headline CPI) and `FEDFUNDS` only. `CPIMEDSL` is removed: it is the medical-care component of CPI, not headline inflation (user, 2026-11-10).
+- India CPI: MoSPI, monthly, not real time. No official high-frequency India inflation series exists. The release is at 16:00 IST (confirmed by the user, 2026-11-10). The value is ingested by a job, not entered by hand. The 4 calendar rows are hand-seeded dates only. If a release is missed, the next available slot after the data release is used.
+### 10.2 Calendar rows
+
+| Event | Country | Next date | Source | Status |
+|---|---|---|---|---|
+| CPI, October 2026 data | India | 12 Nov 2026, 16:00 IST | MoSPI advance release calendar 2026-27 | Date in the September 2026 press release. Time confirmed by the user; no MoSPI page confirms it yet (section 8) |
+| CPI, October 2026 data | US | Released 10 Nov 2026, 8:30 a.m. ET (19:00 IST) | BLS CPI schedule | Confirmed on the BLS page (2026-11-09). Released 10 Nov 2026. Next release 10 Dec 2026 (November data), time unverified |
+| MPC decision | India (RBI) | 4 Dec 2026 (meeting 2 to 4 Dec), unverified | RBI schedule page, `rbi.org.in/SCRIPTs/Annualpolicy.aspx` (dated 23 Mar 2026) | Unverified. The page's own status text says the December decision has no date yet, which conflicts with 4 Dec. Decision time not given |
+| FOMC meeting | US (Fed) | Statement 9 Dec 2026, 2:00 p.m. ET (meeting 8 to 9 Dec); 00:30 IST on 10 Dec | Fed December 2026 calendar | Press conference 2:30 p.m. ET. Minutes due 30 Dec |
+
+### 10.3 Calendar conventions
+
+- Source hierarchy: each row stores its official source URL and the date checked. Third-party dates are marked "unverified" until checked against the official page.
+- Storage: table `macro_events` (migration 004, events database; section 6.3), holding calendar rows (event, country, scheduled UTC time, source URL, checked date, status), read through the Fastify API. The browser does not read the database directly.
+- Time zones: store in UTC with the local zone; display in IST. US releases at 8:30 a.m. ET are 19:00 IST in winter (EST) and 18:00 IST in summer (EDT).
+- Refresh and holidays: refresh once when a new calendar is published, and re-check after each release. Keep dated rows, not a formula; CPI moves to the next working day on a weekend or holiday.
+- Data sources: BLS for US release dates (CPI, jobs, PPI); FRED for US series values; the Fed calendar page for FOMC dates (FRED does not carry them); RBI press releases for MPC dates, decisions and the repo rate; the MoSPI calendar for India CPI. Investing.com, Financial Modeling Prep and Trading Economics are not used.
+- FRED terms: personal use is allowed. Series marked "Copyright" in their notes are owned by third parties, and using them outside personal use needs the owner's permission. The key is in the env var `FREDAPI_KEY`, not in the repo.
+- Scope: the four events above, with the countdown and lead times open (section 8). Others (for example, India IIP, GDP, US payrolls) only if asked.
+
+### 10.4 Conflicts resolved
+
+- RBI repo rate after the 5 to 7 Oct 2026 meeting: raised by 25 bps to 5.50%. SDF is 5.25%, MSF and Bank Rate are 5.75%, and the stance changed to calibrated tightening (RBI press release dated 7 Oct 2026, checked 2026-11-09). Earlier 5.25% repo figures are stale.
+- FOMC December statement: 9 Dec 2026, not 16 Dec. The March 2026 FOMC is 17 to 18 Mar (19 Mar was wrong).
+- MoSPI release time: 16:00 IST, confirmed by the user (2026-11-10). Secondary sources say 4:00 p.m.; no MoSPI page confirms either yet (section 8).
+
+## 11. Links
 
 - Spec: `docs/designs/ui-redesign-spec.md` (sections 5.1, 5.4, 6)
 - Brief: `docs/designs/ui-redesign-brief.md` (Events and alerts)
+- Re-review: `docs/progress/home-event-sources-rereview.md`

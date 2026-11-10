@@ -1,6 +1,6 @@
 # Fundamentals tables and summary (stock page, Option D)
 
-Status: draft, awaiting approval. No code changed. Date: 2026-11-09.
+Status: approved by the user (confirmed 2026-11-11, ledger item 17; approved without the six-lens review, by the user's decision). Partly built as of 2026-11-11: scanner/fund_derive.py and tests/test_fund_derive.py are committed, but no runtime code calls them yet. Migration 027 (db/migrations/027_fundamentals_tables.sql) is committed and NOT applied. The writer, 52-week wiring and validation are not built. Date: 2026-11-11.
 Related: `docs/designs/ui-redesign-directions.md` (Option D), `docs/designs/concall-summary-template.md`.
 
 ## What exists today
@@ -143,3 +143,6 @@ Recommendation: keep screener.in as the source for now, since you have saved pag
 
 1. Banks, NBFCs, and insurers: do you hold any in the watchlist? If so, a saved page for one is needed to define their rows.
 2. Confirm the summary wording: is the same rule set used for every company, including those with different templates?
+
+## Approval (2026-11-10)
+- Approved by the user. The six-lens review was not run before approval, by the user's decision. Status: approved. Partly built as of 2026-11-11 (see the header).
