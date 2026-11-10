@@ -39,16 +39,16 @@ Open decisions and findings for the user: [home-events-macro-calendar-decisions.
 - Read path: the Home feed merges macro rows through Fastify (overview section 6.3). The browser reads them only through the API.
 - Proposed routes, named in the style of filings spec 4.6 (names proposed, not built):
   - `POST /internal/events/macro`: body `{"rows": [...]}` for `macro_events`, at most 500 rows, bearer token role `macro_ingest` (proposed). Returns `{inserted, duplicates, invalid}`, the same contract as filings spec 4.6. Caller: the macro collector source(s).
-  - Raw items: no raw-intake route for macro is defined yet. The news doc routes cover RSS, Telegram and Upstox only (decision A1, 2026-11-10). Macro raw-item route: open.
+  - Raw items: no raw-intake route for macro is defined yet. The news doc has intake routes for RSS and Telegram only. The Upstox route is in the overview route table and in the Upstox stub (decision A1, 2026-11-10). Macro raw-item route: open.
   - `GET /api/macro` and `GET /api/calendar` (proposed reader names, for the UI through Fastify). The owner of their contracts is open (see Open).
 - Token role `macro_ingest` (proposed), following `secrets-and-roles.md` and the `home_events_ingest` pattern in filings spec 4.6. Token values never go in the repo, this doc or a log.
 - Columns: to be specified in the build spec.
 
 ## Dependencies
 
-- Collector split spec (`collector-split-spec.md`). The macro source(s) run in their own container only after:
+- Collector split spec (`collector-split-spec.md`). Macro is one source for RBI and Fed (A3). India CPI is a separate source only if the India CPI job is kept (C5, open). Each source has its own cron (A2) and is run once per cron. The macro sources run in their own container only after:
   - S1a: run-once path that writes run rows, including `skipped`;
-  - S2: exchange cooldown table, migration 047 in the main database. Macro hosts need rows only if Open item M3 says so;
+  - S2: cooldown table `source_cooldown` (named `exchange_cooldown` in split spec 4.3; the rename is agreed by the user on 2026-11-10 and the split-spec owner decides), migration 047 in the main database. Cooldown rows are requested for RBI (`rbi`), the Federal Reserve calendar page (`federal_reserve`), FRED (`fred`, API class), BLS and MoSPI (A2, widened 2026-11-10). Backoff classes (user, 2026-11-10): `fred` is API class and starts at 3 minutes, doubles to 6, and caps at 15 minutes; the other macro hosts are other class, start at 15 minutes, double, and cap at 1 hour (overview section 7.3). Values are split spec S2's;
   - S3: compose template and the `server` service;
   - S4: watchdog;
   - S5a: `GET /internal/due`.
@@ -73,6 +73,7 @@ Open decisions and findings for the user: [home-events-macro-calendar-decisions.
 - Key: env var `FREDAPI_KEY`, in `.env`. Not verified in this session (overview section 5.5).
 - Pass condition for checking the series IDs: open (overview section 8.2 item 16).
 - Terms: personal use is allowed. Series marked "Copyright" are owned by third parties and need the owner's permission outside personal use (overview section 10.3).
+- Terms gate (A6): the RBI, Federal Reserve, FRED, BLS and MoSPI terms are read and recorded (overview section 8.2 item 15) before any fetch from that source is enabled. Whether the user's personal-use acceptance can replace reading is open (C10).
 
 ### India CPI
 
@@ -119,19 +120,21 @@ Rows, hand-seeded as dates only (overview sections 7.7 C4 and 10.1). Rows are as
 
 ### Cadence and lead times
 
+- Each source has its own cron (A2). Macro (RBI and Fed) is one source, and India CPI is a separate source only if the job is kept (A3, C5). Each is run once per cron.
+- The cron times stay open (C12).
 - RBI and Fed poll cadence: open (overview section 8.2 item 16).
 - Alert lead times for rate decisions and CPI: open (overview section 8.2 item 16).
 
 ### Rate limits and gaps
 
-- RBI, Federal Reserve, FRED, BLS and MoSPI: gap and cap not set. Cooldown rule not set (overview section 7.3 table, section 8.2 item 9).
+- RBI, Federal Reserve, FRED, BLS and MoSPI: gap and cap not set. Cooldown rows are requested for RBI, `federal_reserve`, `fred` (API class), BLS and MoSPI (A2, widened 2026-11-10). Backoff class: `fred` is API class; the other macro hosts are other class (overview section 7.3, 2026-11-10). Values are split spec S2's.
 
 ## Carried from the overview (not owned here)
 
 - Licence position: overview section 4.
 - Build order: overview section 7.7 (approved 2026-11-10, C6).
 - Freshness and poll schedule: overview section 7.3.
-- Retention rules and purge: overview section 7.4. The ownership of the retention row is the filings doc (overview section 2).
+- Retention rules and purge: overview section 7.4. The ownership of the retention row is the filings doc (overview section 2). Macro and calendar rows have no purge in v1 (A7). Any later purge is owned by the filings doc (filings spec 5.5).
 
 ## Build specs (stub, not written)
 
@@ -152,15 +155,15 @@ Missing before any build. Items that need a decision point to the Open list. Not
 
 - **Open (user decision), B2.** Do rate decisions also appear in the Home feed? If yes: which feed tier, and how do they dedupe against the LLM route (overview section 6.1)? The review lists three options: cut for v1; the Home events API merges macro rows at read time; or amend the filings schema. Line 10.
 - **Open (user decision), B3.** Where do the rate action, the new rate and the stance come from: typed by hand, verbatim source text, action only, or a parse of the title? The stance vocabulary (hawkish, dovish, neutral against RBI's own terms) and the stance field definitions are open (overview section 8.2 item 1). Lines 10, 21 to 22, 67.
-- **Open (user decision), B4.** Collector layout: one macro source, or one per source (RBI and Fed poll, FRED, India CPI job); cron for each; registration as events sources; registration migration number (split spec). See Dependencies and lines 36 to 39.
+- **Open (user decision), B4.** Collector layout: macro is one source for RBI and Fed (A3), and India CPI is a separate source only if the job is kept (C5, open). Each source has its own cron (A2). Where FRED sits is not settled. Still open: the cron times (C12); registration as events sources; registration migration number (split spec). See Dependencies.
 - **Open (user decision), B5.** Display date for US times that fall on a different date in IST (the FOMC statement shows 10 Dec in IST). Lines 50 and 56.
 - **Open (user decision), M1.** Rollover of calendar rows: who adds the next year's rows, and whether the full year is seeded in one pass from a checked-in file. Whether the FOMC minutes and press conference are rows or sub-events of the statement row. Status values for rows. Lines 43, 47 to 50, 57.
-- **Open (user decision), M2.** Poll cadence. Overview section 7.3 gives 5-minute polling from 08:00 to 15:30 IST on trading days, which misses the macro times (Fed statement 00:30 IST, US CPI 18:00 or 19:00 IST, India CPI 16:00 IST). Choose one low-frequency cron, or calendar-driven windows around each row's time. Whether the RSS "default off" and "older than 1 week dropped" rules (overview 7.3) apply to RBI and Fed. Lines 72 and 83.
-- **Open (user decision), M3.** Cooldown rows for RBI, Federal Reserve, FRED, BLS and MoSPI (requested from the split spec session), or a statement that no shared cooldown applies. Whether the 15-minute retry rule (split spec 4.2) applies. The cap conflict (overview section 7.3 says 3 h; split spec 4.3a says 2 h) is deferred to the split spec. Lines 75 to 77 and 82.
-- **Open (user decision), M4.** Is the India CPI job in v1, or is the value entered by hand with the press-release link? Define "the next available slot" (line 38) in split spec terms or delete it. Define the release-day polling window and the status of a "not yet published" run. Lines 36 to 39.
+- **Open (user decision), M2.** Poll cadence. The overview's earlier single window (5-minute polling from 08:00 to 15:30 IST on trading days) is superseded by A2, which gives each source its own cron, and it still misses the macro times (Fed statement 00:30 IST, US CPI 18:00 or 19:00 IST, India CPI 16:00 IST). Choose one low-frequency cron, or calendar-driven windows around each row's time. Whether the RSS "default off" and "older than 1 week dropped" rules (overview 7.3) apply to RBI and Fed. Lines 72 and 83.
+- **Open (user decision), M3.** Cooldown rows are requested for RBI, `federal_reserve`, `fred` (API class), BLS and MoSPI (A2, widened 2026-11-10). Backoff classes answered 2026-11-10 (A2 status): `fred` API class, the other macro hosts other class; the 2026-11-10 caps (API 15 minutes, other 1 hour) replace the 3 h and 2 h figures (split spec S2 writes the values). Lines 51 and 130.
+- **Open (user decision), M4.** Is the India CPI job in v1, or is the value entered by hand with the press-release link? Define "the next available slot" (line 84) in split spec terms or delete it. Define the release-day polling window and the status of a "not yet published" run. Lines 82 to 85.
 - **Open (user decision), M5.** FRED: which unit is displayed for CPI (index level, or YoY percent by `units=pc1` or computed); revisions; observation date versus release date; how `FEDFUNDS` (a monthly average that lags the FOMC action) is used beside decision rows; the pass condition for the series IDs (overview item 16). Key: app secret store (`secrets-and-roles.md`) or `.env` (line 28). Lines 24 to 30.
 - **Open (user decision), M6.** Trading-day calendar: drop it (weekday cron; holidays cost one empty run), keep the NSE/BSE calendar, or reassign it to a cross-cutting owner. The filings spec names the Upstox market-holidays API (D6b), and overview item 7 names NSE/BSE. Lines 61 to 63 and 95.
-- **Open (user decision), M7.** Retention for macro and calendar rows: keep (small) or 3 years like event rows. Name the purge owner (overview section 8.2 item 4 defers the purge to the filings run). Line 84.
+- **Open (user decision), M7.** Settled by A7 (2026-11-10): macro and calendar rows have no purge in v1, and any later purge is owned by the filings doc (filings spec 5.5). The retention period for a later purge is not decided (overview section 8.2 item 4 defers the purge to the filings run). Line 137.
 - **Open (user decision), M8.** Which screen shows the macro panel and the calendar. Overview section 10.2 calls it the "market dashboard", which is not a screen in `ui-redesign-spec.md` (section 5.1 is the scan table, section 6 the event rule, and section 7 says market mood is not available). Name the screen, the owning UI spec, the endpoints, and the empty and stale states. Lines 5 and 11.
 - **Open (user decision), M9.** Alert channel for rate decisions and CPI: dashboard countdown (overview section 10.3 open), push through the existing Telegram path, or cut from v1. Lead times are open (overview section 8.2 item 16). Lines 73 and 101.
 - **Open (user decision), M10.** Terms of use for RBI, Federal Reserve, BLS and MoSPI are unverified: not read, and not listed in overview section 4.1 or item 15. Read them and record the result, or record the user's personal-use acceptance. The sites may block scripted clients; that is unverified. Lines 30 and 58.

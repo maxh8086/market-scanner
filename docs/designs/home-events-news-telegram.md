@@ -12,13 +12,13 @@ Governing specs: [home-events-filings-spec.md](home-events-filings-spec.md) (eve
 - Telegram link bot. In scope, built later (overview section 7.6).
 - Page fetch for queued links, the intake queue and the beat/miss tag (overview sections 6.1, 6.3 and 7.5).
 - LLM relevance stage. Kept and in scope, built later (overview section 7.7, C1). Not part of the first build.
-- Build order: filings first, then macro, then RSS keyword-only. Telegram, the LLM stage and Upstox come after that (overview section 7.7, C6).
+- Build order: filings first, then macro, then three build phases (A5, accepted 2026-11-10): (1) queue, dedupe and RSS; (2) LLM stage; (3) Telegram. Keyword-only RSS is merged into the LLM phase, so RSS stays OFF until the LLM worker exists. Upstox is last and waits for the licence answer. Overview section 7.7 now carries the A5 news build-order bullet, which supersedes the older order for news sources.
 
 ## Storage and ingest (decided 2026-11-10)
 
 - Intake queue: `event_intake` (migration 002, see the allocation table in overview section 6.3). It lives in the events database, separate from the main database. Only the Fastify API reads or writes it.
 - Processed news rows: `news_events` (migration 003, same table). Not `home_events`. Filings keep `home_events` unchanged.
-- The RSS fetcher and the Telegram reader both feed the same queue, `event_intake`, with the source recorded per row. The LLM worker drains it and writes processed rows to `news_events`.
+- RSS and Telegram are two separate sources. Each has its own ingest route and token (see the route table below and the per-source bullet after it). Both write to the one queue table, `event_intake`, with the source recorded per row. The LLM worker drains it and writes processed rows to `news_events`.
 - Migration numbers come only from the overview 6.3 allocation table. This doc owns 002 and 003 and no other number. Columns: to be specified in the build spec.
 
 Proposed Fastify routes and token roles, in the style of `home-events-filings-spec.md` section 4.6:
@@ -31,7 +31,7 @@ Proposed Fastify routes and token roles, in the style of `home-events-filings-sp
 | `PATCH /internal/events/intake/status` | LLM worker | `news_events_ingest` | Set claimed rows to a terminal status (`kept`, `rejected`, `expired`). Error handling: open (see Open, B5). |
 | `POST /internal/events/news/batch` | LLM worker | `news_events_ingest` | Insert processed rows into `news_events` and set their intake rows to `kept`, in one transaction (overview section 6.3). |
 
-- Per-source routes and tokens: decided 2026-11-10 (decision A1 in `docs/progress/home-events-decisions-needed.md`). Each source has its own route and token. RSS and Telegram are treated as two sources (to confirm). The user may discontinue some sources later.
+- Per-source routes and tokens: decided 2026-11-10 (decision A1 in `docs/progress/home-events-decisions-needed.md`). Each source has its own route and token. RSS and Telegram are two sources, confirmed by the user on 2026-11-10 (A1). The user may discontinue some sources later.
 - Route and role names are proposed. The filings route `POST /internal/events/batch` stays filings-only. Each caller uses one bearer token. Token values never go in the repo, a doc or a log.
 - The collector and the Telegram poller post through Fastify and never touch the events database. The collector keeps its direct access to the main database (`collector-split-spec.md` section 2, decision 3).
 - The Telegram reader needs its own service token to read its secrets through the internal API (`secrets-and-roles.md` decision 10). That token is separate from `telegram_intake_ingest`.
@@ -44,24 +44,26 @@ Proposed Fastify routes and token roles, in the style of `home-events-filings-sp
 - Investing.com (`in.investing.com/rss/`): `news_95`, `news_14`, `news_11`, `news_25`, `news_1061`, `news_1063`, `news_1062` (overview section 5.2).
 - CNBC TV18 (`cnbctv18.com/commonfeeds/v1/cne/rss/`): `economy.xml`, `politics.xml`, `market.xml`, `world.xml` (overview section 5.2).
 - Use: beat/miss tag on results, and broker upgrades and downgrades.
-- Status: OFF by default.
+- Status: OFF by default. RSS stays OFF until the LLM worker exists (A5, accepted 2026-11-10).
 - RSS items older than 1 week are dropped (overview section 7.3).
-- Request gap and cap for these hosts: not set. Cooldown rule for these hosts: not set (overview section 7.3, section 8.2 item 9).
+- Request gap and cap for these hosts: not set. Cooldown rows for these hosts: requested (A2, accepted 2026-11-10; widened 2026-11-10 to the full collection list in overview section 7.3). A host first seen in an accepted Telegram link gets its row from the idempotent function `ensure_source_row` (name proposed) on first sight (default class: other, confirmed 2026-11-10; the function name is proposed; design rules: A9). The table is `source_cooldown`, renamed from `exchange_cooldown` on 2026-11-10. Cooldown class for these hosts: other class, 15 minutes doubling to a 1-hour cap (overview section 7.3, 2026-11-10). Values are written by split spec S2.
 - Investing.com RSS terms: not read (HTTP 403). Investing.com prohibits use, storage and reproduction without written permission (overview section 4.1).
 - CNBC TV18 prohibits copying, storing, republishing, scraping and database use without written authorisation (overview section 4.1).
+- Investing.com and CNBC TV18 stay OFF until their terms are read (A6, accepted 2026-11-10).
 
 ### Telegram link bot
 
-- Users post shortlisted links in a Telegram group. The bot is a group admin and saves each link with its message date as it arrives (overview section 7.6).
-- Each link is queued with its title, link, page headline and summary. No article body (overview section 5.3).
-- LinkedIn links are not queued (overview section 5.3). LinkedIn terms: not read (overview section 8.2 item 15).
+- Users post shortlisted links in a Telegram group. The bot is a group admin and saves each link with its message date as it arrives (overview section 7.6). There is one bot, so one `getUpdates` poller per token (A8, accepted 2026-11-10).
+- Each link is queued with its title, link, page headline and summary. No article body (overview section 5.3). Raw Telegram update JSON is not stored (A7, accepted 2026-11-10).
+- LinkedIn links are not queued (overview section 5.3). No LinkedIn terms reading is needed (A6, accepted 2026-11-10).
 - X and Twitter are out of scope. No X content enters the feed or the event tracker (overview section 7.6).
-- Hosting: the bot runs on the user's laptop, with no always-on host. It resumes from the last confirmed update (`offset` in getUpdates). Revisit an always-on host if links are lost or the posting pattern changes (overview section 7.6).
+- Hosting: the bot runs on the user's laptop, with no always-on host. It resumes from the last confirmed update (`offset` in getUpdates). The offset is stored in a one-row table in the main database (A3, accepted 2026-11-10). The migration number is owned by `collector-split-spec.md`; none is chosen here. Revisit an always-on host if links are lost or the posting pattern changes (overview section 7.6).
 - Delete rule: if delete rights are granted, the bot deletes a message only after its row is saved, not after classification. Telegram only allows deleting messages sent less than 48 hours ago, so each link must be saved within that window (overview section 7.6).
 - Delete rights: not decided (overview section 8.2 item 2).
 - How long Telegram keeps unconfirmed updates: unchecked. This must be checked before laptop-only hosting is accepted (overview section 8.2 item 2).
-- Bot token and chat ID: app secrets named `telegram_bot_token` and `telegram_chat_id`. They are read from the secrets store, not from environment variables. No value is written in this doc. The link group needs its own chat-ID secret (name not chosen; see Open).
+- Bot token and chat ID: app secrets named `telegram_bot_token` and `telegram_chat_id`. They are read from the secrets store, not from environment variables. No value is written in this doc. The link group needs its own chat-ID secret (name chosen at build; A8, accepted 2026-11-10).
 - Telegram reader: a new service. It needs its own plan before build (overview section 7.6).
+- Schedule: the Telegram reader runs once per cron, about every 5 minutes, as source `telegram_links` (A3, accepted 2026-11-10).
 
 ### Page fetch
 
@@ -82,7 +84,7 @@ Proposed Fastify routes and token roles, in the style of `home-events-filings-sp
 
 ### LLM relevance stage
 
-- Kept and in scope. Built after the RSS keyword-only phase (overview section 7.7, C1 and C6).
+- Kept and in scope. Built in the second build phase, after queue, dedupe and RSS (A5, accepted 2026-11-10). Keyword-only RSS is merged into this phase.
 - Model: the local LLM at `LLM_URL`. No model name is hardcoded (overview section 6.1).
 - Raw RSS items never reach the dashboard, the events table or the API response (overview section 6).
 - Contract (overview section 6.1 step 4): compact JSON with `relevant`, `category`, `symbols`, `sectors`, `stance`, `reason` (max 25 words). The contract is open (see Open, B5 and M8).
@@ -104,7 +106,7 @@ Proposed Fastify routes and token roles, in the style of `home-events-filings-sp
 
 - Each relevant item becomes one `news_events` row (migration 003). The overview section 6.3 fields are event_id, source, source_url, published_at, classified_at, category, symbols, sectors, stance, reason, model_id, prompt_version and status. The overview section 7.1 event record also lists company, headline, tier and source name. Columns, types and the `status` value set: to be specified in the build spec.
 - Every row stores model_id and prompt_version (overview section 6.3), so a re-run can be compared with the first result.
-- Rejected items: terminal rows stay in `event_intake` for 14 to 30 days so a re-polled item is not re-queued (overview section 6.3, value open, section 8.2 item 3). They are not stored as `news_events` rows.
+- Rejected items: terminal rows (`rejected`, `expired`) stay in `event_intake` for 30 days (A7, accepted) so a re-polled item is not re-queued (overview section 6.3, section 8.2 item 3). They are not stored as `news_events` rows.
 - Cross-source duplicates: news rows can duplicate `home_events` (filings) and macro rows. The reconciler that links them is filings spec section 4.4, which is not built. Until it is, news rows show unreconciled. The Home cap of 3 events per stock (overview section 7.1) applies to the merged feed.
 - Beat/miss tag: vocabulary is in the next section. Its data path is open (see Open, M9).
 
@@ -125,6 +127,8 @@ Proposed Fastify routes and token roles, in the style of `home-events-filings-sp
 
 ## Build specs (stub, not written)
 
+Three build specs, in phase order (A5, accepted 2026-11-10): (1) queue, dedupe and RSS; (2) LLM stage; (3) Telegram. Each is written when its phase is next. Upstox is last and waits for the licence answer.
+
 Missing before any build:
 
 1. Queue DDL and processed-row DDL. Table names chosen (`event_intake` 002, `news_events` 003). Columns to be specified in the build spec.
@@ -142,8 +146,8 @@ Items marked "Open (user decision)" are findings from the review that need the u
 - Open (user decision), B6: Telegram retention limit (unverified: the 24-hour figure is to be confirmed at core.telegram.org/bots/api), offset storage, and the chat allowlist. Overview section 8.2 item 2.
 - Open (user decision), B7: prefilter owner and policy, the symbol and alias source for "watchlist", and whether Telegram links bypass the prefilter.
 - Open (user decision), B8: page-fetch scope (Telegram only or RSS too), and the request safety and size limits.
-- Open (user decision), M3: poll schedule per source, cooldown rows for new hosts, and main-database migration numbers (arbitrated with `collector-split-spec.md`). Events-database numbers 002 and 003 are allocated.
-- Open (user decision), M4: Telegram reader as a run-once source or as a long-running service.
+- Open (user decision), M3: poll schedule per source (settled by A2, accepted 2026-11-10: each source has its own cron), cooldown rows for new hosts (settled by A2, accepted 2026-11-10: requested for Investing.com and CNBC TV18, widened 2026-11-10: a new Telegram-linked host gets its row on first sight through the idempotent function, default class other), and main-database migration numbers (still open; arbitrated with `collector-split-spec.md`). Events-database numbers 002 and 003 are allocated.
+- Open (user decision), M4: Telegram reader as a run-once source or as a long-running service. Settled by A3 (accepted 2026-11-10): every source runs once per cron, and the Telegram reader is source `telegram_links`.
 - Open (user decision), M6: expiry clock start, and whether user-curated Telegram links expire or are rejected.
 - Open (user decision), M7: verification set population, size and labeller (overview section 6.4).
 - Open (user decision), M8: `stance`, `sectors` and the `category` enum in the first contract (overview section 8.2 item 1).
@@ -153,7 +157,7 @@ Items marked "Open (user decision)" are findings from the review that need the u
 - Open (user decision), M13: Telegram delete rights (overview section 8.2 item 2).
 - Open (user decision), M14: order of the build specs (RSS, LLM stage, Telegram) against overview section 7.7.
 - Open (user decision), M15: RSS feed set, the host terms gate (Investing.com terms unread, overview section 8.2 item 15), sample capture, and the per-host gap and cap (overview section 8.2 item 9).
-- Open (user decision), M17: group or direct message (overview section 5.3 and 7.6 differ), message shape, title and URL rules, and the ignore list for X, LinkedIn and shorteners.
-- Terminal-row window in `event_intake`: 14 to 30 days, value open (overview section 6.3, section 8.2 item 3).
+- Open (user decision), M17: message shape, title and URL rules, and the ignore list for X, LinkedIn and shorteners. Group chat, decided by A8 (accepted 2026-11-10).
+- Terminal-row window in `event_intake`: 30 days, decided by A7 (overview section 6.3, section 8.2 item 3).
 - Stance field and definitions: overview section 8.2 item 1 (see M8).
-- LinkedIn terms: not read. Whether they are needed at all, since LinkedIn links are not queued, is a user question.
+- LinkedIn terms: no reading needed, since LinkedIn links are not queued (A6, accepted 2026-11-10).

@@ -15,7 +15,7 @@ This overview holds the cross-cutting decisions and the licence position. Each s
 
 ## 2. Ownership
 
-Each rule has one owning doc. Where the owning doc does not yet carry the decided value, this overview keeps it, marked "held here", until the owning doc is updated (section 8).
+Each rule has one owning doc. Where the owning doc does not yet carry the decided value, this overview keeps it, marked "held here", until the owning doc is updated (section 8). The overview stays owner of shared rules until each build spec is approved (A4, accepted 2026-11-10).
 
 | Rule | Owning doc | Decided value |
 |---|---|---|
@@ -23,7 +23,7 @@ Each rule has one owning doc. Where the owning doc does not yet carry the decide
 | Event tiers, feed tiers, shortlist, event fields, Home cap | This overview | Here (section 7.1, 7.2) |
 | Request policy: NSE and BSE | `home-events-filings.md` | Here (section 7.3) |
 | Request policy: other hosts | Each split doc for its own hosts (section 7.3) | Here; numbers not set |
-| Retention (3 years) and purge | `home-events-filings.md` | Here (section 7.4) |
+| Retention (3 years) and purge | `home-events-filings.md` | Here (section 7.4); purge deferred (8.2 item 4) |
 | Keyword lists (order-win, macro and geopolitical) | `home-events-filings.md` | Here (section 9) |
 | LLM contract and relevance filter | `home-events-news-telegram.md` | Here (section 6) |
 | Macro series and calendar rows | `home-events-macro-calendar.md` | Here (section 10) |
@@ -74,11 +74,11 @@ Use: beat/miss tag on results, and broker upgrades and downgrades. RSS is OFF by
 
 ### 5.3 Telegram link bot: in scope, built later
 
-The user sends news links to a Telegram bot. Each link is queued with its title, link, page headline and summary, and no article body. X links are ignored. LinkedIn links are not queued. The bot runs on the user's laptop for now (section 7.6).
+The user posts news links in a Telegram group where the bot is an admin (A8, accepted 2026-11-10; section 7.6). Each link is queued with its title, link, page headline and summary, and no article body. X links are ignored. LinkedIn links are not queued. The bot runs on the user's laptop for now (section 7.6).
 
 ### 5.4 Upstox News (per stock): blocked
 
-Source: `GET https://api.upstox.com/v2/news` (the News endpoint of the official SDK), authenticated with the read-only analytics token. No static IP is needed.
+Source: `GET https://api.upstox.com/v2/news`, called through `UpstoxClient._get` in `scanner/upstox.py` (D4 resolved 2026-11-10: no SDK dependency for News), authenticated with the read-only analytics token. No static IP is needed.
 
 - Category `instrument_keys`. Keys are `NSE_EQ|<ISIN>`, built from `symbol_sector.isin` (751 rows, all with an ISIN). Up to 30 keys per request, so the watchlist and scanner universe are batched in groups of 30. Each item is expected to carry its instrument key, so the symbol is known before the relevance check (section 6.1). Present or absent: unverified until a redacted sample is captured (decision D2 in `docs/progress/home-events-decisions-needed.md`).
 - The endpoint returns about the last 7 days. Poll once a day, store new items, dedupe by `article_link`. This is the one exception to the schedule in section 7.3: a daily poll loses nothing only while the collector runs at least once in each 7-day window (`collector-split-spec.md` section 5, risk 5). A host that is off for longer loses items older than the window.
@@ -96,7 +96,7 @@ Source: `GET https://api.upstox.com/v2/news` (the News endpoint of the official 
 
 ## 6. News relevance filter (LLM stage)
 
-Decision: the LLM stage is kept and in scope. It is built after the RSS keyword-only phase (section 7.7). The dashboard shows only news and feed items that a local LLM marks relevant. Raw RSS items never reach the dashboard, the events table or the API response.
+Decision (A5, accepted 2026-11-10): the LLM stage is kept and in scope. Nothing reaches `news_events` or the API before the LLM stage exists. Keyword-only RSS is merged into the LLM phase, so RSS stays OFF until the LLM worker exists. The dashboard shows only news and feed items that a local LLM marks relevant. Raw RSS items never reach the dashboard, the events table or the API response.
 
 ### 6.1 Pipeline
 
@@ -104,7 +104,7 @@ Decision: the LLM stage is kept and in scope. It is built after the RSS keyword-
 2. Deduplicate by URL and by content hash, at queue insert.
 3. Keyword prefilter (section 9). Items with no keyword and no watchlist symbol are marked `prefiltered_out` and do not call the LLM.
 4. When the LLM is available, a worker drains the queue in batches, oldest first. Each item is classified once by the local LLM at `LLM_URL`, with no model name hardcoded. The model returns compact JSON only: `{"relevant": true|false, "category": "<tier or macro>", "symbols": [], "sectors": [], "stance": null|"hawkish"|"dovish"|"neutral", "reason": "<max 25 words>"}`. The `stance` field depends on open item 1 (section 8).
-5. Relevant items are written to the event tracker (section 6.3). Items marked not relevant are marked `rejected` and kept as terminal `event_intake` rows for 14 to 30 days (value open, section 6.3), then purged. Items marked `expired` are kept the same way.
+5. Relevant items are written to the event tracker (section 6.3). Items marked not relevant are marked `rejected` and kept as terminal `event_intake` rows for 30 days (A7, accepted 2026-11-10; section 6.3), then purged. Items marked `expired` are kept the same way.
 6. Each run records counts: queued, prefiltered_out, sent_to_llm, relevant, rejected, expired.
 
 Criteria for relevant: an event tier 1 or tier 2 item (section 7.1); an item naming a symbol in the watchlist or scanner universe; or a macro item on RBI or Fed policy stance, or an India or US inflation release. Not relevant: general market commentary, opinion, sponsored content and duplicate wire copies.
@@ -118,7 +118,7 @@ Criteria for relevant: an event tier 1 or tier 2 item (section 7.1); an item nam
 ### 6.3 Event tracker storage
 
 - **Storage decision (2026-11-10, user: "go ahead").** One separate events database holds events from all sources (filings spec D8). Only the Fastify API touches it (D9). Mongo is not used: Postgres `jsonb` holds raw payloads, and promotion from raw to processed stays in one transaction.
-  - `event_intake` (staging, new, to be specified): every raw news or macro item, with its `jsonb` payload, source, dedupe hash, status (`new`, `processing`, `kept`, `rejected`, `expired`) and an expiry date. Terminal rows (`rejected`, `expired`) are kept 14 to 30 days (value open) so a re-polled item is not re-queued or re-classified. This is retention separate from the 3-year rule for event rows (section 7.4).
+  - `event_intake` (staging, new, to be specified): every raw news or macro item, with its `jsonb` payload, source, dedupe hash, status (`new`, `processing`, `kept`, `rejected`, `expired`) and an expiry date. Terminal rows (`rejected`, `expired`) are kept 30 days (A7, accepted 2026-11-10) so a re-polled item is not re-queued or re-classified. This is retention separate from the 3-year rule for event rows (section 7.4). Macro and calendar rows have no purge in v1; any later purge is owned by the filings doc (filings spec 5.5). No raw Telegram update JSON is stored.
   - `home_events` (processed filings): as approved in the filings spec, NSE only, unchanged. Filings skip staging because they are structured and rule-filtered.
   - Processed news rows and processed macro and calendar rows: separate tables in the same events database, because their columns differ from filings (no ISIN or symbol required; summary, category, stance and LLM fields). The Home feed merges them through Fastify. Table names, columns and migration numbers (`002` onward in the events series) are owned by the news, macro and Upstox docs, and the numbers must be allocated once.
   - Superseded: the earlier idea of reusing `home_events` for news (news doc, "Storage and ingest" section) and of putting these tables in the main database.
@@ -135,7 +135,7 @@ Criteria for relevant: an event tier 1 or tier 2 item (section 7.1); an item nam
 
   The main-database migration numbers are separate and are allocated in `collector-split-spec.md`. Each processed table is written only through a Fastify ingest route with its own token role (filings: `home-events-filings-spec.md` 4.6; pattern: `secrets-and-roles.md`).
 - Each relevant item becomes one event row with: event_id, source, source_url, published_at, classified_at, category, symbols, sectors, stance, reason, model_id, prompt_version, status. Every row stores model_id and prompt_version, so a re-run can be compared with the first result.
-Ingest routes and token roles (proposed). Decided 2026-11-10 (decision A1): each source has its own route and token. RSS and Telegram are treated as two sources (to confirm).
+Ingest routes and token roles (proposed). Decided 2026-11-10 (decision A1): each source has its own route and token. RSS and Telegram are two separate sources (confirmed by the user, 2026-11-10, decision A1).
 
 | Route (proposed) | Caller | Token role (proposed) |
 |---|---|---|
@@ -175,21 +175,21 @@ The shortlist is the intersection of the three. On the 2026-09-28 full run this 
 ### 7.3 Freshness, poll schedule and request policy
 
 - Alerts arrive within minutes while the collector runs. Each item shows when it was fetched. When the laptop is off, nothing polls, and this is a stated known limit.
-- Poll every 5 minutes from 08:00 to 15:30 IST on trading days, and every hour at all other times, including when the market is closed. **Exchange filings (spec 5, 2026-11-10):** every 5 minutes, weekdays 08:00 to 20:55 IST (cron `*/5 8-20 * * 1-5`), because most results are filed after 15:30; the hourly off-hours poll is not built for filings. Trading days follow the NSE/BSE calendar. Upstox News is the exception and is polled once a day (section 5.4).
+- Each source has its own cron (A2, accepted 2026-11-10). The overview's earlier window, every 5 minutes from 08:00 to 15:30 IST on trading days and every hour at other times, is not used as the single cadence for all sources. Macro cron times stay open (C12). **Exchange filings (spec 5, 2026-11-10):** every 5 minutes, weekdays 08:00 to 20:55 IST (cron `*/5 8-20 * * 1-5`), because most results are filed after 15:30; the hourly off-hours poll is not built for filings. Trading days follow the NSE/BSE calendar. Upstox News is the exception and is polled once a day (section 5.4), after the 20:55 IST filings close, proposed 21:30 IST (to confirm), and relies on the client's 429 handling; a 403 or 429 also starts the shared `upstox` cooldown (A2, accepted 2026-11-10; section 7.3).
 - Exchange filings and the economic calendar are the default sources. RSS stays OFF by default. RSS items older than 1 week are dropped; the same limit is proposed for Upstox News (section 8).
 - NSE and BSE: 14 feeds were planned (section 5.1); the first build has 8 NSE feeds (see the section 5.1 update). They are requested one at a time per exchange, with a random gap of 5 to 8 seconds before each request, polled only on the schedule above. The 2 parked feeds are never requested. Exponential backoff on HTTP 429 or 403.
-- Cooldown on failure: 15 minutes for the first pause, doubling on each further failure, capped at 3 hours. While paused, the dashboard shows a "source paused" marker. This replaces the earlier 24-hour kill switch. The policy is self-imposed; no NSE or BSE limit is published.
+- Cooldown on failure, by host class (2026-11-10): API hosts (`upstox`, `fred`) start at 3 minutes, double to 6 minutes, and cap at 15 minutes (user, 2026-11-10). All other hosts start at 15 minutes, double, and cap at 1 hour (user, 2026-11-10). The other class includes `nse`, `bse` and `rbi`, which are web scrapes (user, 2026-11-10). This replaces the earlier 3-hour cap. While paused, the dashboard shows a "source paused" marker. This replaces the earlier 24-hour kill switch. The policy is self-imposed; no NSE or BSE limit is published. Cooldown rows are requested for every collection host (A2, accepted 2026-11-10, widened 2026-11-10): Investing.com and CNBC TV18 (news); nse, bse, upstox and screener (split spec 4.3 exchange rows); RBI, the Federal Reserve calendar page, FRED, BLS and MoSPI (macro). The table is `source_cooldown`, keyed by host (renamed from `exchange_cooldown`; the split-spec owner decides). A host linked from a Telegram post gets its row the first time it appears in an accepted link, through a function (name proposed `ensure_source_row`; default class other, confirmed 2026-11-10; the function name is proposed; design rules in decisions A9). Backoff values are written by split spec S2.
 | Host | Owning doc | Gap | Cap | Status |
 |---|---|---|---|---|
 | NSE, BSE | `home-events-filings.md` | 5 to 8 s random, one request per exchange | Cooldown above | Set |
-| Investing.com, CNBC TV18 (RSS) | `home-events-news-telegram.md` | Not set | Not set | Open |
-| RBI, Federal Reserve, FRED, BLS, MoSPI | `home-events-macro-calendar.md` | Not set | Not set | Open |
-| Upstox | `home-events-upstox-news.md` | Not set | Upstox class assumed (section 5.4) | Open |
+| Investing.com, CNBC TV18 (RSS) | `home-events-news-telegram.md` | Not set | Cooldown above (other class) | Open |
+| RBI, Federal Reserve, FRED, BLS, MoSPI | `home-events-macro-calendar.md` | Not set | Cooldown above (other class; FRED is API class) | Open |
+| Upstox | `home-events-upstox-news.md` | Not set | Cooldown above (API class); News rate-limit class still open | Open |
 
 ### 7.4 Retention and storage
 
-- All event rows, including news titles, links and Telegram updates, are kept for 3 years, then purged. There is no licence for news content, and the user accepts that risk.
-- Amended 2026-11-10 (section 6.3): news and macro items that are rejected or expired stay in `event_intake` as terminal rows for 14 to 30 days (value open), only so they are not re-queued; they are then purged. Filings have no staging rows.
+- Retention is set by A7 in the decisions file. Event rows are kept 3 years, the policy stated in the filings spec; the purge is deferred (8.2 item 4). The 30-day rule for terminal intake rows is at line 192. There is no licence for news content, and the user accepts that risk.
+- Amended 2026-11-10 (section 6.3): news and macro items that are rejected or expired stay in `event_intake` as terminal rows for 30 days (A7, accepted 2026-11-10), only so they are not re-queued; they are then purged. Filings have no staging rows.
 - Rejected items are not stored as event rows (section 6.1 step 5 and section 6.3). Per-run counts are the only trace; for exchange filings they are kept in the run message (`collector_runs.message`), not in stored columns (filings spec 5.2).
 
 ### 7.5 Beat/miss tag and market cap
@@ -202,7 +202,7 @@ The shortlist is the intersection of the three. On the 2026-09-28 full run this 
 
 ### 7.6 Telegram link intake and X
 
-- Telegram link intake is kept and in scope. The user posts shortlisted links in a Telegram group. The bot is a group admin and saves each link with its message date as it arrives.
+- Telegram link intake is kept and in scope. The user posts shortlisted links in a Telegram group. The bot is a group admin and saves each link with its message date as it arrives. One bot, so one `getUpdates` poller per token. The group chat id gets its own secret name, chosen at build (A8, accepted 2026-11-10).
 - Delete rights are not decided (section 8). If granted, the bot deletes a message only after its row is saved, not after classification. Telegram only allows deleting messages sent less than 48 hours ago, so each link must be saved within that window.
 - Hosting: the bot runs on the user's laptop, with no always-on host. It resumes from the last confirmed update (`offset` in getUpdates), because getUpdates has no time filter. Links posted while the laptop is off are picked up only if Telegram keeps unconfirmed updates long enough (unchecked, section 8). Revisit an always-on host if links are lost or the posting pattern changes.
 - Page fetch: the collector fetches each publisher page for its headline and summary and stores them for personal use, accepting the terms risk in section 4. No article body text. This does not cover republishing.
@@ -214,6 +214,7 @@ The shortlist is the intersection of the three. On the 2026-09-28 full run this 
 - Build order (approved 2026-11-10, C6): filings first; then macro (the 4 calendar rows); then RSS keyword-only. Telegram, the LLM stage and Upstox come later.
 - Cuts approved 2026-11-10: C3 (fundamentals tables and keyword reconciliation move into the filings doc); C4 (macro uses 4 calendar rows seeded by hand, and FRED `CPIAUCSL` and `FEDFUNDS` only; RBI priorities 2 and 3, the speeches feed and stance extraction are dropped); C5 (30-day price-impact tracking deferred); C6 (build order above).
 - Not cut: the LLM stage (C1) and the Telegram bot (C2) are kept.
+- News build order (A5, accepted 2026-11-10): three news build specs in phase order, each written when its phase is next: (1) queue, dedupe and RSS; (2) LLM stage; (3) Telegram. Keyword-only RSS is merged into the LLM phase, so RSS stays OFF until the LLM worker exists. The Upstox build is last and waits for the licence answer. The build order bullet above is not changed here; it is superseded for the news sources by this bullet.
 - Live-feed tests are opt-in and run outside the offline test command. The offline command (`.venv/Scripts/python.exe -m unittest discover -s tests -t . -q`) uses recorded samples only and never calls the network.
 
 ## 8. Open items
@@ -222,31 +223,31 @@ The shortlist is the intersection of the three. On the 2026-09-28 full run this 
 
 1. Status and "Still open" text: resolved by this rewrite.
 2. Licence wording: resolved (section 4).
-3. Split docs: open. The filings spec is at revision 4 (draft, not approved); the news, macro and Upstox docs have no build spec yet. Owner: each split doc (item 9).
+3. Split docs: open. The filings spec is at revision 4 (draft, not approved); the news, macro and Upstox docs have no build spec yet. Owner: each split doc (8.2 item 14).
 4. Events DDL and dedupe key: drafted in `home-events-filings-spec.md` (revision 4), awaiting approval. BSE scrip code map: deferred with BSE (Z2). Owner: `home-events-filings.md` (item 11).
-5. Rate-limit and kill-switch policy: partly resolved (section 7.3). Open: per-host numbers and cooldown (8.2 item 9). The cycle budget is resolved (8.2 item 10).
+5. Rate-limit and kill-switch policy: partly resolved (section 7.3). Open: per-host gap and cap numbers (8.2 item 9). The cooldown classes were set 2026-11-10 (section 7.3); the values are for split spec S2. The cycle budget is resolved (8.2 item 10).
 6. Wrong data facts: resolved here (`CPIMEDSL` removed, MoSPI 16:00 IST, `mcap_cr`). The split docs still carry old values (item 14).
 7. Dangling and stale references: resolved here (sections renumbered). The split docs still cite old numbers (item 14).
 8. Undefined thresholds: open (items 6, 9 and 10).
-9. Governance rules: open for purge owner and schedule, rejected-row retention and Telegram retention (items 2, 3, 6 and 10). "Critical" for retention is defined in section 7.1.
+9. Governance rules: Telegram retention is open (8.2 item 2). The purge is deferred (8.2 item 4), and rejected-row retention is decided (8.2 item 3). "Critical" for retention is defined in section 7.1.
 
 ### 8.2 Open items by owner
 
 1. **Open.** The `stance` field in the LLM contract and the macro stance definitions (section 10.1), now that C4 drops stance extraction. Owner: `home-events-news-telegram.md` (contract); `home-events-macro-calendar.md` (panel).
 2. **Open.** Whether the Telegram bot gets delete rights, and how long Telegram keeps unconfirmed updates (checked before laptop-only hosting is accepted). Owner: `home-events-news-telegram.md`.
-3. **Proposed, not decided.** Rejected rows kept 30 days as a hash and a reason, so recall can be audited. Owner: `home-events-news-telegram.md`.
-4. **Decided as deferred, 2026-11-10 (Z5).** Purge job: the future design is a purge inside the `home_filings` run (filings spec D5). Not built in the first build. Owner: `home-events-filings.md`.
+3. **Decided 2026-11-10 (A7, accepted).** Terminal `event_intake` rows (`rejected`, `expired`) are kept 30 days. No raw Telegram update JSON is stored. Owner: `home-events-news-telegram.md`.
+4. **Decided as deferred, 2026-11-10 (Z5).** Purge job: the future design is a purge inside the `home_filings` run (filings spec D5). Not built in the first build. Macro and calendar rows have no purge in v1; any later purge is owned by the filings doc (filings spec 5.5) (A7, accepted 2026-11-10). Owner: `home-events-filings.md`.
 5. **Proposed, not decided.** The meaning of "critical event" for impact tracking, once C5 is lifted. Owner: `home-events-filings.md`.
 6. **Proposed, not decided.** Thresholds to set before build: significant insider trade (percentage), order-to-market-cap ratio, and back-to-back wins. Owner: `home-events-filings.md`.
 7. **Proposed, not decided.** Trading-day calendar source. The working assumption is the NSE/BSE calendar. Owner: `home-events-macro-calendar.md`.
 8. **Proposed, not decided.** Upstox News 1-week age limit and OFF by default (section 5.4). Owner: `home-events-upstox-news.md`.
-9. **Open.** Per-host gap and cap numbers for RSS, RBI, Federal Reserve, FRED, BLS, MoSPI and Upstox, and the cooldown rule for hosts other than NSE and BSE (section 7.3). Owner: each split doc.
+9. **Open.** Request gap numbers for RSS, RBI, Federal Reserve, FRED, BLS, MoSPI and Upstox. Cooldown classes and caps are set 2026-11-10 (section 7.3; values for split spec S2). Decided (A2, accepted 2026-11-10): each source has its own cron, and cooldown rows are requested for every collection host in section 7.3 (widened 2026-11-10 by the user's host list); the Upstox run is once a day, proposed 21:30 IST (to confirm). Gap numbers stay open. Owner: each split doc.
 10. **Resolved 2026-11-10, revised.** Cycle budget: the first build has 8 NSE feeds per cycle, 40 to 64 s in gaps, worst case 224 s inside a 240 s run deadline (filings spec 5.3). Earlier figure: 14 feeds, 70 to 112 s. Owner: `home-events-filings.md`.
 11. **Drafted, awaiting approval.** Events DDL, NSE cookie and header handling, failure behaviour and dedupe key are in `home-events-filings-spec.md`. Feed-to-field mapping for the 8 first-build feeds waits for the samples (spec T0). BSE scrip code map: deferred (Z2). Owner: `home-events-filings.md`.
 12. **Open.** Keyword reconciliation: each term added to `scanner/factors.py` is reviewed one by one, the term table (section 9.1) moves to the filings doc (C3), and the "Contract" rule, "ORDER BOOK" and bare "AWARDED", L1 bidder and PPA terms, and optional level C terms are decided. Owner: `home-events-filings.md`.
 13. **Open.** LLM stage: the 30 labelled real filings from the opt-in sample (with negatives), the prompt, timeout, retries, malformed-JSON handling, injection defence for untrusted headlines, category enum and queue DDL. Owner: `home-events-news-telegram.md`.
 14. **Open.** Split docs still use stale section numbers and status text, and must match this overview. Owner: each split doc.
-15. **Open.** Terms not yet read: NSE Data Sharing and Usage Policy; BSE terms page (HTTP 403); Investing.com RSS terms (HTTP 403); LinkedIn; Upstox API terms and developer agreement. Owner: `home-events-filings.md` (NSE, BSE); `home-events-news-telegram.md` (Investing.com, LinkedIn); `home-events-upstox-news.md` (Upstox).
+15. **Open.** Terms not yet read: NSE Data Sharing and Usage Policy; BSE terms page (HTTP 403); Investing.com RSS terms (HTTP 403); Upstox API terms and developer agreement. Each source needs a recorded terms gate before it is enabled (A6, accepted 2026-11-10). Owner: `home-events-filings.md` (NSE, BSE); `home-events-news-telegram.md` (Investing.com); `home-events-upstox-news.md` (Upstox).
 16. **Open.** Macro: RBI and Fed poll cadence; alert lead times for rate decisions and CPI; the FRED pass condition for checking the series IDs. Owner: `home-events-macro-calendar.md`.
 17. **Open.** India CPI: ingestion job spec (source page, parsing, DDL, schedule, failure handling; the job is decided, its spec is not written). Dates after 12 Nov 2026 come from the MoSPI advance release calendar. Release time 16:00 IST (user-confirmed 2026-11-10); a MoSPI page must still confirm it. Owner: `home-events-macro-calendar.md`.
 18. **Blocked.** Written confirmation from Upstox that News may be stored and shown for personal use (section 4). Owner: `home-events-upstox-news.md`.

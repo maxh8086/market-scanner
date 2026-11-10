@@ -1,9 +1,9 @@
 # Home events sources: decisions needed (consolidated)
 
 Date: 2026-11-10
-Status: recommendations only, nothing decided.
+Status: A1 to A9 decided (see each entry). B, C, D and E entries remain recommendations only.
 
-Nothing in this file is decided. The recommendations are the orchestrator's suggestions only. No build task is dispatched from the news and Telegram, macro and calendar, or Upstox news docs.
+A1 to A9 are decided. The B, C, D and E recommendations are the orchestrator's suggestions only. No build task is dispatched from the news and Telegram, macro and calendar, or Upstox news docs.
 
 How to answer: reply with the ID and accept, change, or defer (for example "A1 accept", "B2 change: 2 items per call", "C7 defer").
 
@@ -13,7 +13,7 @@ Sources: the three decision files in `docs/progress/` (news and Telegram, macro 
 
 ## A. Cross-cutting decisions (answer once, applies to several docs)
 
-A1 decided by the user on 2026-11-10: a separate ingest route and token for each source; the user may discontinue some later. RSS and Telegram are treated as two sources (to confirm). A2 to A8 are still open.
+A1 decided by the user on 2026-11-10: a separate ingest route and token for each source; the user may discontinue some later. RSS and Telegram are two sources, confirmed by the user on 2026-11-10. A2 to A8 were accepted at their recommended answers by the user on 2026-11-10.
 
 **A1. Ingest route and token model**
 - Question: Should RSS, Telegram, Upstox news and macro all send raw items through one shared intake route, or does each source get its own route and token?
@@ -23,13 +23,15 @@ A1 decided by the user on 2026-11-10: a separate ingest route and token for each
 - Blocks: route names in all three builds, the token rows in `secrets-and-roles.md`, and the events API.
 
 **A2. Poll schedule per source and cooldown rows**
+Status: accepted at the recommended answer by the user on 2026-11-10. Widened 2026-11-10 (host list): the cooldown rows cover every collection host, not only the scraped hosts in the recommended answer below. Hosts and keys: Investing.com (`investing_com`) and CNBC TV18 (`cnbc_tv18`) for news; `nse`, `bse`, `upstox` and `screener` (split spec 4.3 exchange rows); RBI (`rbi`), the Federal Reserve calendar page (`federal_reserve`), `fred` (FRED/ALFRED API), `bls` and `mospi` (macro). Decided 2026-11-10: the table is `source_cooldown`, keyed by host, with the same per-key independence rule (the split-spec owner decides). Backoff classes (user, 2026-11-10, final): API class (`upstox`, `fred`) starts at 3 minutes, doubles to 6 minutes, caps at 15 minutes. Other class (every remaining host, including the web-scraped `nse`, `bse` and `rbi`) starts at 15 minutes, doubles, caps at 1 hour. Split spec S2 writes the values. Telegram-linked hosts: a row is created the first time a host appears in an accepted link, by an idempotent function, with the other class as default (confirmed 2026-11-10; the function name is proposed). The Upstox clause below is superseded: Upstox uses the shared `upstox` row.
 - Question: Should each source have its own cron, and which hosts need a shared cooldown row in the collector-split spec?
 - Source: news M3; macro M2, M3 and B4; Upstox cron slot (readiness 15) and zoom-out 6. Merged.
-- Recommended answer: Give each source its own cron, as the filings spec does, not an in-run window. Ask the split-spec owner for cooldown rows only for scraped public hosts that can return 403 (Investing.com, CNBC TV18, RBI, Fed, BLS, MoSPI). For Upstox, rely on the client's 429 handling (about 26 calls a day) and confirm with the split-spec owner that no row is needed; the Upstox slot is one daily run after the 20:55 IST filings close, for example 21:30 IST (to confirm).
+- Recommended answer (superseded in part by the status line above): Give each source its own cron, as the filings spec does, not an in-run window. Ask the split-spec owner for cooldown rows only for scraped public hosts that can return 403 (Investing.com, CNBC TV18, RBI, Fed, BLS, MoSPI). For Upstox, rely on the client's 429 handling (about 26 calls a day) and confirm with the split-spec owner that no row is needed; the Upstox slot is one daily run after the 20:55 IST filings close, for example 21:30 IST (to confirm).
 - Why: The overview's 5-minute window misses macro release times, and one cron string cannot serve every source.
-- Blocks: cron lines in each build spec, split-spec cooldown rows, and the Upstox schedule. The 3 h vs 2 h cap conflict (overview 7.3 vs split 4.3a) belongs to the split spec.
+- Blocks: cron lines in each build spec, split-spec cooldown rows, and the Upstox schedule. The 3 h vs 2 h cap conflict (overview 7.3 vs split 4.3a) is replaced by the 2026-11-10 caps (API 15 minutes, other 1 hour); the split-spec owner writes the values.
 
 **A3. How each source registers with the collector**
+Status: accepted at the recommended answer by the user on 2026-11-10.
 - Question: Does each source run as a run-once collector source, and is a blocked source registered before its blocker clears?
 - Source: news M4, macro B4, Upstox F6. Merged.
 - Recommended answer: Every source runs once per cron. Telegram is `telegram_links` on a cron of about 5 minutes, with its offset in a one-row main-database table. Macro is one source for RBI and Fed, with India CPI separate only if C5 keeps the job. Upstox is not registered in `SOURCES` or `config/collector_services.json` until its blocker clears, so the `enabled` and `default_enabled` keys are removed.
@@ -37,6 +39,7 @@ A1 decided by the user on 2026-11-10: a separate ingest route and token for each
 - Blocks: main-database migration numbers for the offset table and registration (owned by the collector-split spec, not the events series), and the registry entries.
 
 **A4. Document ownership and size**
+Status: accepted at the recommended answer by the user on 2026-11-10.
 - Question: Who owns shared rules and source detail, and how small must the Upstox doc become?
 - Source: news M12, macro M13, Upstox F16, zoom-out 9, rerun structural 7 and comprehension 6. The zoom-out lens wants shrinking, while the readiness lens wants more detail. Merged.
 - Recommended answer: Each source doc holds its own deltas and open items. The overview stays owner of shared rules until each build spec is approved (overview section 2). Shrink the Upstox doc to a stub of about 50 lines, and write its detail in the build spec only after the licence gate (A6) clears. Keep it as a separate file, not folded into the news doc.
@@ -44,6 +47,7 @@ A1 decided by the user on 2026-11-10: a separate ingest route and token for each
 - Blocks: overview section 10 edit (see F), each doc's Open list, and the Upstox build spec.
 
 **A5. Build order and the LLM gate**
+Status: accepted at the recommended answer by the user on 2026-11-10.
 - Question: Does anything reach `news_events` or the API before the LLM relevance stage exists, and in what order are the build specs written?
 - Source: news B1 and M14; Upstox F1 (LLM ordering part) and zoom-out 2. Merged.
 - Recommended answer: Nothing reaches `news_events` or the API before the LLM stage exists. Merge keyword-only RSS into the LLM phase, so RSS stays OFF until the LLM worker exists. Write three build specs in phase order (queue, dedupe and RSS; then the LLM stage; then Telegram), each only when its phase is next. Upstox is last and waits for the licence answer. Then amend overview 6 and 7.7.
@@ -51,6 +55,7 @@ A1 decided by the user on 2026-11-10: a separate ingest route and token for each
 - Blocks: the three build specs, overview sections 6 and 7.7, and the Upstox build.
 
 **A6. Terms-of-use gates before any fetch**
+Status: accepted at the recommended answer by the user on 2026-11-10.
 - Question: Must each source's terms be read and recorded before any fetch, and what happens to sources whose terms may prohibit storing?
 - Source: news M15 and N1, macro M10, Upstox licence (ui-redesign decision 1, Finding 14) and F2, Upstox overview item 18. Merged.
 - Recommended answer: Each source needs a recorded gate before it is enabled: terms read and recorded in overview 8.2 item 15, and a redacted sample captured and kept out of git before any field table is written. Keep Investing.com and CNBC TV18 OFF until their terms are read; the review says both prohibit storing, which is unverified until read. Drop the LinkedIn terms reading, since LinkedIn links are not queued or fetched. For Upstox, capture one redacted sample now (capture publishes nothing), but enable nothing until Upstox confirms in writing.
@@ -58,18 +63,36 @@ A1 decided by the user on 2026-11-10: a separate ingest route and token for each
 - Blocks: every RSS, Telegram link, macro and Upstox fetch, and the field tables.
 
 **A7. Retention and purge ownership**
+Status: accepted at the recommended answer by the user on 2026-11-10.
 - Question: How long are terminal intake rows kept, are macro rows purged, and is raw Telegram update JSON stored?
 - Source: news M5 (residual), macro M7, Upstox retention lines. Merged.
-- Recommended answer: Keep terminal `event_intake` rows (`rejected`, `expired`) for 30 days; the value is open between 14 and 30. Keep macro and calendar rows with no purge in v1. Store no raw Telegram update JSON, since it carries user names and ids. The purge itself stays deferred and is owned by the filings doc (filings spec 5.5).
+- Recommended answer: Keep terminal `event_intake` rows (`rejected`, `expired`) for 30 days; the value is accepted at 30 days on 2026-11-10. Keep macro and calendar rows with no purge in v1. Store no raw Telegram update JSON, since it carries user names and ids. The purge itself stays deferred and is owned by the filings doc (filings spec 5.5).
 - Why: Terminal rows must outlast the window in which a source re-polls old items.
 - Blocks: the intake retention setting, the filings purge owner, and overview 8.2 item 4.
 
 **A8. Telegram chat type, secret names and bot count**
+Status: accepted at the recommended answer by the user on 2026-11-10.
 - Question: Are links posted in a group or sent to the bot directly, what secret name holds the group's chat id, and is there one bot or two?
 - Source: news M17 and residual M2. Merged.
 - Recommended answer: Links are posted in a group, because overview 7.6 is the later section and the rest of the doc assumes it; overview 5.3 should be aligned. Give the group chat id its own secret name (name chosen at build, not here). Use one bot, so there is one `getUpdates` poller per token.
 - Why: The news doc already assumes a group, and one bot needs only one poller.
 - Blocks: the Telegram reader build, the group chat id row in `secrets-and-roles.md`, and the allowlist rule (B3).
+
+**A9. `ensure_source_row` design (first-sight function for Telegram-linked hosts)**
+Status: decided 2026-11-10 by the user's delegation ("you decide best"). The recommended answers below are adopted. The function name is still proposed; the split-spec owner (the user) may rename it.
+- Question: How the first-sight function behaves: key normalisation, idempotency, call sites, reads of a missing row, the meaning of "accepted link", redirects, class correction, and the limit of the `/internal/due` filter.
+- Source: the 2026-11-10 review of the cooldown host decisions (A2, section 7.3).
+- Recommended answer (adopted):
+  1. Keys: lowercase the host, strip a leading `www.` and any port, and do no other rewriting. Known hosts map to the fixed keys in A2 through a table in code. Any other host uses its normalised name as its key.
+  2. Idempotent: `INSERT ... ON CONFLICT (host_key) DO NOTHING`, then read the row. The function returns the existing or new row, with its backoff class.
+  3. Call sites: (a) when a Telegram link is accepted and stored, before any fetch; (b) the fetcher calls it before each request, so a host created at run time is also covered.
+  4. Missing row: a read never treats a missing row as "no cooldown". The fetcher calls the function first, so a missing row is created with the other class.
+  5. Accepted link: a Telegram link that the news pipeline stores as an event candidate. A link the pipeline rejects creates no row.
+  6. Redirects: the row is keyed on the host the link names. If a fetch redirects to another host, that host also gets a row from the function before the redirect is followed.
+  7. Class correction: the function never changes an existing row's class. An owner corrects a class by hand, with a recorded `UPDATE`.
+  8. `/internal/due`: S5a filters only the hosts in the config file. Hosts created at run time are covered by the fetcher's own check before each request (S5a).
+- Why: A newly seen host must not run without a cooldown row, and a missing row must never look like "no cooldown".
+- Blocks: the news reader build, split spec S2 (table and function), and S5a.
 
 ---
 
@@ -87,7 +110,7 @@ A1 decided by the user on 2026-11-10: a separate ingest route and token for each
 - Source: news B5 (blocker). Collector container config is not settled by the review.
 - Recommended answer: Reuse `scanner/llm.py` with a news-relevance kind and its own prompt-version constant, using the proposed names `LLM_API` and `LLM_MODEL`, one item per call to start, a timeout of about 120 s (well under the 900 s default), and one retry. On malformed JSON or LLM down, mark the item `skipped` with `api_unavailable`; put untrusted text only in a delimited data block and validate every output field in code.
 - Why: Article text can steer the model, so the defences must sit in code, not only in the prompt.
-- Blocks: the LLM contract, the `category` enum (B10), and the container config.
+- Blocks: the LLM contract, the `category` enum (B8), and the container config.
 
 **B3. Telegram retention limit, offset storage and allowlist**
 - Question: Accept the Telegram retention limit as a known limit, or move the bot to an always-on host? Where is the offset stored, and does the reader accept only the link-group chat?
@@ -269,9 +292,10 @@ A1 decided by the user on 2026-11-10: a separate ingest route and token for each
 - Blocks: the cadence section, overview 7.3, and the cron lines.
 
 **C13. Cooldown rows for macro hosts**
+Status: FRED gets a row (`fred`, API class), answered 2026-11-10 (user host list). The retry timing is set by the backoff classes in the A2 status line (2026-11-10). The overview's 3 h cap and split 4.3a's 2 h cap are superseded by the 2026-11-10 caps (API 15 minutes, other 1 hour; split-spec owner writes the values).
 - Question: Should the split-spec session add cooldown rows for RBI, Fed, FRED, BLS and MoSPI, or should the doc state that no shared cooldown applies? Does the 15-minute retry rule apply?
 - Source: macro M3 (decision). See A2 and E4.
-- Recommended answer: Request the rows, as the filings spec did for its hosts, so a wrong URL that returns 403 cannot trigger repeated requests. The 15-minute retry question and the 3 h vs 2 h cap conflict stay with the split-spec owner.
+- Recommended answer: Request the rows, as the filings spec did for its hosts, so a wrong URL that returns 403 cannot trigger repeated requests. The 15-minute retry question is answered by the backoff classes (A2 status, 2026-11-10). The 3 h vs 2 h cap conflict is replaced by the 2026-11-10 caps (API 15 minutes, other 1 hour); the split-spec owner writes the values.
 - Why: Scraped public hosts can return 403, and the policy needs one owner.
 - Blocks: split-spec cooldown rows, and the macro gap and cap (overview 8.2 item 9).
 
@@ -325,22 +349,33 @@ A1 decided by the user on 2026-11-10: a separate ingest route and token for each
 - Question: If the live payload has no instrument key on each item, how is an article linked to a symbol? May a redacted sample be captured before Upstox confirms? Does zero items across all keys mean "no news" or "broken"?
 - Source: Upstox F2.
 - Recommended answer: Capture one redacted sample now, kept out of git, because capture publishes nothing. Defer the attribution choice until the sample shows whether the instrument key is on each item. Treat zero items across all keys as a "zero items" warning, not as success.
-- Why: Only the sample shows which fallback is needed. One request per key is about 751 calls a day.
+- Why: Only the sample shows which fallback is needed. The default path batches up to 30 instrument keys per request (overview 5.4), about 26 calls a run for 751 keys. One request per key (about 751 calls a day) is the review's fallback, used only if items lack the instrument key.
+- Option, added 2026-11-10 (no recommendation; the sample decides): if items carry no instrument key, match the headline and summary against company names in stock_snapshots.company (only stock_snapshots.company holds a company name; symbol_sector and constituent_membership join by ISIN for sector and index and have no name column). No extra Upstox calls. Risk: false positives on generic words and group names; test on the sample.
 - Blocks: the endpoint and request shape, the stored-fields list, and the sample (A6 still applies).
 
 **D3. Dedupe key and seen-links store**
 - Question: Is the dedupe key `article_link` alone, or `(article_link, instrument key)`? Should a seen-links store be adopted, or overview 8.2 item 3 for this source?
 - Source: Upstox F3. Overview 8.2 item 3 is owned by the news doc.
-- Recommended answer: Dedupe on the news doc's intake hash, with `article_link` as the hash input and the instrument key kept in the `jsonb` payload (the zoom-out form). This differs from the orchestrator draft, which used `(article_link, instrument key)`. The zoom-out form drops the second symbol when one article is tagged to two keys, so keep the zoom-out form unless the sample shows one article tagged to several keys; then use the draft form. Adopt overview 8.2 item 3 (30-day hash) for this source.
+- Recommended answer: Dedupe on the news doc's intake hash, with `article_link` as the hash input and the instrument key kept in the `jsonb` payload (the zoom-out form). This differs from the orchestrator draft, which used `(article_link, instrument key)`. The zoom-out form drops the second symbol when one article is tagged to two keys, so keep the zoom-out form unless the sample shows one article tagged to several keys; then use the draft form. Do not cite overview 8.2 item 3 as a hash rule. The 30-day rule for terminal rows is home-event-sources.md:192 and A7.
 - Why: The filings convention (source prefix plus hash, filings 4.2) keeps one dedupe path.
 - Blocks: the `event_intake` dedupe column (migration 002) and the Upstox retention (A7).
 
-**D4. SDK or UpstoxClient for the News call**
+**D4. SDK or UpstoxClient for the News call (resolved 2026-11-10)**
+- Status: resolved. The user's rule (2026-11-10): use `UpstoxClient` if it supports every required feature, otherwise the SDK. Result: `UpstoxClient._get` (`scanner/upstox.py:269`). No SDK dependency for News.
 - Question: Should the News call use the official SDK (a new dependency in three files) or `UpstoxClient._get`?
 - Source: Upstox F8.
-- Recommended answer: Use `UpstoxClient._get`. It adds no dependency, and it already has Bearer auth, the three-window limiter and 429 handling. The sample capture should also confirm that a plain requests call is not 403'd (the fundamentals doc, item 6, doubts it); a plain urllib call gets 403 from Cloudflare, per the review.
-- Why: A News call is one new method and a `NEWS_BATCH_SIZE = 30` constant on the existing client.
-- Blocks: endpoint wording, rate-limit text, and the three dependency files only if the SDK is chosen.
+- Feature check (reviewed 2026-11-10):
+  - Bearer auth with the analytics token: present (`UpstoxClient.__init__`).
+  - `GET /v2/news` with `category=instrument_keys` and up to 30 comma-separated keys: `_get(url, params)` takes the params. One new News method is needed (no SDK).
+  - Paging with `page_number`, `page_size` and `metadata.total_pages`: `_get` returns the JSON, so the caller loops. New code, no SDK.
+  - Multi-window rate limit and 429 escalation: present (`_RateLimiter`, `_handle_429`).
+  - Error on a non-200 response: present, with the status and body in the message. `UpstoxError` has no status field, so D7 needs a small addition.
+  - Timeout: fixed at 60 s. The timeout argument in D8 is a small addition, not a gap.
+  - Headers accepted by the News endpoint: unverified (`Content-Type: application/json` on GET; review item 12). This is a go/no-go in the live capture.
+  - Cloudflare: the client's headers already work for quotes and candles in production, and News uses the same host and headers. The live capture confirms it.
+- Switch rule: move to the SDK only if the live News call with the client's headers returns a Cloudflare 403 (see D7).
+- Why: The client already has auth, the limiter and 429 handling, so a News call is one new method plus paging, with no new dependency.
+- Blocks: nothing now. The live capture checks the two items above. Fundamentals doc item 6 (SDK for fundamentals fetches) is a separate decision and is not changed by this one.
 
 **D5. The 1-week age limit**
 - Question: Keep the 1-week age limit (overview 8.2 item 8)? If kept, does it measure `published_at` or fetch time?
@@ -359,7 +394,7 @@ A1 decided by the user on 2026-11-10: a separate ingest route and token for each
 **D7. Auth failure or Cloudflare 403 (new, comprehension 3)**
 - Question: How does the poller tell an auth failure from a Cloudflare 403?
 - Source: rerun comprehension 3 (new item).
-- Recommended answer: Decide after the redacted sample is captured. Until then, treat a non-JSON 403 body as Cloudflare, not as an auth failure.
+- Recommended answer: Decide after the redacted sample is captured. Until then, treat a non-JSON 403 body as Cloudflare, not as an auth failure. No Cloudflare branch exists in scanner/upstox.py; the generic raise is around lines 283-295. Supporting evidence: fundamentals-upstox-secondary.md:105 (urllib 403, Cloudflare error 1010).
 - Why: A plain 403 looks like a bad token, and the wrong label sends the operator to the wrong fix.
 - Blocks: the error handling in the Upstox client and the sample capture (D2).
 
@@ -373,7 +408,7 @@ A1 decided by the user on 2026-11-10: a separate ingest route and token for each
 **D9. How OFF is enforced**
 - Question: How is the OFF state enforced, given that `collector_settings.mode` allows only `scheduled` or `manual`, and a UI "Run now" can start a manual source?
 - Source: Upstox F6. Point to A3.
-- Recommended answer: See A3: leave the source out of `SOURCES` and `config/collector_services.json` until it is unblocked. Specs may be written while it is disabled.
+- Recommended answer: See A3: leave the source out of `SOURCES` and `config/collector_services.json` until it is unblocked. Specs may be written while it is disabled. Evidence: the mode CHECK is db/migrations/001_core.sql:84; the Python guard is scanner/collect/settings.py:79-80; request_run checks SOURCES only (settings.py:136-137); the UI Run now calls it at ui/app/api.py:507. config/collector_services.json exists only in the docs.
 - Why: One switch then remains to flip.
 - Blocks: the Upstox registration and the build specs.
 
@@ -410,11 +445,11 @@ A1 decided by the user on 2026-11-10: a separate ingest route and token for each
 - Blocks: T2b, T3b, T5b and T5c.
 
 **E4. Relay of the collector-split requests**
-- Question: Who sends `docs/progress/collector-split-spec-requests.md` to the owner of `docs/designs/collector-split-spec.md`? No live session owns that spec.
+- Question: Who receives `docs/progress/collector-split-spec-requests.md`? The split spec's owner is the user.
 - Source: process.
-- Recommended answer: You forward the file, or open a session for that spec.
-- Why: Cooldown rows (A2, C13), registration numbers (A3) and the cap conflict wait on it.
-- Blocks: A2, A3, C13 and the 3 h vs 2 h cap.
+- Recommended answer: resolved 2026-11-10. The user owns the split spec and reviews the requests file directly.
+- Why: Cooldown rows (A2, C13) and registration numbers (A3) wait on the split spec.
+- Blocks: A2, A3, C13, and S2 writing the 2026-11-10 backoff values.
 
 **E5. Blocked items**
 - Question: Who clears the two blocked items, T0 (a network path NSE accepts) and T1 (the split-spec migration number)?
@@ -449,8 +484,8 @@ Reply "apply" to have these made. Items marked "after" wait for a decision first
 - Overview 8.2 item 15: add the Upstox API terms and developer agreement to the "terms not read" list.
 - Overview 5.4: the instrument-key sentence (line 83) is not in the stored-fields list (line 85). The "loses nothing" wording needs the collector-uptime condition (about 7 days).
 - Overview 6.4 (line 139): the test set is filings, not news and Telegram. Change after B7 is decided.
-- Overview 6 and 7.7 (after A5): amend the LLM-only rule (line 98) against the RSS keyword-only build (line 202).
-- Overview 5.3 and 7.6 (after A8): align direct message versus group.
+- Overview 6 and 7.7 (after A5): amend the LLM-only rule (line 98) against the RSS keyword-only build (line 202). Applied 2026-11-10 (A5 accepted).
+- Overview 5.3 and 7.6 (after A8): align direct message versus group. Applied 2026-11-10 (A8 accepted).
 - Overview section 9.2 and the filings keyword lists (after C16): align the macro prefilter and the feed filter.
 - `docs/designs/ui-redesign-brief.md` line 53: the Telegram token is described as a Swarm secret read from `/run/secrets/`. It is stored in the secrets store, per `secrets-and-roles.md`.
 - `docs/designs/fundamentals-upstox-secondary.md` line 177: cites "section 4.2 of home-event-sources.md" for the Telegram group. The current location is overview 7.6.
