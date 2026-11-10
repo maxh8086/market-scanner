@@ -1,11 +1,15 @@
 """Exchange filings for the home events feed (spec section 6).
 
-T3a only adds `redact_error`. Later tasks add the feed registry, parsers,
-fetch and run logic to this module.
+T3a added `redact_error`. T3b adds `Feed`, `ParseError`, `ParseResult`,
+`dedupe_key` and `to_event_row`. Later tasks add the feed table (FEEDS),
+the parsers, and the fetch and run logic to this module.
 """
 from __future__ import annotations
 
+import hashlib
 import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
 # Query strings: everything from "?" up to whitespace or a quote/bracket.
 _QUERY_RE = re.compile(r"(https?://[^\s'\"<>?]+)\?[^\s'\"<>]*")
@@ -30,3 +34,79 @@ def redact_error(text: str) -> str:
     out = _SECRET_KV_RE.sub(lambda m: f"{m.group(1)}=<redacted>", out)
     out = _TOKEN_LIKE_RE.sub("<redacted>", out)
     return out
+
+
+class ParseError(Exception):
+    """The body is not usable XML for this feed. Feed-level: the whole feed is lost."""
+
+
+@dataclass(frozen=True)
+class Feed:
+    """One exchange feed in the registry (spec 4.0). The FEEDS tuple is added in T4e."""
+
+    feed_code: str  # "nse:<Name>"
+    url: str
+    event_type: str
+    feed_tier: str
+    default_enabled: bool
+    flagged: bool  # tier or event type still to confirm (4.0)
+
+
+@dataclass(frozen=True)
+class ParseResult:
+    """What a feed parser returns: the usable items and the count it dropped."""
+
+    items: list[dict]
+    dropped: int  # items missing a required field or with an unparseable date
+
+
+def dedupe_key(
+    feed_code: str,
+    source_id: str | None,
+    source_url: str,
+    published_at: datetime,
+) -> str:
+    """Key one feed item so a refetch of the same item gives the same key (spec 4.2).
+
+    With a feed id the key is "<feed_code>:<source_id>". Without one it is
+    "<feed_code>:" plus a SHA-256 of the link and the UTC publish time.
+    `published_at` must be timezone-aware: a naive value would be read as
+    machine-local time.
+    """
+    if source_id:
+        return f"{feed_code}:{source_id}"
+    if published_at.tzinfo is None:
+        raise ValueError("published_at must be timezone-aware")
+    utc_iso = published_at.astimezone(timezone.utc).isoformat()
+    digest = hashlib.sha256(f"{source_url}|{utc_iso}".encode()).hexdigest()
+    return f"{feed_code}:{digest}"
+
+
+def to_event_row(feed: Feed, item: dict) -> dict:
+    """Map one parsed item (isin already filled by filter_items) to a `home_events` row.
+
+    `exchange` comes from the "nse:" prefix of `feed_code`. BSE is deferred (Z2),
+    so any other prefix is refused here rather than failing the API's CHECK.
+    `published_at` is ISO 8601 with its UTC offset, as the API requires (4.6).
+    """
+    prefix, sep, _ = feed.feed_code.partition(":")
+    if not sep or prefix != "nse":
+        raise ValueError(f"unsupported feed_code: {feed.feed_code!r}")
+    published_at = item["published_at"]
+    if published_at.tzinfo is None:
+        raise ValueError("published_at must be timezone-aware")
+    source_id = item.get("source_id")
+    return {
+        "dedupe_key": dedupe_key(feed.feed_code, source_id, item["source_url"], published_at),
+        "exchange": prefix.upper(),
+        "feed_code": feed.feed_code,
+        "source_id": source_id,
+        "source_url": item["source_url"],
+        "isin": item["isin"],
+        "symbol": item["symbol"],
+        "company": item.get("company"),
+        "event_type": feed.event_type,
+        "feed_tier": feed.feed_tier,
+        "headline": item["headline"],
+        "published_at": published_at.isoformat(),
+    }
