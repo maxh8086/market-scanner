@@ -97,3 +97,24 @@ Stored encrypted in `app_secret` as an app-level key, set by the admin (decision
 - The collector requests each secret it needs from the API over the internal endpoint, authenticated with that token. The API decrypts and returns the value.
 - Each service gets its own token file. The file is readable by that service's user only.
 - Status: approved. Build (S5) not started yet.
+
+## Decision 16: Kite access token is runtime-only (decided 2026-11-10)
+- `kite_access_token` is not stored in `app_secret`, not imported from `data/secrets.env`, and not shared with any service. It is issued by Kite at the daily login (`scanner/auth.py`, cached in the git-ignored `.kite_token`).
+- Done: the `KITE_ACCESS_TOKEN` mapping in `scanner/secrets_cli.py` (ENV_TO_APP) and the `KITE_ACCESS_TOKEN` line in `env.template` have been removed. The token is read from `.kite_token` (the daily login cache written by `python -m scanner.auth`).
+- `KITE_API_KEY` and `KITE_API_SECRET` remain stored app secrets.
+
+## Ingest token roles and the collector service token (proposed 2026-11-10)
+
+Decision A1 (2026-11-10): each source has its own ingest route and token. These roles are proposed, not built. The routes are defined in the design docs named below.
+
+| Role (proposed) | Caller | Route (proposed) | Defined in |
+|---|---|---|---|
+| `rss_intake_ingest` | RSS fetcher | `POST /internal/events/intake/rss` | `home-events-news-telegram.md` |
+| `telegram_intake_ingest` | Telegram reader | `POST /internal/events/intake/telegram` | `home-events-news-telegram.md` |
+| `upstox_news_ingest` | Upstox news poller (runs under the collector service token) | `POST /internal/events/intake/upstox` | `home-events-upstox-news.md` |
+| `news_events_ingest` | LLM worker | claim, status and `POST /internal/events/news/batch` | `home-events-news-telegram.md` |
+| `macro_ingest` | macro source | `POST /internal/events/macro` | `home-events-macro-calendar.md` |
+
+The FRED key row is not added. It waits on overview decision C6.
+
+Service token mapping (Upstox review finding 19): the secret endpoint serves `upstox_analytics_token` only to the service token mapped to `collector` (`ui/app/internal_secrets.py`, `SERVICE_ALLOWED`). The Upstox poller runs under that collector token and adds no new service identity. The `collector only` limit holds for the secret endpoint. Fastify also reads an Upstox token from the environment (`server/src/index.ts`). The location of the ingest tokens is open (see the Upstox doc, Open list).

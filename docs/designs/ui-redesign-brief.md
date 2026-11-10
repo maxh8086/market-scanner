@@ -50,7 +50,7 @@ Keep all three open. Design one holdings model, with three inputs:
 
 ## Secrets
 
-- Telegram bot token: Docker Swarm secret `telegram_bot_token`. It is read once at startup from `/run/secrets/`, and never shown in the UI or logs.
+- Telegram bot token: stored in the secrets store (encrypted, read through the internal API), per `secrets-and-roles.md` decisions 2 and 9. It is never shown in the UI or logs.
 - Other keys stay in the existing secrets store for now.
 - The Docker MCP secret store is not used by this app.
 
