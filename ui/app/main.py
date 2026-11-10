@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 
 from scanner.secret_crypto import load_master_key
 from ui.app import api
+from ui.app import internal_secrets
 
 
 def check_master_key() -> None:
@@ -40,6 +41,7 @@ async def no_cache_static(request: Request, call_next):
 
 # Include API routes
 app.include_router(api.router, prefix="/api")
+app.include_router(internal_secrets.router)
 
 # Health check
 @app.get("/api/health")

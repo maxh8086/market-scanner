@@ -64,7 +64,8 @@ class CandlesEODTests(unittest.TestCase):
         utc_after_close = after_close.astimezone(pytz.UTC)
 
         # Mock history.collect_eod to avoid the real Upstox call
-        with patch("scanner.history.collect_eod") as mock_fetch:
+        with patch("scanner.history.collect_eod") as mock_fetch, \
+                patch("scanner.service_client.fetch_secret", return_value="test-token"):
             mock_fetch.return_value = {"fetched": 10, "new": 5, "from": None, "to": None}
             result = self.source.run({}, now=utc_after_close)
             self.assertEqual(result["fetched"], 10)
@@ -88,7 +89,8 @@ class CandlesEODTests(unittest.TestCase):
         self.assertIn("before close", result["message"])
 
         # With 10-minute margin, should run
-        with patch("scanner.history.collect_eod") as mock_fetch:
+        with patch("scanner.history.collect_eod") as mock_fetch, \
+                patch("scanner.service_client.fetch_secret", return_value="test-token"):
             mock_fetch.return_value = {"fetched": 5, "new": 2, "from": None, "to": None}
             result = self.source.run({"after_close_minutes": 10}, now=utc_at_15_45)
             self.assertEqual(result["fetched"], 5)
@@ -109,7 +111,8 @@ class CandlesEODTests(unittest.TestCase):
         after_close = ist.localize(datetime(2024, 9, 30, 16, 30, 0))
         utc_after_close = after_close.astimezone(pytz.UTC)
 
-        with patch("scanner.history.collect_eod") as mock_fetch:
+        with patch("scanner.history.collect_eod") as mock_fetch, \
+                patch("scanner.service_client.fetch_secret", return_value="test-token"):
             mock_fetch.side_effect = RuntimeError("Upstox unreachable")
             result = self.source.run({}, now=utc_after_close)
             self.assertEqual(result["fetched"], 0)

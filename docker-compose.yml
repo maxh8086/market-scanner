@@ -125,7 +125,14 @@ services:
       MARKETDATA_BACKEND: postgres
       DOCSTORE_BACKEND: mongo
       POSTGRES_DSN: ${POSTGRES_DSN_CONTAINER}
-    volumes: *persist-config
+      SECRETS_API_URL: http://ui:8080
+      SERVICE_TOKEN_FILE: /run/app-keys/collector_token
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+      - ${APP_SERVICE_TOKEN_FILE:?set APP_SERVICE_TOKEN_FILE in .env to the host path of the collector token file}:/run/app-keys/collector_token:ro
     restart: always
 
   ui:                    # runs, cost metrics and stock dashboards on http://127.0.0.1:8080
@@ -135,10 +142,14 @@ services:
     environment:
       <<: *scanner-db-env
       APP_MASTER_KEY_FILE: /run/app-keys/app_master_key   # container path; the UI process holds the master key
+      COLLECTOR_TOKEN_FILE: /run/service-tokens/collector_token
     volumes:
       - ./data:/app/data
       # Host folder that holds the master key (set APP_MASTER_KEY_DIR in .env). Read-only, never baked into the image.
       - ${APP_MASTER_KEY_DIR:?set APP_MASTER_KEY_DIR in .env to the folder that holds app_master_key}:/run/app-keys:ro
+      # Single-file mount of the collector's service token, so the API can check the internal secrets endpoint.
+      # Outside /run/app-keys so it is not nested inside the read-only key folder mount.
+      - ${APP_SERVICE_TOKEN_FILE:?set APP_SERVICE_TOKEN_FILE in .env to the host path of the collector token file}:/run/service-tokens/collector_token:ro
     ports:
       - "127.0.0.1:8080:8080"            # loopback only: the UI has no login
     restart: always

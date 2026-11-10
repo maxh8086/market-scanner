@@ -7,6 +7,7 @@ import pytz
 
 from scanner.collect import scheduler
 from scanner.collect.sources import IndexEOD, SOURCES
+from scanner.service_client import SecretUnavailable
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -42,11 +43,12 @@ class IndexEODTests(unittest.TestCase):
 
     def test_1535_is_not_skipped_by_market_gate(self):
         # Monday 2026-11-09 15:35 IST: a manual refresh after the close must pass the gate.
-        # Stored data is behind the target and the token is blanked, so the run stops at the
-        # token check without any network call.
-        with patch("scanner.index_candles.last_stored_date", return_value=date(2026, 11, 6)),                 patch.dict("os.environ", {"UPSTOX_ANALYTICS_ACCESS_TOKEN": ""}):
+        # Stored data is behind the target and the token fetch reports it unavailable, so the run
+        # stops at the token check without any network call.
+        with patch("scanner.index_candles.last_stored_date", return_value=date(2026, 11, 6)), \
+                patch("scanner.service_client.fetch_secret", side_effect=SecretUnavailable("no token")):
             result = self.source.run({}, now=ist(2026, 11, 9, 15, 35))
-        self.assertEqual(result["message"], "skipped: UPSTOX_ANALYTICS_ACCESS_TOKEN not set")
+        self.assertTrue(result["message"].startswith("skipped: upstox token unavailable ("))
         self.assertNotIn("market open", result["message"])
 
     def test_already_stored_through_target_is_skipped(self):

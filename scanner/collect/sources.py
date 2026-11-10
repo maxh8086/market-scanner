@@ -9,6 +9,7 @@ from typing import Optional
 import pytz
 import requests
 
+from scanner import service_client
 from scanner.mongo import _redact
 
 
@@ -129,11 +130,12 @@ class CandlesEOD(Source):
         try:
             # Load environment and Upstox credentials
             load_dotenv()
-            token = __import__("os").environ.get("UPSTOX_ANALYTICS_ACCESS_TOKEN", "")
-            if not token:
+            try:
+                token = service_client.fetch_secret("upstox_analytics_token")
+            except service_client.SecretUnavailable as exc:
                 return {
                     "fetched": 0, "new": 0, "from": None, "to": None,
-                    "message": "skipped: UPSTOX_ANALYTICS_ACCESS_TOKEN not set"
+                    "message": f"skipped: upstox token unavailable ({exc})"
                 }
 
             client = upstox.UpstoxClient(token)
@@ -555,9 +557,10 @@ class IndexEOD(Source):
                 return self._skip(f"already stored through {target}")
 
             load_dotenv()
-            token = __import__("os").environ.get("UPSTOX_ANALYTICS_ACCESS_TOKEN", "")
-            if not token:
-                return self._skip("skipped: UPSTOX_ANALYTICS_ACCESS_TOKEN not set")
+            try:
+                token = service_client.fetch_secret("upstox_analytics_token")
+            except service_client.SecretUnavailable as exc:
+                return self._skip(f"skipped: upstox token unavailable ({exc})")
 
             from scanner import upstox
             client = upstox.UpstoxClient(token)
