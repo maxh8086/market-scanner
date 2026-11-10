@@ -36,6 +36,7 @@ import {
 } from "./presets.js";
 import { buildIndexEodQuery, shapeIndexEod } from "./indexEod.js";
 import { registerCollectorRefreshRoute } from "./collectorRefresh.js";
+import { registerHomeEventsRoutes, type HomeEventsRouteDeps } from "./homeEventsRoute.js";
 import {
   buildIsinLookupQuery,
   createWsSocket,
@@ -83,6 +84,9 @@ export interface AppDeps {
   logger?: boolean;
   live?: LiveDeps;
   kite?: KiteDeps;
+  /** Home events ingest (POST /internal/events/batch). The route is registered only when both are set. */
+  checkToken?: HomeEventsRouteDeps["checkToken"];
+  eventsTx?: HomeEventsRouteDeps["eventsTx"];
 }
 
 const defaultCreateFeed: CreateFeedFn = (options) =>
@@ -292,6 +296,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   // Manual EOD refresh for the index_eod collector (refused on trading days before 15:30 IST).
   registerCollectorRefreshRoute(app, deps.query);
+
+  // Home events ingest from the scanner's home_filings collector. Off unless the caller wires a token check and a transaction.
+  if (deps.checkToken && deps.eventsTx) {
+    registerHomeEventsRoutes(app, { checkToken: deps.checkToken, eventsTx: deps.eventsTx });
+  }
 
   // Zerodha Kite holdings for the holdings table. Live prices are NOT taken from here (they come from Upstox).
   // The Kite token is read on the server and never sent to the browser.
