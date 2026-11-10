@@ -1,7 +1,8 @@
 """Exchange filings for the home events feed (spec section 6).
 
 T3a added `redact_error`. T3b adds `Feed`, `ParseError`, `ParseResult`,
-`dedupe_key` and `to_event_row`. Later tasks add the feed table (FEEDS),
+`dedupe_key` and `to_event_row`. T3c adds `filter_items`, `classify_response`,
+`FetchResult` and `Cooldown`. Later tasks add the feed table (FEEDS),
 the parsers, and the fetch and run logic to this module.
 """
 from __future__ import annotations
@@ -10,6 +11,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Protocol
 
 # Query strings: everything from "?" up to whitespace or a quote/bracket.
 _QUERY_RE = re.compile(r"(https?://[^\s'\"<>?]+)\?[^\s'\"<>]*")
@@ -110,3 +112,80 @@ def to_event_row(feed: Feed, item: dict) -> dict:
         "headline": item["headline"],
         "published_at": published_at.isoformat(),
     }
+
+
+def filter_items(
+    items: list[dict],
+    universe: dict[str, str],
+) -> tuple[list[dict], dict[str, int]]:
+    """Keep items whose symbol is in the universe, and fill a missing ISIN from it (spec 4.3).
+
+    `universe` maps symbol to ISIN (loaded once per run by `load_universe`).
+    Returns (kept, counts). Kept items are copies, so the caller's dicts are not
+    changed. An ISIN the feed supplied is kept as it is. `counts` always has the
+    key "universe": the number of items rejected because their symbol is not in
+    the universe.
+    """
+    kept: list[dict] = []
+    counts = {"universe": 0}
+    for item in items:
+        isin = universe.get(item["symbol"])
+        if isin is None:
+            counts["universe"] += 1
+            continue
+        filled = dict(item)
+        if not filled.get("isin"):
+            filled["isin"] = isin
+        kept.append(filled)
+    return kept, counts
+
+
+def classify_response(status: int | None, content_type: str, body: bytes) -> str:
+    """Classify one feed response as "ok", "blocked", "retry" or "fail" (spec 5.2).
+
+    `status` is None for a timeout or a connection error. The checks run in the
+    order of the 5.2 table, so a 200 that returns an HTML page is "blocked", not
+    "ok". Any status the table does not list (3xx, 401, 404, other 4xx, and a 2xx
+    other than 200) is "fail".
+    """
+    if status is None:
+        return "retry"
+    if status in (403, 429):
+        return "blocked"
+    if status == 408 or 500 <= status <= 599:
+        return "retry"
+    if status == 200:
+        if "html" in (content_type or "").lower():
+            return "blocked"
+        head = body.lstrip()[:16].lower()
+        if head.startswith(b"<!doctype html") or head.startswith(b"<html"):
+            return "blocked"
+        if not body.strip():
+            return "fail"
+        return "ok"
+    return "fail"
+
+
+@dataclass(frozen=True)
+class FetchResult:
+    """What `fetch_feed` returns for one feed (spec 5.2, 6).
+
+    `outcome` is "ok", "blocked", "transient" (a retry that failed again) or
+    "fatal" (a non-transient failure, or a ParseError). `detail` is redacted
+    with `redact_error` and never holds a URL with a query string.
+    """
+
+    outcome: str
+    items: list[dict]
+    dropped: int
+    detail: str
+
+
+class Cooldown(Protocol):
+    """The shared NSE pause (spec 5.1, 5.2). S2 supplies the real one; tests inject a fake."""
+
+    def active(self, exchange: str, now: datetime) -> bool: ...
+
+    def block(self, exchange: str, now: datetime, reason: str) -> None: ...
+
+    def reset(self, exchange: str) -> None: ...
