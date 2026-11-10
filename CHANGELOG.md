@@ -18,6 +18,7 @@ All notable changes to this project are recorded here. Newest first.
 - `docs/wireframe-review-2026-11-01.md`: full text of the five review-page sections removed from `#/review` on 2026-11-01.
 - `scripts/ensure_postgres.ps1`: checks Docker is up, starts `scanner-postgres` (`docker compose up -d`, a no-op if running) and waits up to 60 seconds until it is healthy. `start.ps1` calls it before the databases stage.
 - `docs/progress/rollback.md`: rollback procedure for orchestrator merges (2026-11-11). Each integration tags `origin/main` as `pre-task-<N>` before merging, so the merge can be reverted to that tag.
+- `scanner/home_events.py` `fetch_feed` (home filings, T4b): fetches one NSE feed after a random 5 to 8 second gap, retries once after 30 seconds when the run deadline allows, and returns ok, blocked, transient or fatal. 10 offline tests in `tests/test_home_events_run.py`.
 
 ### Decisions
 - 2026-10-31, initial brief: Written by the brainstorm and Goldfish review (six lenses plus synthesizer). Covers one glossary file, one entry per column, formula checks, build warning, and the open questions.
