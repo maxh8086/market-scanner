@@ -646,6 +646,34 @@ class RunCycleHardeningTests(unittest.TestCase):
         self.assertTrue(result["message"].startswith("config:"))
         self.assertEqual(session.calls, [])
 
+    def test_finite_huge_run_deadline_is_config_error(self):
+        # 10**12 is finite and positive, so it passes validation. clock() + 10**12 s overflows datetime.
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [xml_ok()], feeds=ONE_FEED, params={"run_deadline_s": 10**12}
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["message"], "config:run_deadline_s")
+        self.assertEqual(session.calls, [])
+
+    def test_finite_huge_gap_max_is_config_error(self):
+        # 10**12 is finite and positive, so it passes validation. clock() + per-feed budget overflows datetime.
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [xml_ok()], feeds=ONE_FEED, params={"gap_max_s": 10**12}
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["message"], "config:gap_max_s")
+
+    def test_finite_huge_backoff_skips_retry_without_raising(self):
+        # The first response is transient. The retry would need clock() + 10**12 s, which overflows datetime,
+        # so the retry must be skipped instead of raising.
+        script = [FakeResponse(500, {}, b"oops"), xml_ok()]
+        result, session, sleep, post, cooldown = run_cycle_with(
+            script, feeds=ONE_FEED, params={"backoff_s": 10**12}
+        )
+        self.assertEqual(len(session.calls), 1)
+        self.assertNotIn(10**12, sleep.durations)
+        self.assertFalse(result.get("message", "").startswith("config:"))
+
     def test_invalid_rows_stop_loop_and_reset_per_spec(self):
         # Invalid rows end the run (spec 5.2). Reset still happens: no block, no mid-run cooldown,
         # and one feed succeeded (spec 5.1 step 5). Invalid is not excluded from that rule.
