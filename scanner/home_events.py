@@ -304,7 +304,11 @@ def _run_config(params: dict, feeds: tuple[Feed, ...]) -> tuple[dict, tuple[Feed
         value = params.get(key, default)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise _ConfigError(key)
-        if not math.isfinite(value) or value <= 0:
+        try:
+            finite = math.isfinite(value)
+        except OverflowError:
+            finite = False
+        if not finite or value <= 0:
             raise _ConfigError(key)
         cfg[key] = value
     if cfg["gap_min_s"] > cfg["gap_max_s"]:
@@ -430,6 +434,15 @@ def run_cycle(
         kept, counts = filter_items(outcome.items, universe)
         universe_rejected += counts["universe"]
         rows = [to_event_row(feed, item) for item in kept]
+        seen: set[str] = set()
+        unique: list[dict] = []
+        for row in rows:
+            key = row["dedupe_key"]
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(row)
+        rows = unique
         try:
             response = post(rows)
         except Exception:
