@@ -605,6 +605,19 @@ class _PostOkThenRaise:
         raise RuntimeError("api status 500")
 
 
+class _ParseFirstThenLater:
+    """Injected parse_fn for the hardening tests. Call 1 returns `first`; later calls return `later`."""
+
+    def __init__(self, first, later):
+        self.first = first
+        self.later = later
+        self.calls = []
+
+    def __call__(self, feed_code, body):
+        self.calls.append((feed_code, body))
+        return self.first if len(self.calls) == 1 else self.later
+
+
 class RunCycleHardeningTests(unittest.TestCase):
     def test_duplicate_keys_in_one_batch_posted_once(self):
         # Same feed_code, source_url and published_at give the same dedupe_key (spec 4.2).
@@ -649,9 +662,19 @@ class RunCycleHardeningTests(unittest.TestCase):
             items=[make_item("RELIANCE", PUB_EARLY, "a"), make_item("TCS", PUB_LATE, "b")],
             dropped=0,
         )
+        # Feed 2 has later times. They must not reach from/to, because its post raised.
+        parsed_later = ParseResult(
+            items=[
+                make_item("RELIANCE", PUB_LATE + timedelta(days=1), "c"),
+                make_item("TCS", PUB_LATE + timedelta(days=1), "d"),
+            ],
+            dropped=0,
+        )
         post = _PostOkThenRaise()
         result, session, sleep, post, cooldown = run_cycle_with(
-            [xml_ok(), xml_ok(), xml_ok()], parse_fn=ParseStub(result=parsed), post=post
+            [xml_ok(), xml_ok(), xml_ok()],
+            parse_fn=_ParseFirstThenLater(parsed, parsed_later),
+            post=post,
         )
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["message"], "api_error")
