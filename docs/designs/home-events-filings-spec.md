@@ -363,6 +363,7 @@ def post_events(rows: list[dict], *, base_url: str, token: str, http, timeout_s:
 def run_cycle(params: dict, now: datetime, *, feeds: tuple[Feed, ...], parse_fn, universe: dict, session, post,
               sleep, rng, clock, cooldown: Cooldown) -> dict   # the 5.1 result dict; `now` is the run start (rotation index and the 4.3 date tests)
 ```
+Built: T6, `post_events` in `scanner/home_events.py` at commit 089a975, tests in `tests/test_home_events_client.py` (4 tests).
 
 `cfg` is the merged params (section 7) with defaults filled in. `feeds` and `parse_fn` are injected so T4b and T4c are testable with fake feeds before `FEEDS` and the real parsers exist (T4e, T7); `HomeFilings` passes the module's `FEEDS` and `parse`. `cooldown.block` takes a reason string of the form `blocked:<feed_code>`. Every collaborator that touches the network, the clock, randomness, sleeping, the cooldown or a database is a parameter, so tests inject fakes. `post` is a callable `post(rows) -> {"inserted", "duplicates", "invalid"}` that `HomeFilings` builds from `post_events` (T4d).
 

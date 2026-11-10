@@ -500,3 +500,31 @@ def run_cycle(
     return _run_result(
         status, fetched=fetched, new=new, times=kept_times, message="; ".join(parts),
     )
+
+
+def post_events(rows: list[dict], *, base_url: str, token: str, http, timeout_s: int) -> dict:
+    """Post `home_events` rows to the API in batches of 500 and sum the counts (spec 6).
+
+    Each batch is one POST to `<base_url>/internal/events/batch` with a bearer
+    token. Any status outside 200 to 299 raises RuntimeError at once. The message
+    holds the status code only, never the token, the body or the URL. Earlier
+    batches stay posted, since the server's inserts are idempotent.
+    """
+    batch_size = 500
+    url = base_url.rstrip("/") + "/internal/events/batch"
+    totals = {"inserted": 0, "duplicates": 0, "invalid": 0}
+    for start in range(0, len(rows), batch_size):
+        batch = rows[start:start + batch_size]
+        resp = http.post(
+            url,
+            json={"rows": batch},
+            headers={"Authorization": "Bearer " + token},
+            timeout=timeout_s,
+        )
+        if not 200 <= resp.status_code <= 299:
+            raise RuntimeError("events batch POST failed with HTTP %d" % resp.status_code)
+        body = resp.json()
+        totals["inserted"] += body["inserted"]
+        totals["duplicates"] += body["duplicates"]
+        totals["invalid"] += body["invalid"]
+    return totals
