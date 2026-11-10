@@ -17,6 +17,8 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import getpass
+import os
+import secrets
 import sys
 from typing import Callable
 
@@ -71,6 +73,22 @@ def cmd_set(conn, key: bytes, name: str, created: dt.date, expires: dt.date | No
     return 0
 
 
+def cmd_service_token(name: str, path: str, out: Callable[[str], None]) -> int:
+    """Write a new random token for a service to a file. Never prints the token."""
+    if os.path.exists(path):
+        print(f"refusing to overwrite existing file: {path}", file=sys.stderr)
+        return 1
+    token = secrets.token_urlsafe(32)
+    try:
+        with open(path, "x", encoding="utf-8") as f:  # "x": never overwrite
+            f.write(token + "\n")
+    except FileExistsError:
+        print(f"refusing to overwrite existing file: {path}", file=sys.stderr)
+        return 1
+    out(f"written: {path}")
+    return 0
+
+
 def cmd_import_env(conn, key: bytes, env_values: dict[str, str], by: str, dry_run: bool,
                    out: Callable[[str], None], today: dt.date) -> int:
     planned = [(k, ENV_TO_APP[k], v) for k, v in env_values.items() if k in ENV_TO_APP and v]
@@ -106,7 +124,12 @@ def main(argv: list[str] | None = None, *, conn_factory=None, key_loader=None,
     s_.add_argument("--created"); s_.add_argument("--expires"); s_.add_argument("--by", default="admin")
     i = sub.add_parser("import-env"); i.add_argument("--dry-run", action="store_true")
     i.add_argument("--by", default="admin")
+    t = sub.add_parser("service-token"); t.add_argument("name", choices=["collector"])
+    t.add_argument("--out", required=True)
     args = ap.parse_args(argv)
+
+    if args.cmd == "service-token":  # file only: no database connection
+        return cmd_service_token(args.name, args.out, out)
 
     today = today or dt.date.today()
     if conn_factory is None:

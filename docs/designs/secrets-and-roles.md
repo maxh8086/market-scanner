@@ -91,3 +91,9 @@ Stored encrypted in `app_secret` as an app-level key, set by the admin (decision
 - Audit log: whether every secret read and write is recorded, and who can see the log.
 - Session handling for logins: lifetime and how a session ends.
 - Migration check: how to confirm the imported values work before the plaintext file is deleted.
+
+## Decision 15: service token delivery (approved by the user, 2026-11-10)
+- The collector reads its service token from a file mounted at `/run/app-keys` (same mount folder as the master key). The token is the only credential the collector holds. The master key stays in the API container only.
+- The collector requests each secret it needs from the API over the internal endpoint, authenticated with that token. The API decrypts and returns the value.
+- Each service gets its own token file. The file is readable by that service's user only.
+- Status: approved. Build (S5) not started yet.

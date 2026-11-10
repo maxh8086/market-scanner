@@ -18,3 +18,8 @@ Public API (imported by scanner/collect/settings.py and the UI):
   - request_run(source) -> bool (new request queued, or one already existed)
   - list_runs(source=None, limit=50) -> list of collector_runs rows
 """
+import sys as _sys
+
+from scanner import service_client  # noqa: E402
+# Same module object under the package path too, so `from scanner.collect.service_client import ...` resolves.
+_sys.modules.setdefault(__name__ + ".service_client", service_client)
