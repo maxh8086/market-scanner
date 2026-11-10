@@ -258,8 +258,12 @@ def fetch_feed(
     if result is not None:
         return result
 
-    retry_cost = timedelta(seconds=cfg["backoff_s"] + cfg["request_timeout_s"])
-    if not (clock() + retry_cost <= deadline_at):
+    try:
+        retry_fits = clock() + timedelta(seconds=cfg["backoff_s"] + cfg["request_timeout_s"]) <= deadline_at
+    except OverflowError:
+        # The retry would end past the datetime range, so it cannot end before deadline_at.
+        retry_fits = False
+    if not retry_fits:
         return _transient(status)
 
     sleep(cfg["backoff_s"])
@@ -385,9 +389,17 @@ def run_cycle(
     if cooldown.active(EXCHANGE, clock()):
         return _run_result("skipped", message="exchange_cooldown")
 
-    deadline_at = clock() + timedelta(seconds=cfg["run_deadline_s"])
+    try:
+        deadline_at = clock() + timedelta(seconds=cfg["run_deadline_s"])
+    except OverflowError:
+        return _run_result("failed", message="config:run_deadline_s")
     order = _rotation(enabled, now)
-    per_feed_budget = timedelta(seconds=cfg["gap_max_s"] + cfg["request_timeout_s"])
+    try:
+        per_feed_budget = timedelta(seconds=cfg["gap_max_s"] + cfg["request_timeout_s"])
+        # The feed loop computes clock() + per_feed_budget, so it must fit the datetime range now.
+        clock() + per_feed_budget
+    except OverflowError:
+        return _run_result("failed", message="config:gap_max_s")
 
     fetched = new = invalid = dropped = universe_rejected = feeds_ok = 0
     transient: list[str] = []
