@@ -10,8 +10,8 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Protocol
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Protocol
 
 # Query strings: everything from "?" up to whitespace or a quote/bracket.
 _QUERY_RE = re.compile(r"(https?://[^\s'\"<>?]+)\?[^\s'\"<>]*")
@@ -189,3 +189,81 @@ class Cooldown(Protocol):
     def block(self, exchange: str, now: datetime, reason: str) -> None: ...
 
     def reset(self, exchange: str) -> None: ...
+
+
+def _request_once(feed: Feed, session: Any, cfg: dict) -> tuple[int | None, str, bytes]:
+    """Make one GET to the feed. Returns (status, content_type, body).
+
+    Any exception from the session (timeout, connection error) gives status None
+    and an empty body, so the caller classifies it as "retry".
+    """
+    try:
+        response = session.get(feed.url, timeout=cfg["request_timeout_s"])
+    except Exception:
+        return None, "", b""
+    return response.status_code, response.headers.get("Content-Type", ""), response.content
+
+
+def _settle(
+    feed: Feed,
+    status: int | None,
+    content_type: str,
+    body: bytes,
+    parse_fn: Callable[[str, bytes], ParseResult],
+) -> FetchResult | None:
+    """Turn one classified response into a FetchResult, or None when it should be retried."""
+    outcome = classify_response(status, content_type, body)
+    if outcome == "retry":
+        return None
+    if outcome == "ok":
+        try:
+            parsed = parse_fn(feed.feed_code, body)
+        except ParseError as exc:
+            return FetchResult(outcome="fatal", items=[], dropped=0, detail=redact_error(str(exc)))
+        return FetchResult(outcome="ok", items=parsed.items, dropped=parsed.dropped, detail="")
+    if outcome == "blocked":
+        return FetchResult(outcome="blocked", items=[], dropped=0, detail="blocked")
+    # "fail": a non-listed status, or an empty 200
+    detail = "empty body" if status == 200 else f"status {status}"
+    return FetchResult(outcome="fatal", items=[], dropped=0, detail=detail)
+
+
+def _transient(status: int | None) -> FetchResult:
+    """A retry that failed again, or a retry that was not allowed."""
+    detail = "timeout" if status is None else f"status {status}"
+    return FetchResult(outcome="transient", items=[], dropped=0, detail=redact_error(detail))
+
+
+def fetch_feed(
+    feed: Feed,
+    *,
+    session: Any,
+    cfg: dict,
+    parse_fn: Callable[[str, bytes], ParseResult],
+    sleep: Callable[[float], None],
+    rng: Any,
+    clock: Callable[[], datetime],
+    deadline_at: datetime,
+) -> FetchResult:
+    """Fetch and parse one feed, with a polite gap and at most one retry (spec 5.2, 5.4).
+
+    The gap before the first request is drawn from [gap_min_s, gap_max_s]; the
+    retry adds no gap. The retry runs only when it would finish before
+    `deadline_at` (backoff_s plus request_timeout_s from now).
+    """
+    sleep(rng.uniform(cfg["gap_min_s"], cfg["gap_max_s"]))
+    status, content_type, body = _request_once(feed, session, cfg)
+    result = _settle(feed, status, content_type, body, parse_fn)
+    if result is not None:
+        return result
+
+    retry_cost = timedelta(seconds=cfg["backoff_s"] + cfg["request_timeout_s"])
+    if not (clock() + retry_cost <= deadline_at):
+        return _transient(status)
+
+    sleep(cfg["backoff_s"])
+    status, content_type, body = _request_once(feed, session, cfg)
+    result = _settle(feed, status, content_type, body, parse_fn)
+    if result is not None:
+        return result
+    return _transient(status)
