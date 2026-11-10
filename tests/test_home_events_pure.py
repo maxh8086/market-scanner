@@ -1,12 +1,15 @@
-"""Pure tests for scanner/home_events.py (T3a: redact_error) and the NSE session helper.
+"""Pure tests for scanner/home_events.py (T3a: redact_error; T3b: dedupe_key and the event-row mapper) and the NSE session helper.
 
 Nothing reaches NSE or the network: requests.Session.get is replaced.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import unittest
 from contextlib import redirect_stdout
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 import requests
@@ -42,6 +45,88 @@ class NseSessionTests(unittest.TestCase):
                 session = fp.nse_session()
         self.assertIsInstance(session, requests.Session)
         self.assertIn("warm-up failed", buf.getvalue())
+
+
+IST = timezone(timedelta(hours=5, minutes=30))
+FEED = home_events.Feed(
+    feed_code="nse:Financial_Results",
+    url="https://example.invalid/feeds/financial-results.xml",
+    event_type="results",
+    feed_tier="high_priority",
+    default_enabled=True,
+    flagged=False,
+)
+SAMPLE_URL = "https://example.invalid/filings/abc"
+SAMPLE_PUBLISHED = datetime(2026, 11, 10, 15, 30, tzinfo=IST)
+
+
+class DedupeKeyTests(unittest.TestCase):
+    def test_with_id(self):
+        key = home_events.dedupe_key("nse:Financial_Results", "98765", SAMPLE_URL, SAMPLE_PUBLISHED)
+        self.assertEqual(key, "nse:Financial_Results:98765")
+
+    def test_fallback_hash(self):
+        key = home_events.dedupe_key("nse:Financial_Results", None, SAMPLE_URL, SAMPLE_PUBLISHED)
+        utc_iso = SAMPLE_PUBLISHED.astimezone(timezone.utc).isoformat()
+        digest = hashlib.sha256(f"{SAMPLE_URL}|{utc_iso}".encode()).hexdigest()
+        self.assertEqual(key, f"nse:Financial_Results:{digest}")
+        # An empty id counts as no id.
+        self.assertEqual(
+            home_events.dedupe_key("nse:Financial_Results", "", SAMPLE_URL, SAMPLE_PUBLISHED), key
+        )
+        # A naive timestamp would be read as machine-local time, so it is refused.
+        with self.assertRaises(ValueError):
+            home_events.dedupe_key(
+                "nse:Financial_Results", None, SAMPLE_URL, datetime(2026, 11, 10, 15, 30)
+            )
+
+    def test_stable_across_refetch(self):
+        first = home_events.dedupe_key("nse:Financial_Results", None, SAMPLE_URL, SAMPLE_PUBLISHED)
+        refetch = home_events.dedupe_key("nse:Financial_Results", None, SAMPLE_URL, SAMPLE_PUBLISHED)
+        same_instant_utc = home_events.dedupe_key(
+            "nse:Financial_Results", None, SAMPLE_URL, SAMPLE_PUBLISHED.astimezone(timezone.utc)
+        )
+        self.assertEqual(first, refetch)
+        self.assertEqual(first, same_instant_utc)
+
+    def test_different_link_differs(self):
+        first = home_events.dedupe_key("nse:Financial_Results", None, SAMPLE_URL, SAMPLE_PUBLISHED)
+        other = home_events.dedupe_key(
+            "nse:Financial_Results", None, SAMPLE_URL + "-amended", SAMPLE_PUBLISHED
+        )
+        self.assertNotEqual(first, other)
+
+
+class EventRowMapperTests(unittest.TestCase):
+    ITEM = {
+        "source_id": "98765",
+        "source_url": SAMPLE_URL,
+        "symbol": "EXAMPLE",
+        "isin": "INE000000001",
+        "company": "Example Ltd",
+        "headline": "Board approves quarterly results",
+        "published_at": SAMPLE_PUBLISHED,
+    }
+
+    def test_event_row_keys(self):
+        row = home_events.to_event_row(FEED, self.ITEM)
+        self.assertEqual(
+            set(row),
+            {
+                "dedupe_key", "exchange", "feed_code", "source_id", "source_url", "isin",
+                "symbol", "company", "event_type", "feed_tier", "headline", "published_at",
+            },
+        )
+        self.assertEqual(row["dedupe_key"], "nse:Financial_Results:98765")
+        self.assertEqual(row["event_type"], "results")
+        self.assertEqual(row["feed_tier"], "high_priority")
+        self.assertEqual(row["published_at"], "2026-11-10T15:30:00+05:30")
+
+    def test_exchange_from_prefix(self):
+        self.assertEqual(home_events.to_event_row(FEED, self.ITEM)["exchange"], "NSE")
+        bse_feed = replace(FEED, feed_code="bse:Financial_Results")
+        with self.assertRaises(ValueError):
+            home_events.to_event_row(bse_feed, self.ITEM)
 
 
 if __name__ == "__main__":
