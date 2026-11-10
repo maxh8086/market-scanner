@@ -48,7 +48,7 @@ Status words used in this doc: **decided** (user-confirmed), **proposed** (writt
 
 - `collector-split-spec.md`: run-once containers and scheduler (4.1, 4.2); exchange cooldown and the shared `exchange_cooldown` table (4.3, 4.3a, S2); API-down skip (4.5); migration number claims (S2 and the registration migration); S3 and S4 for env and token location; risk 5 (only the latest missed slot runs).
 - `home-events-filings-spec.md`: events database and migration runner (4.5, T2a, T2b); events API and token pattern (4.6, T5a to T5c); retention and purge (5.5, deferred); universe rule (4.3), if reused for the universe (see Open).
-- `home-events-news-telegram.md`: `event_intake` (002) and `news_events` (003) DDL, the LLM stage, and the dedupe rule (overview 8.2 item 3).
+- `home-events-news-telegram.md`: `event_intake` (002) and `news_events` (003) DDL, the LLM stage, and the dedupe rule ("Intake queue" section, dedupe by URL and content hash; overview 8.2 item 3).
 - `fundamentals-upstox-secondary.md`: the Upstox analytics token and the shared Upstox client context.
 - Overview: sections 4, 5.4, 6.3, 7.3, 7.4, and 8.2 items 8, 9, 15, 18, 19.
 
@@ -139,7 +139,7 @@ Items for the user to decide. Each one is also in `docs/progress/home-events-ups
 - Feed tier and event type for Upstox items (overview 7.1), and whether the Upstox build waits for the LLM stage (overview 7.7).
 - Ingest token location and `EVENTS_API_BASE_URL` (open; the route and per-source token are decided under A1).
 - Attribution: how an article is linked to a symbol if the live payload carries no instrument key (one request per key, or symbol extraction in the LLM stage). Also whether a sample may be captured before the Upstox confirmation, and whether zero items across all keys means "no news" or "broken". Unverified, needs a captured redacted sample.
-- Dedupe key: `article_link` alone, or `(article_link, instrument key)`. Also whether to adopt a seen-links store, or overview 8.2 item 3 for this source. Terminal-row retention (14 to 30 days, overview 6.3) depends on this.
+- Dedupe key: `article_link` alone, or `(article_link, instrument key)`. Also whether to adopt a seen-links store, or the dedupe rule in `home-events-news-telegram.md` ("Intake queue" section, dedupe by URL and content hash) and overview 8.2 item 3 for this source. Terminal-row retention (14 to 30 days, overview 6.3) depends on this.
 - OFF enforcement: register no source until unblocked, or add a default-disabled parameter that the run checks first (as filings `default_enabled`). Also whether build specs may be written while the source is blocked.
 - Client: the official SDK (adds the `upstox-python-sdk` dependency to `requirements.txt`, `requirements.lock.txt` and the Dockerfile) or `UpstoxClient._get` (no new dependency; keeps its headers and limiter). The endpoint wording and the rate-limit text depend on this.
 - Age limit (overview 8.2 item 8): keep or drop the 1-week limit. If kept, what it measures (`published_at` or fetch time).

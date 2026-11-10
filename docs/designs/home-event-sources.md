@@ -104,7 +104,7 @@ Decision: the LLM stage is kept and in scope. It is built after the RSS keyword-
 2. Deduplicate by URL and by content hash, at queue insert.
 3. Keyword prefilter (section 9). Items with no keyword and no watchlist symbol are marked `prefiltered_out` and do not call the LLM.
 4. When the LLM is available, a worker drains the queue in batches, oldest first. Each item is classified once by the local LLM at `LLM_URL`, with no model name hardcoded. The model returns compact JSON only: `{"relevant": true|false, "category": "<tier or macro>", "symbols": [], "sectors": [], "stance": null|"hawkish"|"dovish"|"neutral", "reason": "<max 25 words>"}`. The `stance` field depends on open item 1 (section 8).
-5. Relevant items are written to the event tracker (section 6.3). Items marked not relevant are marked `rejected` and kept as terminal `event_intake` rows for 14 to 30 days (section 6.3), then purged. Only the per-run counts are kept otherwise.
+5. Relevant items are written to the event tracker (section 6.3). Items marked not relevant are marked `rejected` and kept as terminal `event_intake` rows for 14 to 30 days (value open, section 6.3), then purged. Items marked `expired` are kept the same way.
 6. Each run records counts: queued, prefiltered_out, sent_to_llm, relevant, rejected, expired.
 
 Criteria for relevant: an event tier 1 or tier 2 item (section 7.1); an item naming a symbol in the watchlist or scanner universe; or a macro item on RBI or Fed policy stance, or an India or US inflation release. Not relevant: general market commentary, opinion, sponsored content and duplicate wire copies.
@@ -298,7 +298,7 @@ Test on the 21-headline batch: 2 match (items 11 and 21). 16 of 21 entries used 
 | Event | Country | Next date | Source | Status |
 |---|---|---|---|---|
 | CPI, October 2026 data | India | 12 Nov 2026, 16:00 IST | MoSPI advance release calendar 2026-27 | Date in the September 2026 press release. Time confirmed by the user; no MoSPI page confirms it yet (section 8) |
-| CPI, October 2026 data | US | 10 Nov 2026, 8:30 a.m. ET (19:00 IST) | BLS CPI schedule | Confirmed on the BLS page (2026-11-09). Released 10 Nov 2026. Next release 10 Dec 2026 (November data), time unverified |
+| CPI, October 2026 data | US | Released 10 Nov 2026, 8:30 a.m. ET (19:00 IST) | BLS CPI schedule | Confirmed on the BLS page (2026-11-09). Released 10 Nov 2026. Next release 10 Dec 2026 (November data), time unverified |
 | MPC decision | India (RBI) | 4 Dec 2026 (meeting 2 to 4 Dec), unverified | RBI schedule page, `rbi.org.in/SCRIPTs/Annualpolicy.aspx` (dated 23 Mar 2026) | Unverified. The page's own status text says the December decision has no date yet, which conflicts with 4 Dec. Decision time not given |
 | FOMC meeting | US (Fed) | Statement 9 Dec 2026, 2:00 p.m. ET (meeting 8 to 9 Dec); 00:30 IST on 10 Dec | Fed December 2026 calendar | Press conference 2:30 p.m. ET. Minutes due 30 Dec |
 
