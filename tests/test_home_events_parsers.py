@@ -61,6 +61,17 @@ class HomeEventsParserTest(unittest.TestCase):
             self.assertEqual(item["company"], "Gammon India Limited")
             self.assertEqual(item["source_url"], FIXTURE_LINK)
 
+        # Literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
+        first_item = result.items[0]
+        self.assertEqual(first_item["title"], "Gammon India Limited")
+        description = (
+            "RELATING TO:First Quarter |AUDITED/UNAUDITED:Unaudited |CUMULATIVE/NON-CUMULATIVE:Non-Cumulative "
+            "|CONSOLIDATED/NON-CONSOLIDATED:Non-Consolidated |IND AS/ NON IND AS:Ind-AS New |PERIOD:Quarterly "
+            "|PERIOD ENDED: 30-Jun-2024"
+        )
+        self.assertEqual(first_item["description"], description)
+        self.assertEqual(first_item["headline"], description)
+
         keys = [
             dedupe_key(
                 FEED_CODE,
@@ -100,6 +111,9 @@ class HomeEventsParserTest(unittest.TestCase):
         # Literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
         first = result.items[0]
         self.assertEqual(first["company"], "Bajaj Hindusthan Sugar Limited")
+        self.assertEqual(first["title"], "Bajaj Hindusthan Sugar Limited")
+        self.assertEqual(first["description"], "Integrated Filing- Financials|Original|")
+        self.assertEqual(first["headline"], "Integrated Filing- Financials|Original|")
         self.assertEqual(
             first["source_url"],
             "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1756034_11112026031015_WEB.xml",
@@ -136,6 +150,11 @@ class HomeEventsParserTest(unittest.TestCase):
         # Literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
         first = result.items[0]
         self.assertEqual(first["company"], "Jio Financial Services Limited")
+        self.assertEqual(first["title"], "Jio Financial Services Limited")
+        # The raw bytes hold "&amp;", which the XML parser decodes to "&"; the literal is the decoded text.
+        description = "NAME(S)OF THE ACQUIRER AND ITS(PAC) : Jamnagar Utilities & Power Private Limited"
+        self.assertEqual(first["description"], description)
+        self.assertEqual(first["headline"], description)
         self.assertEqual(
             first["source_url"],
             "https://nsearchives.nseindia.com/corporate/Dis3_11032026125413_54175.zip",
@@ -161,7 +180,8 @@ class HomeEventsParserTest(unittest.TestCase):
             )
             for item in result.items
         }
-        # 20 items with three exact duplicate pairs (items 2/3, 6/7, 9/10) give 17 distinct keys (spec 4.0, 4.2).
+        # 20 items; the three exact duplicate pairs are at 0-based indexes 2/3, 6/7 and 9/10,
+        # giving 17 distinct keys (spec 4.0, 4.2).
         self.assertEqual(len(keys), 17)
 
     def test_fixture_Sast_Regulation31(self):
@@ -268,20 +288,6 @@ class HomeEventsParserTest(unittest.TestCase):
             channel.find("link").text,
             "https://www.nseindia.com/companies-listing/corporate-filings-governance",
         )
-
-        keys = {
-            dedupe_key(
-                "nse:Corporate_Governance",
-                item["source_id"],
-                item["source_url"],
-                item["title"],
-                item["description"],
-                item["published_at"],
-            )
-            for item in result.items
-        }
-        # 0 items in the fixture bytes (one-off xml.etree run), so 0 distinct dedupe keys.
-        self.assertEqual(len(keys), 0)
 
     def test_fixture_Related_Party_Trans(self):
         fixture = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Related_Party_Trans.xml"
@@ -421,6 +427,22 @@ class HomeEventsParserTest(unittest.TestCase):
         self.assertEqual(len(result.items), 2)
         self.assertEqual(len(result.items[0]["headline"]), 500)
         self.assertEqual(result.items[1]["headline"], "Gamma Ltd")
+
+    def test_corporate_action_company_without_separator_uses_full_title(self):
+        # A title with no " - Ex-Date:" separator gives the whole squashed title as the company (spec 4.0).
+        result = parse(
+            "nse:Corporate_action",
+            _rss(_item(title="ACME Corp", description="Dividend", pub="11-Nov-2026 10:00:00")),
+        )
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual(result.dropped, 0)
+        self.assertEqual(result.items[0]["company"], "ACME Corp")
+
+    def test_non_http_link_dropped_and_counted(self):
+        # The only defect is the ftp scheme, which the link check in _rss_item drops (spec 4.0).
+        result = parse(FEED_CODE, _rss(_item(link="ftp://example.com/x")))
+        self.assertEqual(result.items, [])
+        self.assertEqual(result.dropped, 1)
 
     def test_feeds_registry_has_eight_rows(self):
         self.assertEqual(len(FEEDS), 8)
