@@ -162,7 +162,7 @@ These are copied from the review, with current line numbers where the overview h
 - Overview line 169 (section 7.3) versus `collector-split-spec.md` line 84: cooldown cap 3 hours versus 2 hours. The filings spec flags this as collector-split S2's.
 - `home-events-filings-spec.md` section 5 (review cites line 465): pending overview edits (14 feeds becoming 8, the 7.3 and 7.4 lines). Part of this may already be applied (overview lines 66 and 166); the owner should check.
 - `docs/designs/fundamentals-upstox-secondary.md` line 177 cites "section 4.2 of home-event-sources.md" for the Telegram group. The current location is overview section 7.6.
-- `docs/designs/ui-redesign-brief.md` line 53 describes the Telegram token as a Docker Swarm secret read from `/run/secrets/`. That conflicts with `secrets-and-roles.md`, which stores it in the secrets store.
+- `docs/designs/ui-redesign-brief.md` line 53 (resolved 2026-11-11): it now says the Telegram token is in the secrets store, matching `secrets-and-roles.md`. The earlier Docker-secret wording is gone.
 
 ## Residual questions inside applied findings (not decided)
 

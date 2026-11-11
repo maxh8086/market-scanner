@@ -1,6 +1,6 @@
 # Upstox as secondary fundamentals source
 
-Status: decisions approved 2026-11-10 and amended after the EGM review. Not built. Pre-build checks are listed under "Open before build".
+Status: decisions approved 2026-11-10 and amended after the EGM review. The fundamentals fallback is not built. The token-expiry alert (section below) is built (PR #72, merge 8f8182e) but not live until its Telegram secrets are stored. Pre-build checks are listed under "Open before build".
 Related: `docs/designs/fundamentals-tables.md`, `docs/designs/secrets-and-roles.md`, `scanner/fund_derive.py`, `scanner/upstox.py`, `scripts/fetch_upstox_sector.py`.
 
 Terms used here: **Screener** means screener.in, the primary fundamentals source. **Upstox** means the Upstox broker API, the secondary source. **ISIN** is the international security ID that Upstox keys its endpoints on. **P/E** is price divided by earnings per share (EPS). **ROA** is return on assets. **ROE** is return on equity. **ROCE** is return on capital employed. **EV/EBITDA** is enterprise value divided by earnings before interest, tax, depreciation and amortisation. **Basis** means whether a figure is consolidated or standalone, and which entity it describes.
@@ -172,7 +172,7 @@ Each Upstox value stores an as-of date. Fundamentals change quarterly, so the co
 - Stocks without an ISIN get no fallback. Coverage is unknown until counted.
 - The Upstox P/E basis may stay unknown, so P/E remains Screener-only.
 
-## Analytics token expiry alert (proposed 2026-11-10, needs your OK)
+## Analytics token expiry alert (built: PR #72, merge 8f8182e; defaults accepted by the user; not live until telegram_bot_token and telegram_chat_id are stored)
 
 Purpose: tell the user before the Upstox analytics token expires, in the same Telegram group the news-link bot reads from (overview section 7.6 of `home-event-sources.md`).
 

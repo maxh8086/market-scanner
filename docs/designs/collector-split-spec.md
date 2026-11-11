@@ -126,8 +126,6 @@ Status (the existing market-status response; its path is confirmed in S5b) adds:
 - There is no heartbeat endpoint. The `/internal/due` poll is the heartbeat, so no database write and no new grant are needed.
 
 ### 4.6 Schedules
-
-### 4.6 Schedules
 | Source | Cron (IST) |
 |---|---|
 | `candles_eod` | `35 18 * * 1-5` (unchanged) |

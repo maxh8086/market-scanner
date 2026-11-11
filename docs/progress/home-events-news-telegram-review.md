@@ -91,7 +91,7 @@ Counts: 8 Blockers, 17 Majors, 9 Nits (34 findings). Of these, 22 need a user de
 - NT 119; SR 11, 64-67, 95-99 (decisions 4, 10, 15).
 - The token and chat id are app secrets, named `telegram_bot_token` and `telegram_chat_id` (`scanner/expiry_alerts.py:24-25`, `scanner/secret_checks.py:69`), delivered to services through the internal secrets endpoint with a per-service token (`scanner/service_client.py:34`). `SERVICE_ALLOWED = {"collector": {"upstox_analytics_token"}}` (`ui/app/internal_secrets.py:33`) means the collector cannot fetch `telegram_bot_token` today; adding it needs an allowlist change and a test (SR decision 15). Replace NT 119 with the secret names, the role and the loader path; keep plain env names only for non-secret settings.
 - Decisions: the existing `telegram_chat_id` is the alert destination, so the link group needs its own secret (for example `telegram_links_chat_id`); one bot or two (one `getUpdates` poller per token). Requirements to add: the bot token is in the request URL path, so errors and logs must be redacted as `send_telegram` does; the link reader gets its own service token, separate from the Fastify ingest token role (FS 4.6).
-- Related (not this doc): `ui-redesign-brief.md:53` still describes the token as a Docker Swarm secret read from `/run/secrets/`, which conflicts with SR.
+- Related (not this doc): `ui-redesign-brief.md:53` (resolved 2026-11-11) now describes the token as in the secrets store, matching SR. The earlier Docker-secret wording is gone.
 
 ### M3. NT never cites CS or FS; collector-split fit is missing (schedule, cooldown, registration, migration numbers) - Major (Fix, plus Decisions)
 - Lenses: all six.

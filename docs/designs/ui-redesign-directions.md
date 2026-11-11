@@ -1,6 +1,6 @@
 # UI redesign: Phase 3 directions
 
-Date: 2026-11-08. Pick one. Brief: `docs/designs/ui-redesign-brief.md`.
+Date: 2026-11-08. Superseded: the user chose Option D on 2026-11-09 (see `docs/designs/ui-redesign-spec.md`). The options are kept for the record. Brief: `docs/designs/ui-redesign-brief.md`.
 
 Effort is relative: S (days), M (weeks), L (more than a month), for one developer.
 
@@ -26,7 +26,7 @@ Each option uses the same data and rules. They differ in layout and density.
 - **Cons:** shows less per screen. A long table still needs virtualization. Side-by-side comparison of stocks is harder.
 - **Effort:** S to M.
 
-## Option C: Table and chart split (recommended)
+## Option C: Table and chart split (recommended on 2026-11-08; not chosen)
 
 - **Style:** structured, clear hierarchy, calm by default, dark and light.
 - **Palette:** same semantic tokens as the others. Neutral slate with one accent.
