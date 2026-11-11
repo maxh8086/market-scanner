@@ -283,6 +283,54 @@ class HomeEventsParserTest(unittest.TestCase):
         # 0 items in the fixture bytes (one-off xml.etree run), so 0 distinct dedupe keys.
         self.assertEqual(len(keys), 0)
 
+    def test_fixture_Related_Party_Trans(self):
+        fixture = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Related_Party_Trans.xml"
+        body = fixture.read_bytes()
+        # Raw-bytes checks with xml.etree, not parse(): 20 items, 10 colon-form and 10 dot-form pubDates (spec 4.0).
+        raw_items = ET.fromstring(body).find("channel").findall("item")
+        self.assertEqual(len(raw_items), 20)
+        self.assertEqual(sum("." in item.find("pubDate").text for item in raw_items), 10)
+        self.assertEqual(raw_items[0].find("pubDate").text, "11-SEP-2026 17:49:09")
+        self.assertEqual(raw_items[10].find("pubDate").text, "24-MAY-2025 22:28.31")
+
+        result = parse("nse:Related_Party_Trans", body)
+        self.assertEqual(len(result.items), 20)
+        self.assertEqual(result.dropped, 0)
+
+        # items[0] has a colon-form pubDate; items[10] has the dot-form pubDate above.
+        first = result.items[0]
+        self.assertEqual(first["title"], "Shree Ram Proteins Limited")
+        self.assertEqual(first["description"], "PERIOD END DATE : 30-SEP-2024")
+        self.assertEqual(first["headline"], "PERIOD END DATE : 30-SEP-2024")
+        self.assertEqual(first["company"], "Shree Ram Proteins Limited")
+        self.assertEqual(
+            first["source_url"],
+            "https://nsearchives.nseindia.com/corporate/xbrl/RPT_1723713_11092026054908_WEB.xml",
+        )
+        self.assertEqual(first["published_at"].astimezone(timezone.utc).isoformat(), "2026-09-11T12:19:09+00:00")
+
+        dotted = result.items[10]
+        self.assertEqual(dotted["company"], "Visdem Technosys Limited")
+        self.assertEqual(
+            dotted["source_url"],
+            "https://nsearchives.nseindia.com/corporate/xbrl/RPT_1450472_24052025102831_WEB.xml",
+        )
+        self.assertEqual(dotted["published_at"].astimezone(timezone.utc).isoformat(), "2025-05-24T16:58:31+00:00")
+
+        keys = {
+            dedupe_key(
+                "nse:Related_Party_Trans",
+                item["source_id"],
+                item["source_url"],
+                item["title"],
+                item["description"],
+                item["published_at"],
+            )
+            for item in result.items
+        }
+        # 20 distinct keys derived from the fixture bytes with hashlib and json (one-off run, spec 4.2).
+        self.assertEqual(len(keys), 20)
+
     def test_empty_feed(self):
         result = parse(FEED_CODE, b'<rss version="2.0"><channel></channel></rss>')
         self.assertEqual(result.items, [])

@@ -737,6 +737,26 @@ def _parse_corporate_governance(body: bytes) -> ParseResult:
     return _parse_rss_feed(body, _PUB_DATE_FORMAT)
 
 
+# nse:Related_Party_Trans pubDate: some items use "DD-MON-YYYY HH:MM.SS" (a dot before the
+# seconds), others "DD-MON-YYYY HH:MM:SS" (spec 4.0, decided 2026-11-11).
+def _rpt_date_fixup(text: str) -> str:
+    """Replace the dot before the seconds with a colon, so the NSE date format applies (spec 4.0).
+
+    Colon-form pubDate text has no dot and is returned unchanged.
+    """
+    return text.replace(".", ":")
+
+
+def _parse_related_party_trans(body: bytes) -> ParseResult:
+    """Parse the nse:Related_Party_Trans RSS feed (spec 4.0, 6).
+
+    pubDate uses the NSE format, after _rpt_date_fixup for the dot variant.
+    company is the whole squashed title, as for Financial_Results. Errors and
+    drops are as in _parse_rss_feed.
+    """
+    return _parse_rss_feed(body, _PUB_DATE_FORMAT, date_fixup=_rpt_date_fixup)
+
+
 PARSERS: dict[str, Callable[[bytes], ParseResult]] = {
     "nse:Financial_Results": _parse_financial_results,
     "nse:Integrated_Filing_Financials": _parse_integrated_filing_financials,
@@ -744,6 +764,7 @@ PARSERS: dict[str, Callable[[bytes], ParseResult]] = {
     "nse:Sast_Regulation31": _parse_sast_regulation31,
     "nse:Corporate_action": _parse_corporate_action,
     "nse:Corporate_Governance": _parse_corporate_governance,
+    "nse:Related_Party_Trans": _parse_related_party_trans,
 }
 
 
