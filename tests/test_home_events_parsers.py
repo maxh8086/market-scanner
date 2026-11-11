@@ -18,6 +18,7 @@ INTEGRATED_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events
 SAST_REG29_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Sast_Regulation29.xml"
 SAST_REG31_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Sast_Regulation31.xml"
 CORPORATE_ACTION_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Corporate_action.xml"
+CORPORATE_GOVERNANCE_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Corporate_Governance.xml"
 
 
 def _squash(text: str) -> str:
@@ -250,6 +251,37 @@ class HomeEventsParserTest(unittest.TestCase):
         }
         # 58 items with no repeated dedupe key in the fixture bytes (one-off xml.etree run, spec 4.2).
         self.assertEqual(len(keys), 58)
+
+    def test_fixture_Corporate_Governance(self):
+        body = CORPORATE_GOVERNANCE_FIXTURE.read_bytes()
+        # The sample feed has no <item> elements (spec 4.0). Counted from the raw bytes, not from parse().
+        self.assertEqual(len(ET.fromstring(body).findall(".//item")), 0)
+        # parse() must not raise on this valid rss document.
+        result = parse("nse:Corporate_Governance", body)
+        self.assertEqual(result.items, [])
+        self.assertEqual(result.dropped, 0)
+
+        # Channel literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
+        channel = ET.fromstring(body).find("channel")
+        self.assertEqual(channel.find("title").text, "NSE News - Latest CORPORATE GOVERNANCE")
+        self.assertEqual(
+            channel.find("link").text,
+            "https://www.nseindia.com/companies-listing/corporate-filings-governance",
+        )
+
+        keys = {
+            dedupe_key(
+                "nse:Corporate_Governance",
+                item["source_id"],
+                item["source_url"],
+                item["title"],
+                item["description"],
+                item["published_at"],
+            )
+            for item in result.items
+        }
+        # 0 items in the fixture bytes (one-off xml.etree run), so 0 distinct dedupe keys.
+        self.assertEqual(len(keys), 0)
 
     def test_empty_feed(self):
         result = parse(FEED_CODE, b'<rss version="2.0"><channel></channel></rss>')
