@@ -17,6 +17,7 @@ FIXTURE_LINK = "https://www.nseindia.com/companies-listing/corporate-filings-fin
 INTEGRATED_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Integrated_Filing_Financials.xml"
 SAST_REG29_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Sast_Regulation29.xml"
 SAST_REG31_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Sast_Regulation31.xml"
+CORPORATE_ACTION_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Corporate_action.xml"
 
 
 def _squash(text: str) -> str:
@@ -202,6 +203,54 @@ class HomeEventsParserTest(unittest.TestCase):
         # 20 items with no repeated dedupe key in the fixture bytes (one-off xml.etree run, spec 4.2).
         self.assertEqual(len(keys), 20)
 
+    def test_fixture_Corporate_action(self):
+        body = CORPORATE_ACTION_FIXTURE.read_bytes()
+        result = parse("nse:Corporate_action", body)
+        self.assertEqual(len(result.items), 58)
+        self.assertEqual(result.dropped, 0)
+
+        # Literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
+        first = result.items[0]
+        self.assertEqual(first["title"], "TRANSWORLD SHIPPING LINES LIMITED - Ex-Date: 13-Nov-2026")
+        self.assertEqual(
+            first["description"],
+            "SERIES:EQ |PURPOSE:INTERIM DIVIDEND - RS 11 PER SHARE |FACE VALUE:10 |RECORD DATE:13-Nov-2026 "
+            "|BOOK CLOSURE START DATE:- |BOOK CLOSURE END DATE:-",
+        )
+        self.assertEqual(
+            first["headline"],
+            "SERIES:EQ |PURPOSE:INTERIM DIVIDEND - RS 11 PER SHARE |FACE VALUE:10 |RECORD DATE:13-Nov-2026 "
+            "|BOOK CLOSURE START DATE:- |BOOK CLOSURE END DATE:-",
+        )
+        self.assertEqual(first["company"], "TRANSWORLD SHIPPING LINES LIMITED")
+        self.assertEqual(
+            first["source_url"],
+            "https://www.nseindia.com/companies-listing/corporate-filings-actions",
+        )
+        self.assertEqual(first["published_at"].astimezone(timezone.utc).isoformat(), "2026-11-10T21:41:42+00:00")
+
+        last = result.items[57]
+        self.assertEqual(last["company"], "Venus Pipes & Tubes Limited")
+        self.assertEqual(
+            last["source_url"],
+            "https://www.nseindia.com/companies-listing/corporate-filings-actions",
+        )
+        self.assertEqual(last["published_at"].astimezone(timezone.utc).isoformat(), "2026-11-10T21:41:42+00:00")
+
+        keys = {
+            dedupe_key(
+                "nse:Corporate_action",
+                item["source_id"],
+                item["source_url"],
+                item["title"],
+                item["description"],
+                item["published_at"],
+            )
+            for item in result.items
+        }
+        # 58 items with no repeated dedupe key in the fixture bytes (one-off xml.etree run, spec 4.2).
+        self.assertEqual(len(keys), 58)
+
     def test_empty_feed(self):
         result = parse(FEED_CODE, b'<rss version="2.0"><channel></channel></rss>')
         self.assertEqual(result.items, [])
@@ -267,7 +316,7 @@ class HomeEventsParserTest(unittest.TestCase):
 
     def test_unknown_feed_code_raises_value_error(self):
         with self.assertRaises(ValueError):
-            parse("nse:Corporate_action", b"<rss><channel/></rss>")
+            parse("nse:No_Such_Feed", b"<rss><channel/></rss>")
 
 
 if __name__ == "__main__":

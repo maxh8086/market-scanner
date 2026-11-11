@@ -704,11 +704,34 @@ def _parse_sast_regulation31(body: bytes) -> ParseResult:
     return _parse_rss_feed(body, _PUB_DATE_FORMAT)
 
 
+# nse:Corporate_action titles are "<COMPANY> - Ex-Date: DD-Mon-YYYY" (spec 4.0).
+_CORPORATE_ACTION_SEPARATOR = " - Ex-Date:"
+
+
+def _corporate_action_company(squashed_title: str) -> str:
+    """Company part of a Corporate_action title: the text before the first ' - Ex-Date:'.
+
+    A title without the separator gives the whole squashed title (spec 4.0).
+    """
+    return squashed_title.partition(_CORPORATE_ACTION_SEPARATOR)[0].strip()
+
+
+def _parse_corporate_action(body: bytes) -> ParseResult:
+    """Parse the nse:Corporate_action RSS feed (spec 4.0, 6).
+
+    Its pubDate uses the NSE format with no fixup. company is the title part
+    before ' - Ex-Date:' (_corporate_action_company). Errors and drops are as in
+    _parse_rss_feed.
+    """
+    return _parse_rss_feed(body, _PUB_DATE_FORMAT, company_from_title=_corporate_action_company)
+
+
 PARSERS: dict[str, Callable[[bytes], ParseResult]] = {
     "nse:Financial_Results": _parse_financial_results,
     "nse:Integrated_Filing_Financials": _parse_integrated_filing_financials,
     "nse:Sast_Regulation29": _parse_sast_regulation29,
     "nse:Sast_Regulation31": _parse_sast_regulation31,
+    "nse:Corporate_action": _parse_corporate_action,
 }
 
 
