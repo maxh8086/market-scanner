@@ -1,6 +1,6 @@
 # Home event feed: sources and decisions
 
-Status: design approved by the user (confirmed 2026-11-11, ledger item 13). The split build specs (filings, news and Telegram, macro, Upstox news) are still draft, and the section 8 blocking items are still open. Decisions recorded 2026-11-09 and 2026-11-10 (section 7).
+Status: design approved by the user (confirmed 2026-11-11, ledger item 13). The filings build spec (revision 4) is approved. The news and Telegram, macro and Upstox news split docs have no approved build spec yet. Items still open are listed in sections 8.1 and 8.2. Decisions recorded 2026-11-09 and 2026-11-10 (section 7).
 Owner: Vaibhav Pavtekar
 Screen: Home, shortlist and event feed (`docs/designs/ui-redesign-spec.md` section 5.1, section 6)
 
@@ -42,7 +42,7 @@ Each rule has one owning doc. Where the owning doc does not yet carry the decide
 
 ## 4. Licence and feed rights
 
-The terms of NSE, BSE and the news feeds restrict storing and scraping. The user reads them as allowing personal use and accepts that risk. No redistribution, no public display, no commercial use. Upstox News is blocked until the user has written confirmation from Upstox.
+The terms of NSE, BSE and the news feeds restrict storing and scraping. The user reads them as allowing personal use and accepts that risk. The acceptance covers NSE (confirmed 2026-11-11) and is its terms gate (section 8.2 item 15). No redistribution, no public display, no commercial use. Upstox News is blocked until the user has written confirmation from Upstox.
 
 ### 4.1 Terms read
 
@@ -85,7 +85,7 @@ Source: `GET https://api.upstox.com/v2/news`, called through `UpstoxClient._get`
 - Stored: headline, summary, link, source name `Upstox`, and the instrument key (present or absent: unverified, see D2). No article body. The 1-week age limit is proposed (section 8).
 - `positions` and `holdings` categories returned 0 records with no error (2026-11-10 test). Not used.
 - Rate limits: assumed to be Upstox's "Other Standard APIs" class (50/s, 500/min, 2000 per 30 minutes per user), as in the fundamentals doc. The News page class was not checked. No daily limit applies (project owner, 2026-11-10).
-- Status: OFF by default, and blocked until written confirmation from Upstox (section 4).
+- Status: default on (user, 2026-11-11). Blocked until written confirmation from Upstox (section 4), so nothing is registered or run before then.
 
 ### 5.5 Macro and calendar sources
 
@@ -175,7 +175,7 @@ The shortlist is the intersection of the three. On the 2026-09-28 full run this 
 ### 7.3 Freshness, poll schedule and request policy
 
 - Alerts arrive within minutes while the collector runs. Each item shows when it was fetched. When the laptop is off, nothing polls, and this is a stated known limit.
-- Each source has its own cron (A2, accepted 2026-11-10). The overview's earlier window, every 5 minutes from 08:00 to 15:30 IST on trading days and every hour at other times, is not used as the single cadence for all sources. Macro cron times stay open (C12). **Exchange filings (spec 5, 2026-11-10):** every 5 minutes, weekdays 08:00 to 20:55 IST (cron `*/5 8-20 * * 1-5`), because most results are filed after 15:30; the hourly off-hours poll is not built for filings. Trading days follow the NSE/BSE calendar. Upstox News is the exception and is polled once a day (section 5.4), after the 20:55 IST filings close, proposed 21:30 IST (to confirm), and relies on the client's 429 handling; a 403 or 429 also starts the shared `upstox` cooldown (A2, accepted 2026-11-10; section 7.3).
+- Each source has its own cron (A2, accepted 2026-11-10). The overview's earlier window, every 5 minutes from 08:00 to 15:30 IST on trading days and every hour at other times, is not used as the single cadence for all sources. Macro cron times stay open (C12). **Exchange filings (spec 5, 2026-11-10):** every 5 minutes, weekdays 08:00 to 20:55 IST (cron `*/5 8-20 * * 1-5`), because most results are filed after 15:30; the hourly off-hours poll is not built for filings. Trading days follow the NSE/BSE calendar as a working assumption; the calendar source is proposed, not decided (section 8.2 item 7). Upstox News is the exception and is polled once a day (section 5.4), after the 20:55 IST filings close, proposed 21:30 IST (to confirm), and relies on the client's 429 handling; a 403 or 429 also starts the shared `upstox` cooldown (A2, accepted 2026-11-10; section 7.3).
 - Exchange filings and the economic calendar are the default sources. RSS stays OFF by default. RSS items older than 1 week are dropped; the same limit is proposed for Upstox News (section 8).
 - NSE and BSE: 14 feeds were planned (section 5.1); the first build has 8 NSE feeds (see the section 5.1 update). They are requested one at a time per exchange, with a random gap of 5 to 8 seconds before each request, polled only on the schedule above. The 2 parked feeds are never requested. Exponential backoff on HTTP 429 or 403.
 - Cooldown on failure, by host class (2026-11-10): API hosts (`upstox`, `fred`) start at 3 minutes, double to 6 minutes, and cap at 15 minutes (user, 2026-11-10). All other hosts start at 15 minutes, double, and cap at 1 hour (user, 2026-11-10). The other class includes `nse`, `bse` and `rbi`, which are web scrapes (user, 2026-11-10). This replaces the earlier 3-hour cap. While paused, the dashboard shows a "source paused" marker. This replaces the earlier 24-hour kill switch. The policy is self-imposed; no NSE or BSE limit is published. Cooldown rows are requested for every collection host (A2, accepted 2026-11-10, widened 2026-11-10): Investing.com and CNBC TV18 (news); nse, bse, upstox and screener (split spec 4.3 exchange rows); RBI, the Federal Reserve calendar page, FRED, BLS and MoSPI (macro). The table is `source_cooldown`, keyed by host (renamed from `exchange_cooldown`; the split-spec owner decides). A host linked from a Telegram post gets its row the first time it appears in an accepted link, through a function (name proposed `ensure_source_row`; default class other, confirmed 2026-11-10; the function name is proposed; design rules in decisions A9). Backoff values are written by split spec S2.
@@ -224,11 +224,11 @@ The shortlist is the intersection of the three. On the 2026-09-28 full run this 
 1. Status and "Still open" text: resolved by this rewrite.
 2. Licence wording: resolved (section 4).
 3. Split docs: open. The filings spec is at revision 4 (approved by the user); the news, macro and Upstox docs have no build spec yet. Owner: each split doc (8.2 item 14).
-4. Events DDL and dedupe key: drafted in `home-events-filings-spec.md` (revision 4), awaiting approval. BSE scrip code map: deferred with BSE (Z2). Owner: `home-events-filings.md` (item 11).
-5. Rate-limit and kill-switch policy: partly resolved (section 7.3). Open: per-host gap and cap numbers (8.2 item 9). The cooldown classes were set 2026-11-10 (section 7.3); the values are for split spec S2. The cycle budget is resolved (8.2 item 10).
+4. Events DDL and dedupe key: in `home-events-filings-spec.md` (revision 4), approved 2026-11-11 with the filings spec. BSE scrip code map: deferred with BSE (Z2). Owner: `home-events-filings.md` (item 11).
+5. Rate-limit and kill-switch policy: partly resolved (section 7.3). Open: per-host gap numbers (8.2 item 9) and the Upstox News rate-limit class (8.2 item 19). The cooldown classes were set 2026-11-10 (section 7.3); the values are for split spec S2. The cycle budget is resolved (8.2 item 10).
 6. Wrong data facts: resolved here (`CPIMEDSL` removed, MoSPI 16:00 IST, `mcap_cr`). The split docs still carry old values (item 14).
 7. Dangling and stale references: resolved here (sections renumbered). The split docs still cite old numbers (item 14).
-8. Undefined thresholds: open (items 6, 9 and 10).
+8. Undefined thresholds: open (8.2 items 6 and 9).
 9. Governance rules: Telegram retention is open (8.2 item 2). The purge is deferred (8.2 item 4), and rejected-row retention is decided (8.2 item 3). "Critical" for retention is defined in section 7.1.
 
 ### 8.2 Open items by owner
@@ -240,19 +240,19 @@ The shortlist is the intersection of the three. On the 2026-09-28 full run this 
 5. **Proposed, not decided.** The meaning of "critical event" for impact tracking, once C5 is lifted. Owner: `home-events-filings.md`.
 6. **Proposed, not decided.** Thresholds to set before build: significant insider trade (percentage), order-to-market-cap ratio, and back-to-back wins. Owner: `home-events-filings.md`.
 7. **Proposed, not decided.** Trading-day calendar source. The working assumption is the NSE/BSE calendar. Owner: `home-events-macro-calendar.md`.
-8. **Proposed, not decided.** Upstox News 1-week age limit and OFF by default (section 5.4). Owner: `home-events-upstox-news.md`.
+8. **Proposed, not decided.** Upstox News 1-week age limit (section 5.4). The default is on, decided by the user (2026-11-11). Owner: `home-events-upstox-news.md`.
 9. **Open.** Request gap numbers for RSS, RBI, Federal Reserve, FRED, BLS, MoSPI and Upstox. Cooldown classes and caps are set 2026-11-10 (section 7.3; values for split spec S2). Decided (A2, accepted 2026-11-10): each source has its own cron, and cooldown rows are requested for every collection host in section 7.3 (widened 2026-11-10 by the user's host list); the Upstox run is once a day, proposed 21:30 IST (to confirm). Gap numbers stay open. Owner: each split doc.
 10. **Resolved 2026-11-10, revised.** Cycle budget: the first build has 8 NSE feeds per cycle, 40 to 64 s in gaps, worst case 224 s inside a 240 s run deadline (filings spec 5.3). Earlier figure: 14 feeds, 70 to 112 s. Owner: `home-events-filings.md`.
-11. **Drafted, awaiting approval.** Events DDL, NSE cookie and header handling, failure behaviour and dedupe key are in `home-events-filings-spec.md`. Feed-to-field mapping for the 8 first-build feeds waits for the samples (spec T0). BSE scrip code map: deferred (Z2). Owner: `home-events-filings.md`.
-12. **Open.** Keyword reconciliation: each term added to `scanner/factors.py` is reviewed one by one, the term table (section 9.1) moves to the filings doc (C3), and the "Contract" rule, "ORDER BOOK" and bare "AWARDED", L1 bidder and PPA terms, and optional level C terms are decided. Owner: `home-events-filings.md`.
+11. **Approved 2026-11-11** with the filings spec (revision 4). Events DDL, NSE cookie and header handling, failure behaviour and dedupe key are in `home-events-filings-spec.md`. Feed-to-field mapping for the 8 first-build feeds waits for the samples (spec T0). BSE scrip code map: deferred (Z2). Owner: `home-events-filings.md`.
+12. **Open.** Keyword reconciliation: each term added to `scanner/factors.py` is reviewed one by one, the term table (section 9.1) moves to the filings doc (C3), and the "Contract" rule, "ORDER BOOK" and bare "AWARDED", L1 bidder and PPA terms, and optional level C terms are still to be decided. Owner: `home-events-filings.md`.
 13. **Open.** LLM stage: the 30 labelled real filings from the opt-in sample (with negatives), the prompt, timeout, retries, malformed-JSON handling, injection defence for untrusted headlines, category enum and queue DDL. Owner: `home-events-news-telegram.md`.
 14. **Open.** Split docs still use stale section numbers and status text, and must match this overview. Owner: each split doc.
-15. **Open.** Terms not yet read: NSE Data Sharing and Usage Policy; BSE terms page (HTTP 403); Investing.com RSS terms (HTTP 403); Upstox API terms and developer agreement. Each source needs a recorded terms gate before it is enabled (A6, accepted 2026-11-10). Owner: `home-events-filings.md` (NSE, BSE); `home-events-news-telegram.md` (Investing.com); `home-events-upstox-news.md` (Upstox).
-16. **Open.** Macro: RBI and Fed poll cadence; alert lead times for rate decisions and CPI; the FRED pass condition for checking the series IDs. Owner: `home-events-macro-calendar.md`.
+15. **Open.** Terms not yet read: NSE Data Sharing and Usage Policy; BSE terms page (HTTP 403); Investing.com RSS terms (HTTP 403); Upstox API terms and developer agreement. Each source needs a recorded terms gate before it is enabled (A6, accepted 2026-11-10). For NSE, the gate is the user's personal-use risk acceptance (section 4, confirmed 2026-11-11); the NSE policy itself is still unread. Owner: `home-events-filings.md` (NSE, BSE); `home-events-news-telegram.md` (Investing.com); `home-events-upstox-news.md` (Upstox).
+16. **Open.** Macro: RBI and Fed poll cadence; alert lead times for rate decisions and CPI; the FRED pass condition for checking the series IDs; whether rate decisions also appear in the Home feed (section 10.1, macro doc item B2). Owner: `home-events-macro-calendar.md`.
 17. **Open.** India CPI: ingestion job spec (source page, parsing, DDL, schedule, failure handling; the job is decided, its spec is not written). Dates after 12 Nov 2026 come from the MoSPI advance release calendar. Release time 16:00 IST (user-confirmed 2026-11-10); a MoSPI page must still confirm it. Owner: `home-events-macro-calendar.md`.
 18. **Blocked.** Written confirmation from Upstox that News may be stored and shown for personal use (section 4). Owner: `home-events-upstox-news.md`.
 19. **Open.** Upstox: batch failure handling for 30-key requests, and a check of the News page rate-limit class. Owner: `home-events-upstox-news.md`.
-20. **Open.** Approval of this overview waits for items 3 to 9 in section 8.1. Approval of each split doc waits for its build specs. Owner: this overview.
+20. **Approved by the user, 2026-11-11.** The approval waives none of the open items in section 8.1 (8.1 items 3, 5, 8 and 9 stay open). 8.1 item 4 is closed for the filings spec. 8.1 items 6 and 7 are resolved in this overview; their split-doc follow-up is 8.2 item 14. Approval of each split doc waits for its build specs. Owner: this overview.
 
 ## 9. Keyword lists
 
@@ -299,7 +299,7 @@ Test on the 21-headline batch: 2 match (items 11 and 21). 16 of 21 entries used 
 | Event | Country | Next date | Source | Status |
 |---|---|---|---|---|
 | CPI, October 2026 data | India | 12 Nov 2026, 16:00 IST | MoSPI advance release calendar 2026-27 | Date in the September 2026 press release. Time confirmed by the user; no MoSPI page confirms it yet (section 8) |
-| CPI, October 2026 data | US | Released 10 Nov 2026, 8:30 a.m. ET (19:00 IST) | BLS CPI schedule | Confirmed on the BLS page (2026-11-09). Released 10 Nov 2026. Next release 10 Dec 2026 (November data), time unverified |
+| CPI, November 2026 data | US | 10 Dec 2026, time unverified | BLS CPI schedule | Confirmed on the BLS page (2026-11-09). October data released 10 Nov 2026. Next release 10 Dec 2026 (November data), time unverified |
 | MPC decision | India (RBI) | 4 Dec 2026 (meeting 2 to 4 Dec), unverified | RBI schedule page, `rbi.org.in/SCRIPTs/Annualpolicy.aspx` (dated 23 Mar 2026) | Unverified. The page's own status text says the December decision has no date yet, which conflicts with 4 Dec. Decision time not given |
 | FOMC meeting | US (Fed) | Statement 9 Dec 2026, 2:00 p.m. ET (meeting 8 to 9 Dec); 00:30 IST on 10 Dec | Fed December 2026 calendar | Press conference 2:30 p.m. ET. Minutes due 30 Dec |
 
