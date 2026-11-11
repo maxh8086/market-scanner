@@ -573,6 +573,8 @@ FEEDS: tuple[Feed, ...] = (
 _IST = ZoneInfo("Asia/Kolkata")
 # NSE pubDate text, e.g. "03-Nov-2026 10:29:23": India local time, with no offset in the text.
 _PUB_DATE_FORMAT = "%d-%b-%Y %H:%M:%S"
+# nse:Sast_Regulation29 pubDate has no seconds, e.g. "03-Nov-2026 12:54" (spec 4.0).
+_PUB_DATE_FORMAT_MINUTES = "%d-%b-%Y %H:%M"
 _HEADLINE_MAX = 500
 
 
@@ -681,9 +683,21 @@ def _parse_integrated_filing_financials(body: bytes) -> ParseResult:
     return _parse_rss_feed(body, _PUB_DATE_FORMAT)
 
 
+def _parse_sast_regulation29(body: bytes) -> ParseResult:
+    """Parse the nse:Sast_Regulation29 RSS feed (spec 4.0, 6).
+
+    Its pubDate has no seconds, so it uses the minutes-only format with no
+    fixup, and company is the whole squashed title, as for Financial_Results.
+    Errors and drops are as in _parse_rss_feed. Repeated items are kept here;
+    run_cycle drops repeated dedupe keys before posting (spec 4.2).
+    """
+    return _parse_rss_feed(body, _PUB_DATE_FORMAT_MINUTES)
+
+
 PARSERS: dict[str, Callable[[bytes], ParseResult]] = {
     "nse:Financial_Results": _parse_financial_results,
     "nse:Integrated_Filing_Financials": _parse_integrated_filing_financials,
+    "nse:Sast_Regulation29": _parse_sast_regulation29,
 }
 
 

@@ -15,6 +15,7 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Fi
 FEED_CODE = "nse:Financial_Results"
 FIXTURE_LINK = "https://www.nseindia.com/companies-listing/corporate-filings-financial-results"
 INTEGRATED_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Integrated_Filing_Financials.xml"
+SAST_REG29_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Sast_Regulation29.xml"
 
 
 def _squash(text: str) -> str:
@@ -122,6 +123,43 @@ class HomeEventsParserTest(unittest.TestCase):
             for item in result.items
         }
         self.assertEqual(len(keys), 20)
+
+    def test_fixture_Sast_Regulation29(self):
+        body = SAST_REG29_FIXTURE.read_bytes()
+        result = parse("nse:Sast_Regulation29", body)
+        self.assertEqual(len(result.items), 20)
+        self.assertEqual(result.dropped, 0)
+
+        # Literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
+        first = result.items[0]
+        self.assertEqual(first["company"], "Jio Financial Services Limited")
+        self.assertEqual(
+            first["source_url"],
+            "https://nsearchives.nseindia.com/corporate/Dis3_11032026125413_54175.zip",
+        )
+        self.assertEqual(first["published_at"].astimezone(timezone.utc).isoformat(), "2026-11-03T07:24:00+00:00")
+
+        last = result.items[19]
+        self.assertEqual(last["company"], "Siddhika Coatings Limited")
+        self.assertEqual(
+            last["source_url"],
+            "https://nsearchives.nseindia.com/corporate/Disclosure_10282026145826_53988.zip",
+        )
+        self.assertEqual(last["published_at"].astimezone(timezone.utc).isoformat(), "2026-10-28T09:28:00+00:00")
+
+        keys = {
+            dedupe_key(
+                "nse:Sast_Regulation29",
+                item["source_id"],
+                item["source_url"],
+                item["title"],
+                item["description"],
+                item["published_at"],
+            )
+            for item in result.items
+        }
+        # 20 items with three exact duplicate pairs (items 2/3, 6/7, 9/10) give 17 distinct keys (spec 4.0, 4.2).
+        self.assertEqual(len(keys), 17)
 
     def test_empty_feed(self):
         result = parse(FEED_CODE, b'<rss version="2.0"><channel></channel></rss>')
