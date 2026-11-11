@@ -148,7 +148,7 @@ def filter_items(
 ) -> tuple[list[dict], dict[str, int]]:
     """Keep items whose symbol is in the universe, and fill a missing ISIN from it (spec 4.3).
 
-    `universe` maps symbol to ISIN (loaded once per run by `load_universe`).
+    `universe` maps symbol to ISIN. For events it is `company_reference.load_index_for_source(conn, "nse_csv").universe`.
     Returns (kept, counts). Kept items are copies, so the caller's dicts are not
     changed. An ISIN the feed supplied is kept as it is. `counts` always has the
     key "universe": the number of items rejected because their symbol is not in
@@ -157,7 +157,7 @@ def filter_items(
     kept: list[dict] = []
     counts = {"universe": 0}
     for item in items:
-        isin = universe.get(item["symbol"])
+        isin = universe.get(item.get("symbol"))
         if isin is None:
             counts["universe"] += 1
             continue

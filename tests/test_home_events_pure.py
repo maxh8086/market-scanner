@@ -214,6 +214,13 @@ class FilterItemsTests(unittest.TestCase):
         # The caller's dict is not changed.
         self.assertIsNone(missing["isin"])
 
+    def test_filter_items_missing_symbol_counted_as_universe(self):
+        item = _parsed_item("EXAMPLE")
+        del item["symbol"]
+        kept, counts = home_events.filter_items([item], UNIVERSE)
+        self.assertEqual(kept, [])
+        self.assertEqual(counts, {"universe": 1})
+
 
 class ClassifyResponseTests(unittest.TestCase):
     def test_classify_response_none_retry(self):
