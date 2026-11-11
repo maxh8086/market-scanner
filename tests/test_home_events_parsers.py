@@ -9,11 +9,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from scanner.home_events import FEEDS, ParseError, dedupe_key, parse
+from scanner.home_events import FEEDS, PARSERS, ParseError, dedupe_key, parse
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Financial_Results.xml"
 FEED_CODE = "nse:Financial_Results"
 FIXTURE_LINK = "https://www.nseindia.com/companies-listing/corporate-filings-financial-results"
+INTEGRATED_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Integrated_Filing_Financials.xml"
+SAST_REG29_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Sast_Regulation29.xml"
+SAST_REG31_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Sast_Regulation31.xml"
+CORPORATE_ACTION_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Corporate_action.xml"
+CORPORATE_GOVERNANCE_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Corporate_Governance.xml"
 
 
 def _squash(text: str) -> str:
@@ -56,6 +61,17 @@ class HomeEventsParserTest(unittest.TestCase):
             self.assertEqual(item["company"], "Gammon India Limited")
             self.assertEqual(item["source_url"], FIXTURE_LINK)
 
+        # Literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
+        first_item = result.items[0]
+        self.assertEqual(first_item["title"], "Gammon India Limited")
+        description = (
+            "RELATING TO:First Quarter |AUDITED/UNAUDITED:Unaudited |CUMULATIVE/NON-CUMULATIVE:Non-Cumulative "
+            "|CONSOLIDATED/NON-CONSOLIDATED:Non-Consolidated |IND AS/ NON IND AS:Ind-AS New |PERIOD:Quarterly "
+            "|PERIOD ENDED: 30-Jun-2024"
+        )
+        self.assertEqual(first_item["description"], description)
+        self.assertEqual(first_item["headline"], description)
+
         keys = [
             dedupe_key(
                 FEED_CODE,
@@ -85,6 +101,293 @@ class HomeEventsParserTest(unittest.TestCase):
         )
         expected = "nse:Financial_Results:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
         self.assertEqual(keys[0], expected)
+
+    def test_fixture_Integrated_Filing_Financials(self):
+        body = INTEGRATED_FIXTURE.read_bytes()
+        result = parse("nse:Integrated_Filing_Financials", body)
+        self.assertEqual(len(result.items), 20)
+        self.assertEqual(result.dropped, 0)
+
+        # Literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
+        first = result.items[0]
+        self.assertEqual(first["company"], "Bajaj Hindusthan Sugar Limited")
+        self.assertEqual(first["title"], "Bajaj Hindusthan Sugar Limited")
+        self.assertEqual(first["description"], "Integrated Filing- Financials|Original|")
+        self.assertEqual(first["headline"], "Integrated Filing- Financials|Original|")
+        self.assertEqual(
+            first["source_url"],
+            "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1756034_11112026031015_WEB.xml",
+        )
+        self.assertEqual(first["published_at"].astimezone(timezone.utc).isoformat(), "2026-11-11T09:38:07+00:00")
+
+        last = result.items[19]
+        self.assertEqual(last["company"], "Dar Credit & Capital Limited")
+        self.assertEqual(
+            last["source_url"],
+            "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_NONINDAS_1755909_10112026080955_WEB.xml",
+        )
+        self.assertEqual(last["published_at"].astimezone(timezone.utc).isoformat(), "2026-11-10T14:39:56+00:00")
+
+        keys = {
+            dedupe_key(
+                "nse:Integrated_Filing_Financials",
+                item["source_id"],
+                item["source_url"],
+                item["title"],
+                item["description"],
+                item["published_at"],
+            )
+            for item in result.items
+        }
+        self.assertEqual(len(keys), 20)
+
+    def test_fixture_Sast_Regulation29(self):
+        body = SAST_REG29_FIXTURE.read_bytes()
+        result = parse("nse:Sast_Regulation29", body)
+        self.assertEqual(len(result.items), 20)
+        self.assertEqual(result.dropped, 0)
+
+        # Literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
+        first = result.items[0]
+        self.assertEqual(first["company"], "Jio Financial Services Limited")
+        self.assertEqual(first["title"], "Jio Financial Services Limited")
+        # The raw bytes hold "&amp;", which the XML parser decodes to "&"; the literal is the decoded text.
+        description = "NAME(S)OF THE ACQUIRER AND ITS(PAC) : Jamnagar Utilities & Power Private Limited"
+        self.assertEqual(first["description"], description)
+        self.assertEqual(first["headline"], description)
+        self.assertEqual(
+            first["source_url"],
+            "https://nsearchives.nseindia.com/corporate/Dis3_11032026125413_54175.zip",
+        )
+        self.assertEqual(first["published_at"].astimezone(timezone.utc).isoformat(), "2026-11-03T07:24:00+00:00")
+
+        last = result.items[19]
+        self.assertEqual(last["company"], "Siddhika Coatings Limited")
+        self.assertEqual(
+            last["source_url"],
+            "https://nsearchives.nseindia.com/corporate/Disclosure_10282026145826_53988.zip",
+        )
+        self.assertEqual(last["published_at"].astimezone(timezone.utc).isoformat(), "2026-10-28T09:28:00+00:00")
+
+        keys = {
+            dedupe_key(
+                "nse:Sast_Regulation29",
+                item["source_id"],
+                item["source_url"],
+                item["title"],
+                item["description"],
+                item["published_at"],
+            )
+            for item in result.items
+        }
+        # 20 items; the three exact duplicate pairs are at 0-based indexes 2/3, 6/7 and 9/10,
+        # giving 17 distinct keys (spec 4.0, 4.2).
+        self.assertEqual(len(keys), 17)
+
+    def test_fixture_Sast_Regulation31(self):
+        body = SAST_REG31_FIXTURE.read_bytes()
+        result = parse("nse:Sast_Regulation31", body)
+        self.assertEqual(len(result.items), 20)
+        self.assertEqual(result.dropped, 0)
+
+        # Literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
+        first = result.items[0]
+        self.assertEqual(first["title"], "Billionbrains Garage Ventures Limited")
+        self.assertEqual(first["description"], "NAME OF PROMOTER(S) OR PACS WITH HIM : Fortune First Trust")
+        self.assertEqual(first["headline"], "NAME OF PROMOTER(S) OR PACS WITH HIM : Fortune First Trust")
+        self.assertEqual(first["company"], "Billionbrains Garage Ventures Limited")
+        self.assertEqual(
+            first["source_url"],
+            "https://nsearchives.nseindia.com/corporate/Fortune_10292026111315.zip",
+        )
+        self.assertEqual(first["published_at"].astimezone(timezone.utc).isoformat(), "2026-10-29T05:43:15+00:00")
+
+        last = result.items[19]
+        self.assertEqual(last["company"], "Ajanta Pharma Limited")
+        self.assertEqual(
+            last["source_url"],
+            "https://nsearchives.nseindia.com/corporate/AJANTPHARM_10212026140918.zip",
+        )
+        self.assertEqual(last["published_at"].astimezone(timezone.utc).isoformat(), "2026-10-21T08:39:18+00:00")
+
+        keys = {
+            dedupe_key(
+                "nse:Sast_Regulation31",
+                item["source_id"],
+                item["source_url"],
+                item["title"],
+                item["description"],
+                item["published_at"],
+            )
+            for item in result.items
+        }
+        # 20 items with no repeated dedupe key in the fixture bytes (one-off xml.etree run, spec 4.2).
+        self.assertEqual(len(keys), 20)
+
+    def test_fixture_Corporate_action(self):
+        body = CORPORATE_ACTION_FIXTURE.read_bytes()
+        result = parse("nse:Corporate_action", body)
+        self.assertEqual(len(result.items), 58)
+        self.assertEqual(result.dropped, 0)
+
+        # Literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
+        first = result.items[0]
+        self.assertEqual(first["title"], "TRANSWORLD SHIPPING LINES LIMITED - Ex-Date: 13-Nov-2026")
+        self.assertEqual(
+            first["description"],
+            "SERIES:EQ |PURPOSE:INTERIM DIVIDEND - RS 11 PER SHARE |FACE VALUE:10 |RECORD DATE:13-Nov-2026 "
+            "|BOOK CLOSURE START DATE:- |BOOK CLOSURE END DATE:-",
+        )
+        self.assertEqual(
+            first["headline"],
+            "SERIES:EQ |PURPOSE:INTERIM DIVIDEND - RS 11 PER SHARE |FACE VALUE:10 |RECORD DATE:13-Nov-2026 "
+            "|BOOK CLOSURE START DATE:- |BOOK CLOSURE END DATE:-",
+        )
+        self.assertEqual(first["company"], "TRANSWORLD SHIPPING LINES LIMITED")
+        self.assertEqual(
+            first["source_url"],
+            "https://www.nseindia.com/companies-listing/corporate-filings-actions",
+        )
+        self.assertEqual(first["published_at"].astimezone(timezone.utc).isoformat(), "2026-11-10T21:41:42+00:00")
+
+        last = result.items[57]
+        self.assertEqual(last["company"], "Venus Pipes & Tubes Limited")
+        self.assertEqual(
+            last["source_url"],
+            "https://www.nseindia.com/companies-listing/corporate-filings-actions",
+        )
+        self.assertEqual(last["published_at"].astimezone(timezone.utc).isoformat(), "2026-11-10T21:41:42+00:00")
+
+        keys = {
+            dedupe_key(
+                "nse:Corporate_action",
+                item["source_id"],
+                item["source_url"],
+                item["title"],
+                item["description"],
+                item["published_at"],
+            )
+            for item in result.items
+        }
+        # 58 items with no repeated dedupe key in the fixture bytes (one-off xml.etree run, spec 4.2).
+        self.assertEqual(len(keys), 58)
+
+    def test_fixture_Corporate_Governance(self):
+        body = CORPORATE_GOVERNANCE_FIXTURE.read_bytes()
+        # The sample feed has no <item> elements (spec 4.0). Counted from the raw bytes, not from parse().
+        self.assertEqual(len(ET.fromstring(body).findall(".//item")), 0)
+        # parse() must not raise on this valid rss document.
+        result = parse("nse:Corporate_Governance", body)
+        self.assertEqual(result.items, [])
+        self.assertEqual(result.dropped, 0)
+
+        # Channel literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
+        channel = ET.fromstring(body).find("channel")
+        self.assertEqual(channel.find("title").text, "NSE News - Latest CORPORATE GOVERNANCE")
+        self.assertEqual(
+            channel.find("link").text,
+            "https://www.nseindia.com/companies-listing/corporate-filings-governance",
+        )
+
+    def test_fixture_Related_Party_Trans(self):
+        fixture = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Related_Party_Trans.xml"
+        body = fixture.read_bytes()
+        # Raw-bytes checks with xml.etree, not parse(): 20 items, 10 colon-form and 10 dot-form pubDates (spec 4.0).
+        raw_items = ET.fromstring(body).find("channel").findall("item")
+        self.assertEqual(len(raw_items), 20)
+        self.assertEqual(sum("." in item.find("pubDate").text for item in raw_items), 10)
+        self.assertEqual(raw_items[0].find("pubDate").text, "11-SEP-2026 17:49:09")
+        self.assertEqual(raw_items[10].find("pubDate").text, "24-MAY-2025 22:28.31")
+
+        result = parse("nse:Related_Party_Trans", body)
+        self.assertEqual(len(result.items), 20)
+        self.assertEqual(result.dropped, 0)
+
+        # items[0] has a colon-form pubDate; items[10] has the dot-form pubDate above.
+        first = result.items[0]
+        self.assertEqual(first["title"], "Shree Ram Proteins Limited")
+        self.assertEqual(first["description"], "PERIOD END DATE : 30-SEP-2024")
+        self.assertEqual(first["headline"], "PERIOD END DATE : 30-SEP-2024")
+        self.assertEqual(first["company"], "Shree Ram Proteins Limited")
+        self.assertEqual(
+            first["source_url"],
+            "https://nsearchives.nseindia.com/corporate/xbrl/RPT_1723713_11092026054908_WEB.xml",
+        )
+        self.assertEqual(first["published_at"].astimezone(timezone.utc).isoformat(), "2026-09-11T12:19:09+00:00")
+
+        dotted = result.items[10]
+        self.assertEqual(dotted["company"], "Visdem Technosys Limited")
+        self.assertEqual(
+            dotted["source_url"],
+            "https://nsearchives.nseindia.com/corporate/xbrl/RPT_1450472_24052025102831_WEB.xml",
+        )
+        self.assertEqual(dotted["published_at"].astimezone(timezone.utc).isoformat(), "2025-05-24T16:58:31+00:00")
+
+        keys = {
+            dedupe_key(
+                "nse:Related_Party_Trans",
+                item["source_id"],
+                item["source_url"],
+                item["title"],
+                item["description"],
+                item["published_at"],
+            )
+            for item in result.items
+        }
+        # 20 distinct keys derived from the fixture bytes with hashlib and json (one-off run, spec 4.2).
+        self.assertEqual(len(keys), 20)
+
+    def test_fixture_Shareholding_Pattern(self):
+        fixture = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Shareholding_Pattern.xml"
+        body = fixture.read_bytes()
+        # Raw-bytes checks with xml.etree, not parse(): 1 item, pubDate in the NSE format (spec 4.0).
+        raw_items = ET.fromstring(body).find("channel").findall("item")
+        self.assertEqual(len(raw_items), 1)
+        self.assertEqual(raw_items[0].find("pubDate").text, "11-Nov-2026 12:21:07")
+
+        result = parse("nse:Shareholding_Pattern", body)
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual(result.dropped, 0)
+
+        # Literals read from the fixture bytes (one-off xml.etree run), not from parse() or the module helpers.
+        first = result.items[0]
+        description = (
+            "AS ON DATE : 29-Oct-2026 | PR_AND_PRGRP: 69.25 | PUBLIC_VAL: 30.75 | EMPTR: 0 "
+            "| NDS_REVISED_STATUS: Revised | SUBMISSION_DT: 03-Nov-2026 | REVISION_DT: 10-Nov-2026"
+        )
+        self.assertEqual(first["title"], "Indian Toners & Developers Limited")
+        self.assertEqual(first["company"], "Indian Toners & Developers Limited")
+        self.assertEqual(
+            first["source_url"],
+            "https://nsearchives.nseindia.com/corporate/xbrl/SHP_1755747_10112026095809_WEB.xml",
+        )
+        self.assertEqual(first["description"], description)
+        self.assertEqual(first["headline"], description)
+        # 12:21:07 IST is 06:51:07 UTC.
+        self.assertEqual(first["published_at"].astimezone(timezone.utc).isoformat(), "2026-11-11T06:51:07+00:00")
+
+        keys = {
+            dedupe_key(
+                "nse:Shareholding_Pattern",
+                item["source_id"],
+                item["source_url"],
+                item["title"],
+                item["description"],
+                item["published_at"],
+            )
+            for item in result.items
+        }
+        # 1 item in the fixture bytes, so 1 distinct dedupe key.
+        self.assertEqual(len(keys), 1)
+
+    def test_fixture_exists_for_every_feed(self):
+        # Completeness after the last T7 parser: every FEEDS entry has a fixture file and a parser (spec 8, 9 T7).
+        self.assertEqual(len(FEEDS), 8)
+        fixtures_dir = Path(__file__).resolve().parent / "fixtures" / "home_events"
+        for feed in FEEDS:
+            fixture = fixtures_dir / f"{feed.feed_code.replace(':', '_')}.xml"
+            self.assertTrue(fixture.is_file(), f"missing fixture for {feed.feed_code}: {fixture}")
+            self.assertIn(feed.feed_code, PARSERS)
 
     def test_empty_feed(self):
         result = parse(FEED_CODE, b'<rss version="2.0"><channel></channel></rss>')
@@ -125,6 +428,22 @@ class HomeEventsParserTest(unittest.TestCase):
         self.assertEqual(len(result.items[0]["headline"]), 500)
         self.assertEqual(result.items[1]["headline"], "Gamma Ltd")
 
+    def test_corporate_action_company_without_separator_uses_full_title(self):
+        # A title with no " - Ex-Date:" separator gives the whole squashed title as the company (spec 4.0).
+        result = parse(
+            "nse:Corporate_action",
+            _rss(_item(title="ACME Corp", description="Dividend", pub="11-Nov-2026 10:00:00")),
+        )
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual(result.dropped, 0)
+        self.assertEqual(result.items[0]["company"], "ACME Corp")
+
+    def test_non_http_link_dropped_and_counted(self):
+        # The only defect is the ftp scheme, which the link check in _rss_item drops (spec 4.0).
+        result = parse(FEED_CODE, _rss(_item(link="ftp://example.com/x")))
+        self.assertEqual(result.items, [])
+        self.assertEqual(result.dropped, 1)
+
     def test_feeds_registry_has_eight_rows(self):
         self.assertEqual(len(FEEDS), 8)
         self.assertEqual(
@@ -151,7 +470,7 @@ class HomeEventsParserTest(unittest.TestCase):
 
     def test_unknown_feed_code_raises_value_error(self):
         with self.assertRaises(ValueError):
-            parse("nse:Corporate_action", b"<rss><channel/></rss>")
+            parse("nse:No_Such_Feed", b"<rss><channel/></rss>")
 
 
 if __name__ == "__main__":

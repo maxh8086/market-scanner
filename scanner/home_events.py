@@ -573,6 +573,8 @@ FEEDS: tuple[Feed, ...] = (
 _IST = ZoneInfo("Asia/Kolkata")
 # NSE pubDate text, e.g. "03-Nov-2026 10:29:23": India local time, with no offset in the text.
 _PUB_DATE_FORMAT = "%d-%b-%Y %H:%M:%S"
+# nse:Sast_Regulation29 pubDate has no seconds, e.g. "03-Nov-2026 12:54" (spec 4.0).
+_PUB_DATE_FORMAT_MINUTES = "%d-%b-%Y %H:%M"
 _HEADLINE_MAX = 500
 
 
@@ -584,12 +586,19 @@ def _child_text(node: ET.Element, tag: str) -> str:
     return child.text
 
 
-def _rss_item(node: ET.Element) -> dict | None:
+def _rss_item(
+    node: ET.Element,
+    date_format: str,
+    date_fixup: Callable[[str], str] | None = None,
+    company_from_title: Callable[[str], str] | None = None,
+) -> dict | None:
     """Map one RSS <item> to a parsed item dict, or None when it must be dropped.
 
     title, link and pubDate must be non-empty after strip. description must be
     present but may be empty. The link is squashed and must start with http://
-    or https:// (any case). A pubDate that does not match the NSE format drops the item.
+    or https:// (any case). The pubDate text goes through date_fixup when given,
+    then strptime with date_format; a value that does not parse drops the item.
+    company is company_from_title(squashed title) when given, else the squashed title.
     """
     if node.find("description") is None:
         return None
@@ -601,34 +610,40 @@ def _rss_item(node: ET.Element) -> dict | None:
     if not link.lower().startswith(("http://", "https://")):
         return None
     try:
-        published_at = datetime.strptime(pub_text, _PUB_DATE_FORMAT).replace(tzinfo=_IST)
+        if date_fixup is not None:
+            pub_text = date_fixup(pub_text)
+        published_at = datetime.strptime(pub_text, date_format).replace(tzinfo=_IST)
     except ValueError:
         return None
     description = _child_text(node, "description").strip()
+    squashed_title = _squash(title)
+    company = company_from_title(squashed_title) if company_from_title is not None else squashed_title
     return {
         "source_id": None,
         "source_url": link,
         "symbol": None,
         "isin": None,
-        "company": _squash(title),
+        "company": company,
         "title": title,
         "description": description,
-        "headline": (_squash(description) or _squash(title))[:_HEADLINE_MAX],
+        "headline": (_squash(description) or squashed_title)[:_HEADLINE_MAX],
         "published_at": published_at,
     }
 
 
-def _parse_financial_results(body: bytes) -> ParseResult:
-    """Parse the nse:Financial_Results RSS feed (spec 4.0, 4.3, 6).
-
-    symbol and isin are None because name resolution (spec 4.3) is not built
-    yet. filter_items therefore rejects every item as "universe", which is
-    intended until that work lands.
+def _parse_rss_feed(
+    body: bytes,
+    date_format: str,
+    date_fixup: Callable[[str], str] | None = None,
+    company_from_title: Callable[[str], str] | None = None,
+) -> ParseResult:
+    """Parse an NSE RSS feed body into items (spec 4.0, 6). Shared by every RSS feed.
 
     Raises ParseError when the body is not XML, or when its root is not an rss
     element with a channel child (an HTML page served with status 200 is one).
     Items that miss a required field or have a bad link or pubDate are dropped
-    and counted in `dropped`.
+    and counted in `dropped`. date_format, date_fixup and company_from_title are
+    passed to _rss_item for every item.
     """
     try:
         root = ET.fromstring(body)
@@ -640,7 +655,7 @@ def _parse_financial_results(body: bytes) -> ParseResult:
     items: list[dict] = []
     dropped = 0
     for node in channel.findall("item"):
-        item = _rss_item(node)
+        item = _rss_item(node, date_format, date_fixup, company_from_title)
         if item is None:
             dropped += 1
         else:
@@ -648,8 +663,119 @@ def _parse_financial_results(body: bytes) -> ParseResult:
     return ParseResult(items=items, dropped=dropped)
 
 
+def _parse_financial_results(body: bytes) -> ParseResult:
+    """Parse the nse:Financial_Results RSS feed (spec 4.0, 4.3, 6).
+
+    symbol and isin are None because name resolution (spec 4.3) is not built
+    yet. filter_items therefore rejects every item as "universe", which is
+    intended until that work lands.
+    """
+    return _parse_rss_feed(body, _PUB_DATE_FORMAT)
+
+
+def _parse_integrated_filing_financials(body: bytes) -> ParseResult:
+    """Parse the nse:Integrated_Filing_Financials RSS feed (spec 4.0, 6).
+
+    Its pubDate uses the NSE format with no fixup, and company is the whole
+    squashed title, as for Financial_Results. Errors and drops are as in
+    _parse_rss_feed.
+    """
+    return _parse_rss_feed(body, _PUB_DATE_FORMAT)
+
+
+def _parse_sast_regulation29(body: bytes) -> ParseResult:
+    """Parse the nse:Sast_Regulation29 RSS feed (spec 4.0, 6).
+
+    Its pubDate has no seconds, so it uses the minutes-only format with no
+    fixup, and company is the whole squashed title, as for Financial_Results.
+    Errors and drops are as in _parse_rss_feed. Repeated items are kept here;
+    run_cycle drops repeated dedupe keys before posting (spec 4.2).
+    """
+    return _parse_rss_feed(body, _PUB_DATE_FORMAT_MINUTES)
+
+
+def _parse_sast_regulation31(body: bytes) -> ParseResult:
+    """Parse the nse:Sast_Regulation31 RSS feed (spec 4.0, 6).
+
+    Its pubDate has seconds, so it uses the NSE format with no fixup, and company
+    is the whole squashed title, as for Financial_Results. Errors and drops are
+    as in _parse_rss_feed.
+    """
+    return _parse_rss_feed(body, _PUB_DATE_FORMAT)
+
+
+# nse:Corporate_action titles are "<COMPANY> - Ex-Date: DD-Mon-YYYY" (spec 4.0).
+_CORPORATE_ACTION_SEPARATOR = " - Ex-Date:"
+
+
+def _corporate_action_company(squashed_title: str) -> str:
+    """Company part of a Corporate_action title: the text before the first ' - Ex-Date:'.
+
+    A title without the separator gives the whole squashed title (spec 4.0).
+    """
+    return squashed_title.partition(_CORPORATE_ACTION_SEPARATOR)[0].strip()
+
+
+def _parse_corporate_action(body: bytes) -> ParseResult:
+    """Parse the nse:Corporate_action RSS feed (spec 4.0, 6).
+
+    Its pubDate uses the NSE format with no fixup. company is the title part
+    before ' - Ex-Date:' (_corporate_action_company). Errors and drops are as in
+    _parse_rss_feed.
+    """
+    return _parse_rss_feed(body, _PUB_DATE_FORMAT, company_from_title=_corporate_action_company)
+
+
+def _parse_corporate_governance(body: bytes) -> ParseResult:
+    """Parse the nse:Corporate_Governance RSS feed (spec 4.0, 6).
+
+    Its pubDate uses the NSE format with no fixup, and company is the whole
+    squashed title, as for Financial_Results. The sample feed has no items
+    (spec 4.0), so a channel with no item elements gives an empty result.
+    Errors and drops are as in _parse_rss_feed.
+    """
+    return _parse_rss_feed(body, _PUB_DATE_FORMAT)
+
+
+# nse:Related_Party_Trans pubDate: some items use "DD-MON-YYYY HH:MM.SS" (a dot before the
+# seconds), others "DD-MON-YYYY HH:MM:SS" (spec 4.0, decided 2026-11-11).
+def _rpt_date_fixup(text: str) -> str:
+    """Replace the dot before the seconds with a colon, so the NSE date format applies (spec 4.0).
+
+    Colon-form pubDate text has no dot and is returned unchanged.
+    """
+    return text.replace(".", ":")
+
+
+def _parse_related_party_trans(body: bytes) -> ParseResult:
+    """Parse the nse:Related_Party_Trans RSS feed (spec 4.0, 6).
+
+    pubDate uses the NSE format, after _rpt_date_fixup for the dot variant.
+    company is the whole squashed title, as for Financial_Results. Errors and
+    drops are as in _parse_rss_feed.
+    """
+    return _parse_rss_feed(body, _PUB_DATE_FORMAT, date_fixup=_rpt_date_fixup)
+
+
+def _parse_shareholding_pattern(body: bytes) -> ParseResult:
+    """Parse the nse:Shareholding_Pattern RSS feed (spec 4.0, 6).
+
+    Its pubDate uses the NSE format with no fixup, and company is the whole
+    squashed title, as for Financial_Results. Errors and drops are as in
+    _parse_rss_feed.
+    """
+    return _parse_rss_feed(body, _PUB_DATE_FORMAT)
+
+
 PARSERS: dict[str, Callable[[bytes], ParseResult]] = {
     "nse:Financial_Results": _parse_financial_results,
+    "nse:Integrated_Filing_Financials": _parse_integrated_filing_financials,
+    "nse:Sast_Regulation29": _parse_sast_regulation29,
+    "nse:Sast_Regulation31": _parse_sast_regulation31,
+    "nse:Corporate_action": _parse_corporate_action,
+    "nse:Corporate_Governance": _parse_corporate_governance,
+    "nse:Related_Party_Trans": _parse_related_party_trans,
+    "nse:Shareholding_Pattern": _parse_shareholding_pattern,
 }
 
 
