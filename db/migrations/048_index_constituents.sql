@@ -4,7 +4,9 @@
 --
 -- Primary key is (index_name, symbol, isin): one index can hold the same symbol only once.
 
-CREATE TABLE index_constituents (
+-- IF NOT EXISTS: the table was created in market_scanner before the runner recorded this file
+-- (no schema_migrations row). Re-running it must be a no-op, not an error that stops the run.
+CREATE TABLE IF NOT EXISTS index_constituents (
   index_name    text NOT NULL,
   symbol        text NOT NULL,
   isin          text NOT NULL,
@@ -16,7 +18,7 @@ CREATE TABLE index_constituents (
   PRIMARY KEY (index_name, symbol, isin)
 );
 
-CREATE INDEX index_constituents_symbol_idx ON index_constituents (symbol);
+CREATE INDEX IF NOT EXISTS index_constituents_symbol_idx ON index_constituents (symbol);
 
 -- The app reads; the loader role fills the table (same split as migration 047).
 GRANT SELECT ON index_constituents TO market_scanner_app;
