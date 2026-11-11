@@ -41,10 +41,26 @@ def _check_dsn_agrees(dsn_text: str, env: dict) -> None:
                            + ". Remove POSTGRES_DSN or make them agree.")
 
 
+_dotenv_loaded = False
+
+
+def _load_project_env() -> None:
+    """Load the project's .env once per process, without overriding variables already set
+    in the shell (same rule as scanner/pg/migrate.py). Without this, scripts that never
+    import the other .env loaders see POSTGRES_* as unset."""
+    global _dotenv_loaded
+    if _dotenv_loaded:
+        return
+    _dotenv_loaded = True
+    from dotenv import find_dotenv, load_dotenv
+    load_dotenv(find_dotenv(usecwd=True))
+
+
 def dsn(dbname: Optional[str] = None) -> str:
     """The connection string. dbname, when given, overrides the database name (used for the
     events database, 4.5); the POSTGRES_DSN / POSTGRES_* agreement check is then skipped,
     because the override is deliberate. Without dbname the behaviour is unchanged."""
+    _load_project_env()
     env = os.environ
     if env.get("POSTGRES_DSN"):
         if dbname is None:
@@ -63,6 +79,8 @@ def dsn(dbname: Optional[str] = None) -> str:
 
 
 def available(env: Optional[dict] = None) -> bool:
+    if env is None:
+        _load_project_env()
     env = os.environ if env is None else env
     return bool(env.get("POSTGRES_DSN") or env.get("POSTGRES_HOST"))
 
