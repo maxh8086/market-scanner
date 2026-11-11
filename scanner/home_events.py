@@ -757,6 +757,16 @@ def _parse_related_party_trans(body: bytes) -> ParseResult:
     return _parse_rss_feed(body, _PUB_DATE_FORMAT, date_fixup=_rpt_date_fixup)
 
 
+def _parse_shareholding_pattern(body: bytes) -> ParseResult:
+    """Parse the nse:Shareholding_Pattern RSS feed (spec 4.0, 6).
+
+    Its pubDate uses the NSE format with no fixup, and company is the whole
+    squashed title, as for Financial_Results. Errors and drops are as in
+    _parse_rss_feed.
+    """
+    return _parse_rss_feed(body, _PUB_DATE_FORMAT)
+
+
 PARSERS: dict[str, Callable[[bytes], ParseResult]] = {
     "nse:Financial_Results": _parse_financial_results,
     "nse:Integrated_Filing_Financials": _parse_integrated_filing_financials,
@@ -765,6 +775,7 @@ PARSERS: dict[str, Callable[[bytes], ParseResult]] = {
     "nse:Corporate_action": _parse_corporate_action,
     "nse:Corporate_Governance": _parse_corporate_governance,
     "nse:Related_Party_Trans": _parse_related_party_trans,
+    "nse:Shareholding_Pattern": _parse_shareholding_pattern,
 }
 
 

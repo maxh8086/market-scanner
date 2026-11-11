@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from scanner.home_events import FEEDS, ParseError, dedupe_key, parse
+from scanner.home_events import FEEDS, PARSERS, ParseError, dedupe_key, parse
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Financial_Results.xml"
 FEED_CODE = "nse:Financial_Results"
@@ -330,6 +330,58 @@ class HomeEventsParserTest(unittest.TestCase):
         }
         # 20 distinct keys derived from the fixture bytes with hashlib and json (one-off run, spec 4.2).
         self.assertEqual(len(keys), 20)
+
+    def test_fixture_Shareholding_Pattern(self):
+        fixture = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Shareholding_Pattern.xml"
+        body = fixture.read_bytes()
+        # Raw-bytes checks with xml.etree, not parse(): 1 item, pubDate in the NSE format (spec 4.0).
+        raw_items = ET.fromstring(body).find("channel").findall("item")
+        self.assertEqual(len(raw_items), 1)
+        self.assertEqual(raw_items[0].find("pubDate").text, "11-Nov-2026 12:21:07")
+
+        result = parse("nse:Shareholding_Pattern", body)
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual(result.dropped, 0)
+
+        # Literals read from the fixture bytes (one-off xml.etree run), not from parse() or the module helpers.
+        first = result.items[0]
+        description = (
+            "AS ON DATE : 29-Oct-2026 | PR_AND_PRGRP: 69.25 | PUBLIC_VAL: 30.75 | EMPTR: 0 "
+            "| NDS_REVISED_STATUS: Revised | SUBMISSION_DT: 03-Nov-2026 | REVISION_DT: 10-Nov-2026"
+        )
+        self.assertEqual(first["title"], "Indian Toners & Developers Limited")
+        self.assertEqual(first["company"], "Indian Toners & Developers Limited")
+        self.assertEqual(
+            first["source_url"],
+            "https://nsearchives.nseindia.com/corporate/xbrl/SHP_1755747_10112026095809_WEB.xml",
+        )
+        self.assertEqual(first["description"], description)
+        self.assertEqual(first["headline"], description)
+        # 12:21:07 IST is 06:51:07 UTC.
+        self.assertEqual(first["published_at"].astimezone(timezone.utc).isoformat(), "2026-11-11T06:51:07+00:00")
+
+        keys = {
+            dedupe_key(
+                "nse:Shareholding_Pattern",
+                item["source_id"],
+                item["source_url"],
+                item["title"],
+                item["description"],
+                item["published_at"],
+            )
+            for item in result.items
+        }
+        # 1 item in the fixture bytes, so 1 distinct dedupe key.
+        self.assertEqual(len(keys), 1)
+
+    def test_fixture_exists_for_every_feed(self):
+        # Completeness after the last T7 parser: every FEEDS entry has a fixture file and a parser (spec 8, 9 T7).
+        self.assertEqual(len(FEEDS), 8)
+        fixtures_dir = Path(__file__).resolve().parent / "fixtures" / "home_events"
+        for feed in FEEDS:
+            fixture = fixtures_dir / f"{feed.feed_code.replace(':', '_')}.xml"
+            self.assertTrue(fixture.is_file(), f"missing fixture for {feed.feed_code}: {fixture}")
+            self.assertIn(feed.feed_code, PARSERS)
 
     def test_empty_feed(self):
         result = parse(FEED_CODE, b'<rss version="2.0"><channel></channel></rss>')
