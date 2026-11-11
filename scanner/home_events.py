@@ -8,6 +8,7 @@ the parsers, and the fetch and run logic to this module.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import re
 from dataclasses import dataclass
@@ -63,25 +64,39 @@ class ParseResult:
     dropped: int  # items missing a required field or with an unparseable date
 
 
+def _squash(text: str) -> str:
+    """Collapse runs of whitespace. Feed text carries trailing spaces and newlines."""
+    return " ".join(text.split())
+
+
 def dedupe_key(
     feed_code: str,
     source_id: str | None,
     source_url: str,
+    title: str,
+    description: str,
     published_at: datetime,
 ) -> str:
     """Key one feed item so a refetch of the same item gives the same key (spec 4.2).
 
     With a feed id the key is "<feed_code>:<source_id>". Without one it is
-    "<feed_code>:" plus a SHA-256 of the link and the UTC publish time.
+    "<feed_code>:" plus a SHA-256 of the JSON array [link, title, description,
+    UTC publish time], with title and description whitespace-squashed. The JSON
+    encoding keeps a "|" inside the text from making two items collide.
     `published_at` must be timezone-aware: a naive value would be read as
     machine-local time.
     """
-    if source_id:
-        return f"{feed_code}:{source_id}"
+    sid = (source_id or "").strip()
+    if sid:
+        return f"{feed_code}:{sid}"
     if published_at.tzinfo is None:
         raise ValueError("published_at must be timezone-aware")
     utc_iso = published_at.astimezone(timezone.utc).isoformat()
-    digest = hashlib.sha256(f"{source_url}|{utc_iso}".encode()).hexdigest()
+    payload = json.dumps(
+        [source_url, _squash(title), _squash(description), utc_iso],
+        ensure_ascii=False,
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     return f"{feed_code}:{digest}"
 
 
@@ -91,6 +106,7 @@ def to_event_row(feed: Feed, item: dict) -> dict:
     `exchange` comes from the "nse:" prefix of `feed_code`. BSE is deferred (Z2),
     so any other prefix is refused here rather than failing the API's CHECK.
     `published_at` is ISO 8601 with its UTC offset, as the API requires (4.6).
+    The item needs `title` and `description`, which the dedupe key reads.
     """
     prefix, sep, _ = feed.feed_code.partition(":")
     if not sep or prefix != "nse":
@@ -100,7 +116,14 @@ def to_event_row(feed: Feed, item: dict) -> dict:
         raise ValueError("published_at must be timezone-aware")
     source_id = item.get("source_id")
     return {
-        "dedupe_key": dedupe_key(feed.feed_code, source_id, item["source_url"], published_at),
+        "dedupe_key": dedupe_key(
+            feed.feed_code,
+            source_id,
+            item["source_url"],
+            item["title"],
+            item["description"],
+            published_at,
+        ),
         "exchange": prefix.upper(),
         "feed_code": feed.feed_code,
         "source_id": source_id,

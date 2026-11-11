@@ -1,6 +1,6 @@
 # Home events: exchange filings build spec (approved, revision 4)
 
-- Status: approved by the user (confirmed 2026-11-11). Revision 4 of 2026-11-10, after the third review ([home-events-filings-spec-review3.md](../progress/home-events-filings-spec-review3.md), NOT READY, fixes applied here) and the second review ([home-events-filings-spec-review2.md](../progress/home-events-filings-spec-review2.md), NOT READY) and the first ([home-events-filings-spec-review.md](../progress/home-events-filings-spec-review.md)). The user answered Q1 to Q4 on 2026-11-10 (applied below: cron `8-20` kept; order-win feed deferred; fundamentals trigger moved out; flagged feeds on). Revision 4 has the third-pass fixes and is not re-reviewed. No task may be dispatched from this spec until the user approves it.
+- Status: approved by the user (confirmed 2026-11-11). Revision 4 of 2026-11-10, after the third review ([home-events-filings-spec-review3.md](../progress/home-events-filings-spec-review3.md), NOT READY, fixes applied here) and the second review ([home-events-filings-spec-review2.md](../progress/home-events-filings-spec-review2.md), NOT READY) and the first ([home-events-filings-spec-review.md](../progress/home-events-filings-spec-review.md)). The user answered Q1 to Q4 on 2026-11-10 (applied below: cron `8-20` kept; order-win feed deferred; fundamentals trigger moved out; flagged feeds on). Revision 4 has the third-pass fixes and is not re-reviewed. The design is approved (2026-11-11, commit `608463b`); tasks may be dispatched from this revision.
 - Owner: Vaibhav Pavtekar
 - Screen: Home, shortlist and event feed (`docs/designs/ui-redesign-spec.md` sections 5.1 and 6)
 - Parent docs: [home-events-filings.md](home-events-filings.md) (owned rules), [home-event-sources.md](home-event-sources.md) (overview).
@@ -8,7 +8,7 @@
 
 ## 0. How to read this spec
 
-**Legend.** *Decided* = the user decided it (date given). *Proposed* = my default, usable unless you change it. *Open* = needs an answer or a sample before the task that depends on it. *Confirmed* = the user confirmed my proposal (date given). *Deferred* = decided, not built here. *Parked* = never requested. *To verify* = a fact I could not check (NSE timed out and BSE returned HTTP 403 from here, and no feed sample is recorded in the repo).
+**Legend.** *Decided* = the user decided it (date given). *Proposed* = my default, usable unless you change it. *Open* = needs an answer or a sample before the task that depends on it. *Confirmed* = the user confirmed my proposal (date given). *Deferred* = decided, not built here. *Parked* = never requested. *To verify* = a fact I could not check from here. NSE feed samples were captured for T0 (§9). BSE returned HTTP 403 from here, so the BSE statements rest on the pinned reference repos' code.
 
 **Decision tags.** The user's cuts of 2026-11-10 are cited by tag: Z2 defer BSE; Z3 drop the value and market-cap columns; Z4 drop `rows_rejected`; Z5 defer the purge; Z6 one module; Z7 weekday-hours cron; Z12 reuse the `announcements` store (decided, then deferred with the order-win feed, Q2). Z2 to Z7 and Z12 are the cuts the user accepted; no other Z tag is in force. D1 to D10 and Q1 to Q4 are listed in section 10; T0 to T9 in section 9; S1a to S8 are the collector-split spec's slices; M1 to M14 are numbered findings of [review 2](../progress/home-events-filings-spec-review2.md).
 
@@ -49,7 +49,7 @@ Build order, derived from section 9's Depends column. No task needs another firs
 
 | Item | Where | Use |
 |---|---|---|
-| NSE cookie warm-up | `scanner/marketdata/factors_postgres.py` `_nse_session` (private, bare `Session`; warm-up failure is not fatal) and the `UA` header dict (`Accept: application/json, text/plain, */*`, which already allows XML) | T3a adds a public `nse_session()` and a header dict for the feeds. `_nse_session` keeps its behaviour. |
+| NSE cookie warm-up | `scanner/marketdata/factors_postgres.py` `_nse_session` (private, bare `Session`; warm-up failure is not fatal) and the `UA` header dict (`Accept: application/json, text/plain, */*`, which already allows XML) | T3a added a public `nse_session()` and a header dict for the feeds. `_nse_session` keeps its behaviour. |
 | Run base class | `scanner/collect/sources.py` `Source.run(params, now, dry_run)`, `plan()`, and the `SOURCES` dict | `HomeFilings(Source)`. `plan()` is pure: no network, no database, no sleep. `collect.py` indexes `result['fetched']` and `result['new']` on a dry run, so `plan()` must return the full result shape. |
 | Source registration | `scanner/collect/settings.py` `ensure_sources()` and `_valid_param_keys` | `_valid_param_keys` returns an empty set for an unknown source, so every `home_filings` param is rejected until T4a adds the key set. The `{}` in the registration row is accepted. |
 | Existing test pinning the source set | `tests/test_collect_sources.py` (the exact set of 7 names; its docstring says "5 feed sources") | Updated in T4d. |
@@ -61,11 +61,79 @@ The order-win rule (`matches_orderbook`) and the announcements writer (`_save_an
 
 `collector_settings.source` has no CHECK constraint (created in `001_core.sql`, replaced in 013, dropped in 014, dropped again with `IF EXISTS` in 041); its constraint is the foreign key to `collector_sources`. The name `home_filings` needs no CHECK change. `symbol_sector.isin` is nullable (`025_symbol_sector.sql`), hence the `IS NOT NULL` in the universe query.
 
+### 3.1 External libraries (evaluated 2026-11-11; none adopted)
+
+Method: shallow clones read in a scratch folder. Nothing was installed, imported or run, and no request was sent to NSE or BSE from the clones. Findings come from reading the code, so runtime behaviour, live endpoints and the PyPI releases are not verified. Re-check before adopting anything.
+
+**NSE.** The feeds in 4.0 are `nsearchives` RSS. Neither library fetches them.
+
+| Library | Commit read | Licence | What the code does | Decision |
+|---|---|---|---|---|
+| `BennyThadikaran/NseIndiaApi` (PyPI `nse` 5.1.1, imported as `from nse import NSE`) | `b7fd7eb73f900986d327171d571952492663b31c` | GPL-3.0 | Calls JSON endpoints under `https://www.nseindia.com/api`, such as `/corporate-announcements`, `/corporates-financial-results` and `/corporates-corporateActions`. No RSS or XML code. Synchronous `httpx`; a 3 requests-per-second limiter; up to six attempts (one initial call and five retries, `RetryConfig.total = 5`) on 429, 502, 503, 504 and timeout, connect, read and remote-protocol errors, with exponential waits of 1, 2, 4 and 8 s (capped at 8 s), each scaled by jitter, and a Retry-After header honoured when present; cookies saved to `download_folder/cookies.txt`; 15 s timeout; Firefox 118 User-Agent with a fixed Referer. | Reference only (endpoint list, retry design). GPL-3.0: read the design, do not copy code. Installing needs approval. |
+| `RuchiTanmay/nselib` (PyPI `nselib` 2.5.1) | `e3b22ada842193f148dfcb2408ab1d06a44babfe` | Apache-2.0 | Calls `https://www.nseindia.com/api/corporates-financial-results` and related paths, then GETs one XBRL document per result row and parses it into a DataFrame. On the financial-results path: no pacing, no retries, no timeouts. Each call creates one new session and makes two GETs for the result list, then one plain GET per result row for the XBRL documents (2 + N GETs, N = rows returned). One failed row aborts the batch. Writes no files. | Do not adopt. |
+
+Pasted examples, checked against the code:
+- `NseIndiaApi`: the example does not run. `NseIndiaClient`, `Category` and `corporate_filings` do not exist. The call the code supports (read from the code, not run) is `with NSE(download_folder=".") as nse: nse.financial_results(segment="equities", period="quarterly", symbol="HDFCBANK")`. It returns JSON metadata and downloads no XBRL or attachment.
+- `nselib`: `financial_results_for_equity(from_date, to_date, period, fo_sec, fin_period)` matches the signature. Dates are `dd-mm-YYYY`.
+
+Pacing and backoff for this spec come from the overview's request policy, not from either library. `scanner/marketdata/factors_postgres.py` waits 3 s before each first attempt and 10 s before each retry; both are shorter than that policy. Its warm-up GET and User-Agent may be reused (section 3 table).
+
+**BSE.** Deferred (Z2). No BSE code is built or adopted now.
+
+| Repository | Commit read | Licence | What the code does | Decision |
+|---|---|---|---|---|
+| `RuchiTanmay/bseindia` (v1.1) | `dd97a8baaf49d1dda1af1d0ff8df813088fa6e5b` | Apache-2.0 | Wraps the security master (`LitsOfScripCSVDownload`, returns `security_code`, `symbol`, `isin_no`), bhavcopies, historical prices, market-cap statistics, bulk and block deals and the F&O summary. No announcements, filings, results or corporate actions. Most public functions return DataFrames; `stock_info` returns a dict, and `derivatives.market_summary()` returns a tuple of two DataFrames. No public function returns raw XML. Cookie warm-up GET to `https://www.bseindia.com/` only in `bse_urlfetch` (`libutil.py:76`). No pacing and no retries. The `libutil.py` calls set `timeout=30` (lines 76, 77, 127); the public derivatives helpers take none (only the internal `derivatives/get_func.get_market_summary` has one, default 30 s). Some calls set no timeout, for example `equity/equity_data.py:35` and `derivatives/get_func.py:58`. Writes a cache CSV into the package directory. Its logger is set to DEBUG and writes to stdout; the package itself emits only INFO and WARNING records. The README says 3.9+; `setup.py` lists 3.10 and declares no `python_requires`. `bseindia.derivatives` needs 3.10 (PEP 604 annotation at `derivatives/get_func.py:19`; read from the code, not run). The README uses the top-level `bseindia.all_listed_securities()` (`libutil.py:233`). The `equity.all_listed_securities()` form in the pasted recommendation is not that API. | Possible later reference for the security master (`bse_scrip_map`) and the warm-up pattern. Not for filings. |
+| `BennyThadikaran/stock-news` | `03b2191dd7d14c36316bbf31d80abfcf87e19123` | GPL-3.0 | A terminal script. Calls the PyPI package `bse~=3.3.4` for announcements, actions and the result calendar. That package was not reviewed, so its BSE hosts are unknown. Sequential, no pacing; the first network error exits the run. Runs everything at import. Writes `src/watchlist.json` when `-f` is used. | Drop. |
+| `Rushi128/BSE-India-API-PDF-Downloader` | `ff8213f3a5e1e6f915a0821e9391cb9b7ab0c52a` (HEAD commit dated 2024-03-15; remote push date not checked) | MIT | One file, `app.js`. The README names `index.js` and `npm start`, which do not exist. Requests announcements from `api.bseindia.com` `AnnSubCategoryGetData` for the current UTC date (`app.js:14`; between 00:00 and 05:30 IST this is the previous IST date), with `strCat=-1`, `strType=C`, `strSearch=P`, and empty `strScrip` and `subcategory` fixed. It pages through `pageno` until an empty page, then saves each attachment as `./pdfs/<SLONGNAME>.pdf`. `SLONGNAME` is not sanitised, so a `..` segment writes outside `./pdfs` (`app.js:39`). Fixed Chrome 84 User-Agent, no timeout, no pacing, and a page loop with no cap. | Drop. Do not run it. |
+
+BSE status: the terms page returned HTTP 403 and was not read, so the terms gate stays open. None of the three repositories fetches the five BSE feeds named in the overview (`announcements.aspx`, `CorpActionFeed.aspx`, `FinancialResultsFeed.aspx`, `ShareholdingPattern_Feed.aspx`, `notices.xml`).
+
+Not verified: the PyPI releases of `nse`, `nselib` and `bse` (only the cloned commits were read), the committed BSE security CSV, live endpoint behaviour, and the NSE and BSE terms. Before any BSE work: read the terms, then check the endpoints live from the collector container at the request policy's pacing.
+
+**BSE route (deferred, Z2; planned, not built).** Call the BSE announcements endpoint `AnnSubCategoryGetData/w` directly over HTTP with our own client. Do not import `stock-news` (GPL-3.0; it pins `bse~=3.3.4`). Security master: `LitsOfScripCSVDownload` (from `bseindia`, Apache-2.0; reference only). `bse-pdf-downloader` (MIT) is reference only; its path traversal at `app.js:39` means its code is not copied. The method names beyond the user's reference are chosen in this spec. PyPI release dates for these libraries were not checked; the user accepted this on 2026-11-11.
+
 ## 4. Feed registry and data model
 
 ### 4.0 Feed registry and parsed item
 
-**D1 decided 2026-11-10: XML, for long-term support.** The exact URLs and tag names are **to verify** from T0.
+**D1 decided 2026-11-10: XML, for long-term support.** The URL pattern, item structure and date formats below were verified from the T0 samples on 2026-11-11.
+
+**Source format (verified 2026-11-11).** One file per feed at `https://nsearchives.nseindia.com/content/RSS/<Name>.xml`. Each is an RSS 2.0 channel. Every `item` has exactly four children: `title`, `link`, `description` and `pubDate`. No feed has an id, `guid`, symbol or ISIN element, no `item` child element carries attributes (the `rss` root and `atom:link` do), and no `description` contains HTML. The sample (142 items across the eight feeds) was identical in the host and container runs, warm and cold. Only the channel `lastBuildDate` changes between runs, so change detection must compare items, not file hashes. Warm runs GET the NSE homepage first (`https://www.nseindia.com`, which returned 403 on host and container); cold runs do not. The feeds returned 200 in both. This is one day's sample, not proof for other days.
+
+| feed_code | items | oldest to newest pubDate (IST) | age on 11-Nov-2026 (days) | pubDate format | `link` |
+|---|---|---|---|---|---|
+| `nse:Financial_Results` | 3 | 03-Nov-2026 09:55 to 10:29 | 8 | `DD-Mon-YYYY HH:MM:SS` | one listing page for all items |
+| `nse:Integrated_Filing_Financials` | 20 | 10-Nov-2026 20:09 to 11-Nov-2026 15:08 | 0 to 1 | `DD-Mon-YYYY HH:MM:SS` | per filing (XBRL) |
+| `nse:Sast_Regulation29` | 20 | 28-Oct-2026 14:58 to 03-Nov-2026 12:54 | 8 to 14 | `DD-Mon-YYYY HH:MM` | per filing (zip); 16 distinct links in 20 items |
+| `nse:Sast_Regulation31` | 20 | 21-Oct-2026 14:09 to 29-Oct-2026 11:13 | 13 to 21 | `DD-Mon-YYYY HH:MM:SS` | per filing (zip) |
+| `nse:Corporate_action` | 58 | 11-Nov-2026 03:11:42 (all 58) | 0 | `DD-Mon-YYYY HH:MM:SS` | one listing page for all items |
+| `nse:Corporate_Governance` | 0 | none (channel only) | none | none | none |
+| `nse:Related_Party_Trans` | 20 | 21-Feb-2025 15:12 to 11-Sep-2026 17:49 | 61 to 628 | `DD-MON-YYYY HH:MM:SS` (10 items) and `DD-MON-YYYY HH:MM.SS` (10 items) | per filing (XBRL) |
+| `nse:Shareholding_Pattern` | 1 | 11-Nov-2026 12:21:07 | 0 | `DD-Mon-YYYY HH:MM:SS` | per filing (XBRL) |
+
+The channel `lastBuildDate` is RFC 822 with `+0530` in most feeds, `DD-Mon-YYYY HH:MM:SS` in Corporate_action, and absent in Financial_Results. The parser does not need it.
+
+**Mapping to the parsed item** (proposed; the item dict is below):
+
+| Key | Source | What the sample shows | Status |
+|---|---|---|---|
+| `source_id` | none | no feed has an id | `None` for every feed, so the id branch of 4.2 never runs |
+| `source_url` | `link` | per filing for five feeds; one shared listing page for Financial_Results and Corporate_action | the item's `<link>` element, whitespace squashed. NOT NULL. An item with no link is dropped and counted as a `parse` rejection (4.3). The listing page is not used as a fallback. |
+| `company` | `title` | company name (first item of each feed checked); Corporate_action titles are `<COMPANY> - Ex-Date: DD-Mon-YYYY` (58 of 58) | the squashed title. For `Corporate_action`, the company part before ` - Ex-Date:`. |
+| `headline` | `description` | pipe-separated `KEY:VALUE` text, not prose (for example `PURPOSE:INTERIM DIVIDEND - RS 11 PER SHARE`) | the squashed `<description>` text, truncated to 500 characters. If the squashed description is empty, use the squashed title. Maximum seen in the real samples: 220 characters. |
+| `symbol` | none | not in any feed | `symbol` and `isin`: resolved from the company name in the item title by exact match against the NSE constituent list (§4.3). Unresolved names are dropped. |
+| `isin` | none | not in any feed | `symbol` and `isin`: resolved from the company name in the item title by exact match against the NSE constituent list (§4.3). Unresolved names are dropped. |
+| `published_at` | `pubDate` | naive, IST; format per feed (table above) | attach `Asia/Kolkata` |
+| `title` | `title` | company name (first item of each feed checked); Corporate_action titles are `<COMPANY> - Ex-Date: DD-Mon-YYYY` (58 of 58) | the raw stripped text; squashed only where the dedupe key and the headline use it. |
+| `description` | `description` | pipe-separated `KEY:VALUE` text, not prose (for example `PURPOSE:INTERIM DIVIDEND - RS 11 PER SHARE`) | the raw stripped text; squashed only where the dedupe key and the headline use it. |
+
+**Date rule.** Parse each feed with its fixed pattern and attach `Asia/Kolkata`. `strptime` accepts the upper-case months in Related_Party_Trans. The dot variant (for example `24-MAY-2025 22:28.31`) fails `%H:%M:%S`, so the parser needs a rule for it (decision 4, 2026-11-11: replace the dot with a colon, then parse). Read as IST, no item is later than its feed's `lastBuildDate`; read as UTC, the Integrated and Shareholding items would be later than their feed's build time, so the feed times are IST.
+
+**RPT dot variant (decided 2026-11-11).** `Related_Party_Trans` uses `DD-MON-YYYY HH:MM:SS` on some items and `DD-MON-YYYY HH:MM.SS` on others. Replace the dot with a colon before parsing. Colon-form items contain no dot, so the rule leaves them unchanged. All 20 sample items parse with this rule.
+
+**Duplicates on the sample.** Sast_Regulation29 has three exact duplicate pairs (identical in all four fields). It also has one pair that shares `link`, `title` and `pubDate` and differs only in `description`: the two rows name different acquirers. Corporate_action's 58 items differ only in `title` and `description`. Financial_Results' three items share one title (Gammon India Limited) and one link, and differ in `description` and `pubDate`. Over the 142 sample items, the first key (`link` and `pubDate`, superseded by §4.2) gives 81 rows and loses 61 items (57 from Corporate_action, 4 from Sast_Regulation29). Keying on `link`, `title`, `description` and `pubDate` together gives 139 rows and merges only the three exact duplicates.
+
+**Overlap between the results feeds.** Financial_Results and Integrated_Filing_Financials share no link and no title on the sample, so on that day they list different filings. The reconciler (4.4) still has to handle the case where they do overlap.
 
 Fields of a registry entry (frozen dataclass `Feed`): `feed_code` (`nse:<Name>`), `url`, `event_type`, `feed_tier`, `default_enabled` (true for all eight today; kept so a feed can ship switched off), `flagged` (tier still to confirm).
 
@@ -87,19 +155,30 @@ Event types stored in `home_events` now: `results`, `insider_trade`, `governance
 **Parsed item** (one dict per feed item, returned inside `ParseResult`, section 6):
 
 ```
-{ "source_id": str | None,   # the feed's own id, if it has one
-  "source_url": str,         # link to the filing
-  "symbol": str,             # stripped, uppercased
-  "isin": str | None,        # from the feed if present
+{ "source_id": str | None,   # none of the eight feeds has one (see Source format)
+  "source_url": str,         # the feed's `link`; a shared listing page for Financial_Results and Corporate_action
+  "symbol": str,             # from name resolution (§4.3), not from the feed (normalise: strip, uppercase)
+  "isin": str | None,        # from name resolution (§4.3), not from the feed
   "company": str | None,
+  "title": str,              # raw stripped text; squashed only where the dedupe key and the headline use it
+  "description": str,        # raw stripped text; squashed only where the dedupe key and the headline use it
   "headline": str,
   "published_at": datetime } # timezone-aware; IST source times converted with zoneinfo "Asia/Kolkata"
 ```
 
 Sample and fixture policy:
 - **Decided 2026-11-10: real samples are not committed.** T0 saves them under `data/home_samples/` (ignored by git), named `nse_<Name>.xml`, because a colon in a filename is illegal on Windows. Synthetic fixtures use the same naming in `tests/fixtures/home_events/` and are committed. The mapping is `feed_code.replace(":", "_")`.
-- The synthetic fixtures reproduce the structure of the real sample (tag names, nesting, date format, id presence, empty fields) with invented companies and values. **They cannot be written until T0 delivers the tag-to-key table**, which T0 writes into this section.
+- The synthetic fixtures reproduce the structure of the real sample (tag names, nesting, date format, id presence, empty fields) with invented company names, titles and descriptions. Links and pubDates are real sample values. The tag-to-key table is now in this section (verified 2026-11-11), so the fixtures can be written. They must cover the sample's edge cases: a listing page as the link for every item (Financial_Results, Corporate_action), 58 items sharing one pubDate, exact duplicates and a same-link pair that differs only in `description` (Sast_Regulation29), a dot-variant Related_Party_Trans date, and an empty feed (Corporate_Governance).
 - A parser handles five cases: an empty feed, malformed XML (`ParseError`), an HTML page served with status 200 (`ParseError`), an item with a missing required field or an unparseable date (the item is dropped and counted in `dropped`), and a normal feed.
+
+**Decisions from the T0 samples (recorded 2026-11-11; the user answered each; the source conflicts are in 4.3 and 5.6):**
+1. **Symbol and ISIN source.** Answered 2026-11-11: "from news content". Resolve from the company name in the item title (§4.3). Conflict (a) accepted by the user 2026-11-11 ("agreed"): about 35% of the sample resolves, so about 65% of items are dropped by name.
+2. **Source link.** Answered 2026-11-11: the user rejected an empty URL ("No, logically how will you get this information without URL?"), then chose the link carried by each RSS item ("choose link carried by rss item"). The item `<link>` is `source_url`. No empty `source_url`. The listing page is not used.
+3. **Dedupe key.** Approved 2026-11-11 ("okay"). See §4.2.
+4. **RPT dot-variant dates.** Decided by the orchestrator at the user's request ("you decide the best"). See the RPT rule in §4.0.
+5. **Headline.** Decided by the orchestrator ("you decide best"). Squashed description, 500-character cap, title fallback (mapping table).
+6. **First-run depth.** Answered 2026-11-11: "split by per month run from last 3 year. each batch with 1 year run." Conflict (b) answered 2026-11-11 ("rss 1 year old is fine, 3 year old data is for nse, bse, rbi, fed data"): about one year of RSS depth is accepted for the filings feeds; three-year history is for NSE, BSE, RBI and Fed. See §5.6.
+7. **Is 20 a cap.** Decided by the orchestrator ("you decide best"). A feed returning exactly 20 items is flagged `at_cap:<feed_code>` in the run message (§5.2). It is not treated as a cap and does not page.
 
 ### 4.1 Migrations (two databases; D8 decided: separate database on the same server)
 
@@ -119,7 +198,7 @@ ON CONFLICT (source) DO NOTHING;
 
 **Rollout hazards (review M14, third review).** The row starts `manual`. After T4d adds `SOURCES["home_filings"]`, the existing `collect.py serve` loop would run a `scheduled` row sequentially in its own process for up to 240 s, with no API health guard and no `skipped` support. So the row is inserted as `manual`, and T9 flips it to `scheduled` **and sets the cron** (a settings update, not a migration) once the run-once container exists. T9 must set the cron because `ensure_sources()` (`settings.py:35-59`) inserts any `SOURCES` key with the placeholder cron `0 0 1 1 *` and never changes an existing row, so if T4d merges before T1 the migration's `ON CONFLICT DO NOTHING` leaves the placeholder in place.
 
-**Cron `*/5 8-20 * * 1-5` (IST, weekdays 08:00 to 20:55). Decided 2026-11-10 (Q1), changed from `8-15`.** Revision 2 used `8-15`, which I read into "weekday-hours" (Z7). The review showed that results are filed mostly after 15:30, so a 15:55 stop delays the highest-value events and the fundamentals trigger by up to 16 hours, and the split spec runs `filings` until 20:52. `8-20` follows the split spec. Consequences: about 12 ticks an hour; with 8 default feeds that is about 96 NSE requests an hour inside the window; exchange holidays still start a run that finds nothing (split risk 8); a block pauses every NSE source through the shared cooldown; the 08:00 run after an overnight gap may bring a burst of results. Feed depth (does a feed list enough items to cover the overnight gap) is **to verify** from the T0 samples and is a precondition for production use of the slice.
+**Cron `*/5 8-20 * * 1-5` (IST, weekdays 08:00 to 20:55). Decided 2026-11-10 (Q1), changed from `8-15`.** Revision 2 used `8-15`, which I read into "weekday-hours" (Z7). The review showed that results are filed mostly after 15:30, so a 15:55 stop delays the highest-value events and the fundamentals trigger by up to 16 hours, and the split spec runs `filings` until 20:52. `8-20` follows the split spec. Consequences: about 12 ticks an hour; with 8 default feeds that is about 96 NSE requests an hour inside the window; exchange holidays still start a run that finds nothing (split risk 8); a block pauses every NSE source through the shared cooldown; the 08:00 run after an overnight gap may bring a burst of results. Feed depth (does a feed list enough items to cover the overnight gap) was checked on one sample day (4.0). Integrated Filing Financials' 20 items span about 19 hours, longer than the 11-hour gap from 20:55 to 08:00, on that day. Four feeds return exactly 20 items, which may be a cap. Decision 7 flags such a feed as `at_cap:<feed_code>` and does not treat it as a cap. Depth remains a precondition for production use of the slice, and needs checking on more days.
 
 Events database file (`db/events_migrations/001_home_events.sql`):
 
@@ -173,21 +252,37 @@ Deferred by the cuts: `value_cr`, `pct_shares`, `mcap_cr`, `mcap_as_of` (Z3: the
 
 ### 4.2 Dedupe key
 
-`dedupe_key(feed_code, source_id, source_url, published_at)`:
-- With a feed id: `"<feed_code>:<source_id>"`.
-- Without one: `"<feed_code>:" + sha256(f"{source_url}|{published_at.astimezone(UTC).isoformat()}".encode()).hexdigest()`.
+**Adopted key (approved 2026-11-11, decision 3).**
+- With a source id: `feed_code:source_id`. An empty or whitespace-only id counts as no id, and a padded id is stripped before the key is built.
+- Without an id: `feed_code:` followed by the SHA-256 hex digest of the UTF-8 bytes of `json.dumps([source_url, squash(title), squash(description), utc_iso], ensure_ascii=False)`.
+- `squash` collapses runs of whitespace to one space and strips both ends. `utc_iso` is `published_at.astimezone(timezone.utc).isoformat()`.
+- A naive `published_at` raises ValueError.
+- The key covers the item's content. The same item refetched gets the same key. A revised notice under the same link gets a new key.
 
-`run_cycle` drops repeated keys inside one batch before posting. The API inserts with `ON CONFLICT (dedupe_key) DO NOTHING`. A run that crosses 500 rows commits in separate transactions, which is safe because inserts are idempotent. Which feeds carry an id is **to verify** (T0). An amended filing that keeps its id is ignored (first wins); one with a new id is a new row; linking them is the reconciler's job (4.4).
+**Deviation from the approved wording (accepted by the user 2026-11-11).** The approved wording joined the fields with `|`. The Financial_Results description contains `|` (`RELATING TO:First Quarter |AUDITED/UNAUDITED:Unaudited`), so a pipe join can collide: `A|B` with `C`, and `A` with `B|C`, both join to `A|B|C`. The JSON array has no such ambiguity. This is a byte-level change to the key input. The pipe-joined wording was never implemented, so no stored key depends on it. Checked 2026-11-11: no fix was needed, since both encodings give 139 distinct keys on the 142 fixture items. The user asked for a fix only if one was needed, so the JSON encoding stands.
+
+`run_cycle` drops repeated keys inside one batch before posting. The API inserts with `ON CONFLICT (dedupe_key) DO NOTHING`. A run that crosses 500 rows commits in separate transactions, which is safe because inserts are idempotent. No feed carries an id (4.0), so only the second branch applies. An amended filing that keeps its id is ignored (first wins); one with a new id is a new row; linking them is the reconciler's job (4.4).
 
 ### 4.3 Universe and rejections
 
+Symbol and ISIN come from the company name in the item title. For `Corporate_action`, the company name is the text before ` - Ex-Date:`.
+- `load_constituents()` (`scanner/constituents.py`) reads `data/ind_niftytotalmarket_list.csv`: columns `Company Name, Industry, Symbol, Series, ISIN Code`. It re-downloads the file from NSE when it is missing, older than 30 days, or `refresh=True`. `_clean` drops rows whose Symbol starts with `DUMMY` (a prefix match, not equality). The main checkout's copy has 755 rows (751 after `_clean`); this worktree's copy has 754 (752 after `_clean`). The copies differ in real rows. Coverage on the sample is the same on both: 50 matched, 0 ambiguous, 92 unmatched.
+- Normalise both sides: uppercase; `&` becomes `AND`; strip `.,'()-`; `LIMITED` and `LTD` become `LTD`; collapse spaces.
+- Match is exact on the normalised name. A name matching more than one row is ambiguous and is rejected. A name with no match is rejected. Both are counted as universe rejections.
+- The resolved symbol and ISIN are then checked against the universe (D3: `symbol_sector` rows with ISIN).
 - Universe (D3 confirmed 2026-11-10): `SELECT upper(btrim(symbol)), isin FROM symbol_sector WHERE isin IS NOT NULL`, loaded once at run start by `load_universe()`. Company name comes from the feed, or null.
 - Rejection reasons, one vocabulary everywhere (`parse`, `universe`):
-  - `parse`: counted by `parse()` itself (missing required field, unparseable date) as `dropped`.
-  - `universe`: the symbol is not in the universe.
-  - An item that fails both tests is counted once, as `universe`.
-- **Deferred (decided 2026-11-10): the ingest floor (`date_floor`, `ingest_floor_days`) and the future-date test (`date_future`).** Each feed returns only its recent items, so a floor has little to remove. Consequence: an item with a wrong date (far past or far future) is stored as given. The API still rejects a `published_at` without an offset (4.6). Revisit if T0 shows a feed with deep history or bad dates.
-- Loss to know about: a rejected item is gone. If the universe grows, earlier events are not recoverable from this table.
+  - `parse`: counted by `parse()` itself (missing required field, unparseable date) as `dropped` (`ParseResult.dropped`). The run message reports it as `rejected parse=<n>` (5.2).
+  - `universe`: the name did not resolve (no match, or ambiguous), or the resolved symbol is not in the universe.
+  - An item that fails both the name match and the universe check is counted once, as `universe`.
+- **Deferred (decided 2026-11-10): the ingest floor (`date_floor`, `ingest_floor_days`) and the future-date test (`date_future`).** The sample contradicts "recent items only": Related_Party_Trans holds items up to 628 days old (back to 21-Feb-2025), and Sast_Regulation29 and Sast_Regulation31 hold items 8 to 21 days old (4.0). Consequence: an item with a wrong date (far past or far future) is stored as given. The API still rejects a `published_at` without an offset (4.6). Decision 6 (2026-11-11) accepted about one year of RSS depth; the floor itself is still deferred and must be settled before the first run.
+- **Loss to know about:** a rejected item is gone. If the universe grows, earlier events are not recoverable from this table.
+
+Sample coverage (142 real items, measured 2026-11-11): 50 matched, 0 ambiguous, 92 unmatched. Per feed: Financial_Results 0 of 3; Integrated_Filing_Financials 2 of 20; Sast_Regulation29 3 of 20; Sast_Regulation31 10 of 20; Corporate_action 35 of 58; Related_Party_Trans 0 of 20; Shareholding_Pattern 0 of 1.
+
+**Conflict (a), accepted by the user 2026-11-11 ("agreed").** About 35% coverage means about 65% of items are dropped by name.
+
+**Design only, not built.** The name-based resolution and the `load_universe` change are not built. `filter_items` (T3c) still filters on `symbol`. `load_universe` is not present in the code.
 
 ### 4.3a Order-win feed (`nse:Online_announcements`): deferred (Q2, decided 2026-11-10)
 
@@ -218,7 +313,7 @@ Work, split in two tasks:
 
 **T2b (`start.ps1`, `env.template`).** Mind the PowerShell 5.1 quote-dropping behaviour when passing SQL to a native command; follow the existing `Invoke-Docker` usage.
 - A stage before the migrate stage creates the database when missing, idempotently, with no manual step (decided 2026-11-10). `CREATE DATABASE` needs the admin login, so the stage runs `docker compose exec -T scanner-postgres psql -U <admin> -d postgres` with `SELECT 'CREATE DATABASE <events db> OWNER <app login>' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '<events db>') \gexec`. It reads no password and touches no `.env`. The owner is the **app login**, because on PostgreSQL 15 and later a login that does not own the database cannot create tables in `public`. A precondition check confirms the role exists. A non-zero exit is a warning, as for the migrate stage.
-- The migrate stage (`start.ps1`, the "Run migrations" step, currently line 238) runs `python -m scanner.pg.migrate` and then `python -m scanner.pg.migrate --db events`. That is the only migrate call in `start.ps1`.
+- The migrate stage (`start.ps1`, the "Run migrations" step, currently lines 283 and 288) runs `python -m scanner.pg.migrate` and then `python -m scanner.pg.migrate --db events`. That is the only migrate call in `start.ps1`.
 - `env.template`: add the name `POSTGRES_EVENTS_DB`.
 - D9 "API only" is a convention: `CONNECT` is granted to PUBLIC by default, so the collector login can still connect. Whether to `REVOKE CONNECT ... FROM PUBLIC` is open and does not block a task.
 - Backup of the events database: separate dump, schedule open.
@@ -294,6 +389,8 @@ Post failure: if `post` raises or returns a non-2xx, stop the loop, status `fail
 
 **Rejected counts (Z4, decided):** no `rows_rejected` column. The message carries `rejected parse=<n> universe=<n>` and `invalid=<n>`. This deviates from overview 7.4 ("stored counts are the only trace"), which needs the one-line amendment "per-run counts in the run message". The dashboard does not parse `message`.
 
+**Feed at cap (decision 7, decided 2026-11-11).** A feed that returns exactly 20 items may be truncated. Add `at_cap:<feed_code>` to the run message for each such feed. This does not page, retry, or change the feed's status.
+
 ### 5.3 Run deadline and isolation (decided by the split spec)
 
 One container per source, so a slow `announcements` run cannot delay `home_filings`; the earlier shared-lock idea is dropped. A feed is started only when `now + gap_max_s + request_timeout_s <= deadline_at`, so with the 20-second timeout the last fetch ends by the deadline. `deadline_at` is set before `load_universe()` so the universe query counts against it. Each post has `post_timeout_s`. A feed already fetched is posted even after the deadline. The worst case is therefore `run_deadline_s` plus about three `post_timeout_s` (a feed's items can span up to 3 batches of 500), 285 s with the defaults. The watchdog max-runtime for `home_filings` is requested at 330 s (S4): 285 s plus container start (split risk 3, up to about 20 s) leaves about 25 s of margin, against about 15 s at 300 s. A run still going at the next 5-minute tick is the split spec's due rule to handle. When the watchdog kills a run anyway, it finalises the row as `failed` with message `killed` (section 2). Happy-path cost: 8 feeds at a 5 to 8 s gap is 40 to 64 s plus fetch time; with a slow NSE, 8 x (8 + 20) = 224 s, just inside the 240 s deadline. This figure has no retries: one request retry on a slow feed adds `backoff_s` plus a timeout, about 50 s, which is why the retry has its own deadline check (5.4).
@@ -303,13 +400,21 @@ One container per source, so a slow `announcements` run cannot delay `home_filin
 - Gap: uniform random `gap_min_s` to `gap_max_s` (5 to 8 s, decided, overview 7.3) before each feed's first request. Sequential requests only.
 - **Request retry:** one retry per feed for a `retry` response. It waits `backoff_s` (30 s), and no random gap is added. It happens only when `now + backoff_s + request_timeout_s <= deadline_at`.
 - Timeout `request_timeout_s` 20 s. `post_timeout_s` 15 s.
-- Session: `nse_session()` (cookie warm-up against `https://www.nseindia.com`) with a browser-like `User-Agent`. Whether the archive host needs that cookie is **to verify** (T0). A failed warm-up is logged and not fatal, as today.
+- Session: `nse_session()` (cookie warm-up against `https://www.nseindia.com`) with a browser-like `User-Agent`. The archive host did not need it: the cold runs (no warm-up) returned 200 for all eight RSS feeds on 2026-11-11 (4.0). That is one day's sample. A failed warm-up is logged and not fatal, as today.
 - Risk note: the NSE terms prohibit automated collection and storing (overview 4.1); the user accepted this for personal use (overview section 5). One request in flight per container; the shared cooldown covers every container.
 - `redact_error(text) -> str` (T3a) strips query strings and token-like substrings before any text goes into a run message. (`_redact` in `mongo.py` masks only a Mongo URI password.)
 
 ### 5.5 Retention and purge (deferred, Z5 decided 2026-11-10)
 
 Retention stays 3 years (overview 7.4); the purge, its endpoint, the `DELETE` grant and the `retention_days` key are deferred. D5 (confirmed: purge inside the `home_filings` run, no separate job) is the future design: delete `published_at < now - interval '1095 days'` through an API endpoint, with `now` passed by the caller, and only after at least one feed succeeded. Until then `home_events` grows without bound; at 8 feeds this is small.
+
+### 5.6 First-run backfill (decision 6; conflict (b) answered 2026-11-11)
+- The user's answer (2026-11-11), verbatim: "split by per month run from last 3 year. each batch with 1 year run." Read as monthly runs over the last three years, one year per batch.
+- **Conflict (b), answered 2026-11-11** ("rss 1 year old is fine, 3 year old data is for nse, bse, rbi, fed data"). RSS depth of about one year is accepted for the filings feeds. Depth on 11 Nov 2026: `Related_Party_Trans` reaches 628 days (its items are 61 to 628 days old); the other feeds reach 21 days or less. No three-year backfill from RSS is built.
+- Three-year history is wanted for NSE, BSE, RBI and Fed. The NSE and BSE backfill is not built and has no task in section 9; BSE follows Z2 (deferred).
+- RBI and Fed history is placed in the macro child build (`home-events-macro-calendar.md`), not this spec. This placement is the orchestrator's reading of the answer, and the user has not yet confirmed it.
+- NSE backfill source: open. The candidate is the NSE JSON endpoint `corporate-announcements` (`from_date` and `to_date` as `dd-mm-yyyy`; items carry `symbol` and `sm_isin`).
+- Recommendation: JSON for backfill, RSS for live polling. Not approved. Until the user decides, no NSE three-year backfill is built, and the RSS-only plan stands.
 
 ## 6. Module layout and interfaces (one module, Z6 decided)
 
@@ -333,7 +438,7 @@ class ParseError(Exception): ...             # the body is not usable XML for th
 @dataclass(frozen=True)
 class Feed: feed_code: str; url: str; event_type: str; feed_tier: str
             default_enabled: bool; flagged: bool
-FEEDS: tuple[Feed, ...]                      # the eight rows of 4.0
+FEEDS: tuple[Feed, ...]                      # not built yet (T4e); the eight rows of 4.0
 
 @dataclass(frozen=True)
 class ParseResult: items: list[dict]; dropped: int      # dropped = items missing a field or with a bad date
@@ -347,14 +452,14 @@ class Cooldown(Protocol):                    # S2 supplies the real one; tests i
     def block(self, exchange: str, now: datetime, reason: str) -> None: ...
     def reset(self, exchange: str) -> None: ...
 
-def parse(feed_code: str, body: bytes) -> ParseResult                    # raises ParseError
-def dedupe_key(feed_code: str, source_id: str | None, source_url: str, published_at: datetime) -> str
+def parse(feed_code: str, body: bytes) -> ParseResult                    # not built yet (T4e); raises ParseError
+def dedupe_key(feed_code: str, source_id: str | None, source_url: str, title: str, description: str, published_at: datetime) -> str
 def filter_items(items: list[dict], universe: dict[str, str])
-    -> tuple[list[dict], dict[str, int]]     # kept items with isin filled; counts keys: universe
+    -> tuple[list[dict], dict[str, int]]     # kept items with isin filled; counts keys: universe (symbol-keyed; name resolution not yet built, see §4.3)
 def to_event_row(feed: Feed, item: dict) -> dict            # exchange = "NSE" from the "nse:" prefix; published_at ISO 8601 with offset
 def classify_response(status: int | None, content_type: str, body: bytes) -> str   # "ok"|"blocked"|"retry"|"fail", table in 5.2
 def redact_error(text: str) -> str
-def load_universe(conn) -> dict[str, str]                   # symbol -> isin
+def load_universe(conn) -> dict[str, str]                   # symbol -> isin; not built; §4.3 uses `load_constituents()` for name resolution
 def fetch_feed(feed: Feed, *, session, cfg: dict, parse_fn, sleep, rng, clock, deadline_at) -> FetchResult
     # session.get(url, timeout=) returns an object with .status_code, .headers (mapping) and .content (bytes); clock() -> datetime
 def post_events(rows: list[dict], *, base_url: str, token: str, http, timeout_s: int) -> dict
@@ -391,11 +496,11 @@ Offline suite: `.venv/Scripts/python.exe -m unittest discover -s tests -t . -q`.
 
 | File | Test names | Count |
 |---|---|---|
-| `tests/test_home_events_pure.py` | `dedupe_key`: with_id, fallback_hash, stable_across_refetch, different_link_differs. `filter_items`: not_in_universe, isin_filled. `classify_response`: none_retry, status_403_blocked, status_429_blocked, html_200_blocked, empty_200_fail, xml_200_ok, status_500_retry, status_404_fail, status_302_fail. Mapper: event_row_keys, exchange_from_prefix. `redact_error`: strips_query_string, strips_token_like. `nse_session`: warmup_failure_not_fatal | 20 |
+| `tests/test_home_events_pure.py` | `dedupe_key`: with_id, fallback_hash, stable_across_refetch, different_link_differs, different_description_differs, whitespace_source_id_is_no_id. `filter_items`: not_in_universe, isin_filled. `classify_response`: none_retry, status_403_blocked, status_429_blocked, html_200_blocked, empty_200_fail, xml_200_ok, status_500_retry, status_404_fail, status_302_fail. Mapper: event_row_keys, exchange_from_prefix. `redact_error`: strips_query_string, strips_token_like. `nse_session`: warmup_failure_not_fatal | 22 (observed 2026-11-11) |
 | `tests/test_home_events_parsers.py` | one per feed on its synthetic fixture (8); fixture_exists_for_every_feed (1, enabled at the last T7 step); empty_feed, malformed_xml_raises, html_200_raises (3); missing_field_dropped_and_counted, bad_date_dropped_and_counted (2) | 14 |
-| `tests/test_home_events_run.py` | cooldown_active_skipped_zero_requests; block_on_third_feed_failed_and_cooldown_blocked; success_then_block_twice_never_resets; reset_called_once_after_block_free_run; reset_skipped_when_cooldown_seen_mid_run; status_500_retries_once_then_continues; retry_skipped_when_deadline_too_close; deadline_stops_loop_ok_with_message; deadline_zero_feeds_failed; all_feeds_fail_failed; non_transient_feed_failure_marks_failed; transient_failure_ok_with_message; rejected_counts_in_message; gap_within_bounds_seeded; rows_go_to_post; invalid_rows_mark_failed; bad_config_failed; post_failure_stops_loop_api_error_no_cooldown_change; start_feed_rotates | 19 |
+| `tests/test_home_events_run.py` | cooldown_active_skipped_zero_requests; block_on_third_feed_failed_and_cooldown_blocked; success_then_block_twice_never_resets; reset_called_once_after_block_free_run; reset_skipped_when_cooldown_seen_mid_run; status_500_retries_once_then_continues; retry_skipped_when_deadline_too_close; deadline_stops_loop_ok_with_message; deadline_zero_feeds_failed; all_feeds_fail_failed; non_transient_feed_failure_marks_failed; transient_failure_ok_with_message; rejected_counts_in_message; gap_within_bounds_seeded; rows_go_to_post; invalid_rows_mark_failed; bad_config_failed; post_failure_stops_loop_api_error_no_cooldown_change; start_feed_rotates; plus 21 methods added in the build (observed 2026-11-11). Fetch-level, in FetchFeedTests (10): gap_within_bounds, status_500_retries_once_then_continues, retry_skipped_when_deadline_too_close, 403_is_blocked_without_retry, html_200_is_blocked, empty_200_is_fatal, 404_is_fatal_without_retry, parse_error_is_fatal, timeout_then_second_timeout_is_transient, ok_returns_parsed_items. Run-level, in RunCycleTests and RunCycleHardeningTests (11): duplicate_keys_in_one_batch_posted_once, huge_int_param_is_config_error, finite_huge_run_deadline_is_config_error, finite_huge_gap_max_is_config_error, finite_huge_backoff_skips_retry_without_raising, invalid_rows_stop_loop_and_reset_per_spec, post_failure_on_later_feed_keeps_first_feed_counts, all_rows_rejected_gives_none_bounds, deadline_exactly_gap_plus_timeout_starts_feed, deadline_just_below_gap_plus_timeout_starts_no_feed, bool_and_nan_params_are_config_errors | 40 |
 | `tests/test_home_events_client.py` | batches_of_500, bearer_header, summed_counts, non_200_raises_without_token | 4 |
-| `tests/test_pg_migrate_events.py` (new, no server) | files_events_dir, files_default_is_main, cli_db_argument, unknown_db_raises | 4 |
+| `tests/test_pg_migrate_events.py` (new, no server) | files_events_dir, files_default_is_main, cli_db_argument, cli_default_db_is_main, unknown_db_raises, events_dbname_default_and_override, parts_override_database, url_override_skips_agreement_check, default_dsn_unchanged_for_parts | 9 |
 | same file, needs Postgres | apply_events_creates_table (`SkipTest` without Postgres; a skip is not a pass) | 1 |
 | `tests/test_home_filings_registration.py` (uses `pgschema`) | registration_rows_exist_after_apply, mode_is_manual (`SkipTest` without Postgres; a skip is not a pass) | 2 |
 | `tests/test_collect_sources.py` | source set updated; existing tests still pass; plan_makes_no_call_and_full_shape (new, T4d) | updated, +1 |
@@ -407,6 +512,10 @@ Offline suite: `.venv/Scripts/python.exe -m unittest discover -s tests -t . -q`.
 Enum consistency: the three enum lists (Python `FEEDS`, SQL CHECKs, the TypeScript validator) have no test tying them together; T5a's validator and T4e's `FEEDS` are checked against 4.0 by hand at review. The Python-versus-TypeScript enum disagreement this would hide is caught at run time by `invalid_rows_mark_failed` (5.2).
 
 ## 9. Ordered tasks, acceptance and must-not-change
+
+**Built status (checked against git, 2026-11-11).** T2a `ebeefe2`; T2b `92395c3`; T3a `f8f0cef`; T3b `4afb40a` (the 2026-11-11 amendment, where the key and mapper take `title` and `description`, is in the T0 commit on `feat/home-filings-t0`); T3c `2bd0a93`; T4a `7c48bec`; T4b `162ea54` (CHANGELOG `3855a67`); T4c `109b5a4` (run_cycle; latest `0d55e24`; merged `3add364`); T5a `b34938e`; T5b `902e90f`; T6 `089a975`. Not built: T1, T4d, T4e, T5c, T7, T9. T0 status (2026-11-11): samples captured in `data/home_samples/` (host and container, warm and cold; not committed). Eight fixtures are in `tests/fixtures/home_events/`: 142 items, 81 old keys, 139 new keys. The T0 acceptance check "one fixture hand-checked against its sample" is open until it is recorded here. The name-based filter (§4.3) is design only.
+
+**Open after the T0 review (not fixed in this commit).** (1) The headline 500-character cap and the title fallback are not in `to_event_row` (parser side; T4e or T7). Until they are added, a headline over 500 characters makes the server reject that row (`MAX_HEADLINE_LENGTH` in `server/src/homeEventsBatch.ts`); the row is counted as `invalid` and the run ends `failed` with `invalid:<n>`. (2) `source_url` is not checked for http or https in Python. `server/src/homeEventsBatch.ts` rejects a non-http(s) URL, so that row is counted as `invalid` and the run ends `failed` with `invalid:<n>`. (3) `at_cap` is not built (T4c follow-up). (4) A naive `published_at` raises an uncaught `ValueError` inside `run_cycle` (T4c). (5) After a post failure, the fetched and new counts can disagree. (6) `redact_error` removes the whole query string of any http(s) URL, so an `access_token=` inside a URL is removed. A bare `access_token=<value>` outside a URL is redacted only when the value is a token-like run of 30 or more characters. URL userinfo (`user:password@host`) is not stripped by any pattern; only a long token-like password is caught, by chance. (7) `filter_items` keeps whitespace in `isin`. (8) The mapper test checks four values only. (9) No fixture is matched by name, and no test reads the fixtures. (10) The NSE three-year backfill source (JSON endpoint) is not approved.
 
 Tasks become `plan_add` entries only after approval. Each has an acceptance command. Tool-call limit per task: 25, except T2a, T4d, T5c and T9 at 40. "Its tests" in an acceptance column means the tests named for that task in section 8, run with `unittest -k <name>`. Tasks that edit `scanner/home_events.py` run one at a time in the order T3a, T3b, T3c, T4b, T4c, T4e, T6, T7 (T3a creates the file). **Must not change in any task:** `scanner/factors.py` (including `matches_orderbook`, `_save_announcements` and the order-win lists; the order-win feed is deferred), the existing `announcements` and `collector_*` DDL, `collect.py` (split S1a owns it), and any migration number the split spec claims.
 
@@ -421,7 +530,7 @@ Tasks become `plan_add` entries only after approval. Each has an acceptance comm
 | T3c | T3b | `filter_items`, `classify_response`, `FetchResult`, `Cooldown` | same module, its filter and classify tests |
 | T4a | none | `_valid_param_keys` for `home_filings` | `.venv/Scripts/python.exe -m unittest tests.test_collect_settings tests.test_collect_settings_sources -q` |
 | T4b | T3c | `fetch_feed` with an injected session, `parse_fn` and `clock` | `tests.test_home_events_run` with `-k gap_within_bounds -k status_500_retries -k retry_skipped` |
-| T4c | T4b | `run_cycle` with injected `feeds`, `parse_fn`, a fake cooldown and a fake `post` | `.venv/Scripts/python.exe -m unittest tests.test_home_events_run -q` (19 tests) |
+| T4c | T4b | `run_cycle` with injected `feeds`, `parse_fn`, a fake cooldown and a fake `post` | `.venv/Scripts/python.exe -m unittest tests.test_home_events_run -q` (40 tests) |
 | T4d | T4c, T4a, T6; split S1a, S2; the token-path decision (4.6) | `HomeFilings`, `events_source = True`, `SOURCES` entry, the real `Cooldown` adapter, `post` built from `post_events`, updated `tests/test_collect_sources.py` (including `plan_makes_no_call_and_full_shape`) | `.venv/Scripts/python.exe -m unittest tests.test_collect_sources tests.test_home_events_run -q` |
 | T4e | T0, T3b | `FEEDS` with real URLs, first parser (`nse:Financial_Results`), its synthetic fixture | `.venv/Scripts/python.exe -m unittest tests.test_home_events_parsers -q` (that feed's tests) |
 | T5a | none | `homeEventsBatch.ts` (`validateBatch`, `buildInsert`), vitest, in the style of `collectorRefresh.ts` | `npm test --prefix server -- homeEventsBatch` |
@@ -454,6 +563,14 @@ The fundamentals trigger (4.7) and the reconciler (4.4) have no task here. Only 
 | Cuts | Z2, Z3, Z4, Z5, Z6, Z7, Z12. | **Decided 2026-11-10.** Z7 amended by Q1 (`8-20`). Z12 (order-win feed) deferred by Q2. |
 | Q1 to Q4 | Cron `8-20` kept; order-win feed deferred; fundamentals trigger to its own spec; all eight feeds on. | **Answered 2026-11-10** (below). |
 | Fundamentals trigger | Filed results with catch-up. | **Decided 2026-11-10.** Design moved to its own spec (4.7). |
+| 2026-11-11 (1) | Symbol and ISIN from news content: name resolution against the constituent CSV. | **Answered 2026-11-11.** Coverage conflict (a) accepted by the user 2026-11-11 ("agreed"). |
+| 2026-11-11 (2) | `source_url` is the item link. No empty `source_url`. The listing page is not used. | **Answered 2026-11-11** (user: "choose link carried by rss item"). |
+| 2026-11-11 (3) | Dedupe key as §4.2 (approved). The JSON encoding is an accepted byte-level deviation (4.2). | **Approved 2026-11-11** ("okay"); the deviation was checked and accepted ("if it need fix, fix it, else consider this as acceptable"). |
+| 2026-11-11 (4) | RPT dot variant: dot to colon before parsing. | **Decided 2026-11-11** (orchestrator decision). |
+| 2026-11-11 (5) | Headline: squashed description, 500-character cap, title fallback. | **Decided 2026-11-11** (orchestrator decision). |
+| 2026-11-11 (6) | First run: three years, monthly windows, yearly batches. NSE backfill source open (5.6). | **Answered 2026-11-11.** Conflict (b) answered (5.6): about one year of RSS accepted; three-year history for NSE, BSE, RBI and Fed. |
+| 2026-11-11 (7) | 20 items: `at_cap` flag, not a cap. | **Decided 2026-11-11** (orchestrator decision). Design only; not built. |
+| 2026-11-11 (8) | BSE route: direct `AnnSubCategoryGetData/w`; no `stock-news` import. | **Deferred** (Z2). |
 
 **Answered 2026-11-10:**
 - **Q1.** Cron stays `*/5 8-20 * * 1-5`.
@@ -467,7 +584,7 @@ Still open, not blocking a task here: cooldown cap (2 h in the split spec agains
 
 ## 11. Next steps
 
-1. You decide the open design points (the reply that carries this revision lists them: D8/D9 cost, and four smaller simplifications).
+1. Answered 2026-11-11: decisions (1) to (8) in §10. The D8/D9 cost and four smaller simplifications from the revision reply are not recorded in this spec.
 2. Update the stale parent docs (`home-events-filings.md`, overview 5.1, 7.3, 7.4, 8.1, 8.2, and the split-docs index).
-3. You approve the design. Only then are `plan_add` tasks written and dispatched. Nothing is committed from this spec.
-4. In parallel, not blocking approval: T0 (capture the NSE samples from a network path that works, and fill 4.0), and the split-spec session adds the S1a, S3, S4, S5a and citation items in section 2 and assigns migration numbers.
+3. Design approved 2026-11-11 (commit `608463b`). `plan_add` tasks follow from this approved revision.
+4. The NSE samples for T0 are captured (§9); the T0 acceptance check is still open. Owned by the split-spec session: the S1a, S3, S4, S5a and citation items in section 2, and migration numbers.
