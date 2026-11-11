@@ -5,6 +5,7 @@ All notable changes to this project are recorded here. Newest first.
 ## [Unreleased]
 
 ### Added
+- `docs/progress/home-event-sources-rereview2.md`: EGM six-lens re-review (2026-11-11) of `docs/designs/home-event-sources.md` and its four split docs at origin/main b5913e4. Verdict: NOT READY, with one verified blocker, 29 majors, 17 minors and 6 nits. Doc only: no design doc or code changed.
 - `docs/progress/home-events-filings-spec-review4.md`: EGM review of `docs/designs/home-events-filings-spec.md` (revision 4) by six lenses and the synthesizer (2026-11-11). Verdict: not ready for `plan_add`; five blockers (B1 to B5, each checked against the code or spec), 28 majors, 21 nits. Doc only: the spec is unchanged.
 - ISIN resolver `scanner/isin_resolver.py`: checks each constituent's (symbol, ISIN) against Upstox's public NSE instrument master (cached in `data/upstox_nse_master.json.gz`, refreshed daily, stale cache used with a warning if the download fails). Detects ISIN changes and renames via ISIN, records them in migration `db/migrations/012_isin_history.sql` (`isin_history`, `symbol_alias`), 17 offline tests in `tests/test_isin_resolver.py`.
 - `pyproject.toml` with project metadata and the pytest build gate (`testpaths = ["tests"]`). Run with `.venv\Scripts\python.exe -m pytest`.
