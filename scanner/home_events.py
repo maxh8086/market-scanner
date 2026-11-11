@@ -694,10 +694,21 @@ def _parse_sast_regulation29(body: bytes) -> ParseResult:
     return _parse_rss_feed(body, _PUB_DATE_FORMAT_MINUTES)
 
 
+def _parse_sast_regulation31(body: bytes) -> ParseResult:
+    """Parse the nse:Sast_Regulation31 RSS feed (spec 4.0, 6).
+
+    Its pubDate has seconds, so it uses the NSE format with no fixup, and company
+    is the whole squashed title, as for Financial_Results. Errors and drops are
+    as in _parse_rss_feed.
+    """
+    return _parse_rss_feed(body, _PUB_DATE_FORMAT)
+
+
 PARSERS: dict[str, Callable[[bytes], ParseResult]] = {
     "nse:Financial_Results": _parse_financial_results,
     "nse:Integrated_Filing_Financials": _parse_integrated_filing_financials,
     "nse:Sast_Regulation29": _parse_sast_regulation29,
+    "nse:Sast_Regulation31": _parse_sast_regulation31,
 }
 
 

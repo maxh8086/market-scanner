@@ -16,6 +16,7 @@ FEED_CODE = "nse:Financial_Results"
 FIXTURE_LINK = "https://www.nseindia.com/companies-listing/corporate-filings-financial-results"
 INTEGRATED_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Integrated_Filing_Financials.xml"
 SAST_REG29_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Sast_Regulation29.xml"
+SAST_REG31_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Sast_Regulation31.xml"
 
 
 def _squash(text: str) -> str:
@@ -160,6 +161,46 @@ class HomeEventsParserTest(unittest.TestCase):
         }
         # 20 items with three exact duplicate pairs (items 2/3, 6/7, 9/10) give 17 distinct keys (spec 4.0, 4.2).
         self.assertEqual(len(keys), 17)
+
+    def test_fixture_Sast_Regulation31(self):
+        body = SAST_REG31_FIXTURE.read_bytes()
+        result = parse("nse:Sast_Regulation31", body)
+        self.assertEqual(len(result.items), 20)
+        self.assertEqual(result.dropped, 0)
+
+        # Literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
+        first = result.items[0]
+        self.assertEqual(first["title"], "Billionbrains Garage Ventures Limited")
+        self.assertEqual(first["description"], "NAME OF PROMOTER(S) OR PACS WITH HIM : Fortune First Trust")
+        self.assertEqual(first["headline"], "NAME OF PROMOTER(S) OR PACS WITH HIM : Fortune First Trust")
+        self.assertEqual(first["company"], "Billionbrains Garage Ventures Limited")
+        self.assertEqual(
+            first["source_url"],
+            "https://nsearchives.nseindia.com/corporate/Fortune_10292026111315.zip",
+        )
+        self.assertEqual(first["published_at"].astimezone(timezone.utc).isoformat(), "2026-10-29T05:43:15+00:00")
+
+        last = result.items[19]
+        self.assertEqual(last["company"], "Ajanta Pharma Limited")
+        self.assertEqual(
+            last["source_url"],
+            "https://nsearchives.nseindia.com/corporate/AJANTPHARM_10212026140918.zip",
+        )
+        self.assertEqual(last["published_at"].astimezone(timezone.utc).isoformat(), "2026-10-21T08:39:18+00:00")
+
+        keys = {
+            dedupe_key(
+                "nse:Sast_Regulation31",
+                item["source_id"],
+                item["source_url"],
+                item["title"],
+                item["description"],
+                item["published_at"],
+            )
+            for item in result.items
+        }
+        # 20 items with no repeated dedupe key in the fixture bytes (one-off xml.etree run, spec 4.2).
+        self.assertEqual(len(keys), 20)
 
     def test_empty_feed(self):
         result = parse(FEED_CODE, b'<rss version="2.0"><channel></channel></rss>')
