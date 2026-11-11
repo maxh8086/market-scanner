@@ -11,9 +11,11 @@ import hashlib
 import json
 import math
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Protocol
+from zoneinfo import ZoneInfo
 
 # Query strings: everything from "?" up to whitespace or a quote/bracket.
 _QUERY_RE = re.compile(r"(https?://[^\s'\"<>?]+)\?[^\s'\"<>]*")
@@ -551,3 +553,113 @@ def post_events(rows: list[dict], *, base_url: str, token: str, http, timeout_s:
         totals["duplicates"] += body["duplicates"]
         totals["invalid"] += body["invalid"]
     return totals
+
+
+# The NSE feed table (spec 4.0). Nothing calls FEEDS yet; run wiring is a later task.
+_NSE_RSS = "https://nsearchives.nseindia.com/content/RSS/"
+
+FEEDS: tuple[Feed, ...] = (
+    Feed("nse:Financial_Results", _NSE_RSS + "Financial_Results.xml", "results", "high_priority", True, False),
+    Feed("nse:Integrated_Filing_Financials", _NSE_RSS + "Integrated_Filing_Financials.xml", "results", "high_priority", True, False),
+    Feed("nse:Sast_Regulation29", _NSE_RSS + "Sast_Regulation29.xml", "insider_trade", "high_priority", True, False),
+    Feed("nse:Sast_Regulation31", _NSE_RSS + "Sast_Regulation31.xml", "insider_trade", "high_priority", True, False),
+    Feed("nse:Corporate_action", _NSE_RSS + "Corporate_action.xml", "corporate_action", "catalyst", True, False),
+    Feed("nse:Corporate_Governance", _NSE_RSS + "Corporate_Governance.xml", "governance", "high_priority", True, False),
+    Feed("nse:Related_Party_Trans", _NSE_RSS + "Related_Party_Trans.xml", "related_party", "high_priority", True, True),
+    Feed("nse:Shareholding_Pattern", _NSE_RSS + "Shareholding_Pattern.xml", "shareholding", "catalyst", True, True),
+)
+
+
+_IST = ZoneInfo("Asia/Kolkata")
+# NSE pubDate text, e.g. "03-Nov-2026 10:29:23": India local time, with no offset in the text.
+_PUB_DATE_FORMAT = "%d-%b-%Y %H:%M:%S"
+_HEADLINE_MAX = 500
+
+
+def _child_text(node: ET.Element, tag: str) -> str:
+    """Text of the child `tag`, or "" when the child is missing or empty."""
+    child = node.find(tag)
+    if child is None or child.text is None:
+        return ""
+    return child.text
+
+
+def _rss_item(node: ET.Element) -> dict | None:
+    """Map one RSS <item> to a parsed item dict, or None when it must be dropped.
+
+    title, link and pubDate must be non-empty after strip. description must be
+    present but may be empty. The link is squashed and must start with http://
+    or https:// (any case). A pubDate that does not match the NSE format drops the item.
+    """
+    if node.find("description") is None:
+        return None
+    title = _child_text(node, "title").strip()
+    link = _squash(_child_text(node, "link"))
+    pub_text = _child_text(node, "pubDate").strip()
+    if not title or not link or not pub_text:
+        return None
+    if not link.lower().startswith(("http://", "https://")):
+        return None
+    try:
+        published_at = datetime.strptime(pub_text, _PUB_DATE_FORMAT).replace(tzinfo=_IST)
+    except ValueError:
+        return None
+    description = _child_text(node, "description").strip()
+    return {
+        "source_id": None,
+        "source_url": link,
+        "symbol": None,
+        "isin": None,
+        "company": _squash(title),
+        "title": title,
+        "description": description,
+        "headline": (_squash(description) or _squash(title))[:_HEADLINE_MAX],
+        "published_at": published_at,
+    }
+
+
+def _parse_financial_results(body: bytes) -> ParseResult:
+    """Parse the nse:Financial_Results RSS feed (spec 4.0, 4.3, 6).
+
+    symbol and isin are None because name resolution (spec 4.3) is not built
+    yet. filter_items therefore rejects every item as "universe", which is
+    intended until that work lands.
+
+    Raises ParseError when the body is not XML, or when its root is not an rss
+    element with a channel child (an HTML page served with status 200 is one).
+    Items that miss a required field or have a bad link or pubDate are dropped
+    and counted in `dropped`.
+    """
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError as exc:
+        raise ParseError(str(exc)) from exc
+    channel = root.find("channel") if root.tag == "rss" else None
+    if channel is None:
+        raise ParseError("feed is not an rss document with a channel")
+    items: list[dict] = []
+    dropped = 0
+    for node in channel.findall("item"):
+        item = _rss_item(node)
+        if item is None:
+            dropped += 1
+        else:
+            items.append(item)
+    return ParseResult(items=items, dropped=dropped)
+
+
+PARSERS: dict[str, Callable[[bytes], ParseResult]] = {
+    "nse:Financial_Results": _parse_financial_results,
+}
+
+
+def parse(feed_code: str, body: bytes) -> ParseResult:
+    """Parse one feed body with the parser registered for `feed_code` (spec 6).
+
+    An unknown feed_code raises ValueError. That is a caller error, not a bad
+    body, so it is not ParseError.
+    """
+    parser = PARSERS.get(feed_code)
+    if parser is None:
+        raise ValueError(f"no parser for feed_code: {feed_code!r}")
+    return parser(body)
