@@ -345,6 +345,7 @@ def run_cycle_with(
     post=None,
     cooldown=None,
     rng=None,
+    by_name=None,
 ):
     log = []
     session = FakeSession(script, log)
@@ -370,6 +371,7 @@ def run_cycle_with(
         rng=rng,
         clock=clock,
         cooldown=cooldown,
+        by_name=by_name,
     )
     return result, session, sleep, post, cooldown
 
@@ -521,6 +523,19 @@ class RunCycleTests(unittest.TestCase):
         for gap in sleep.durations:
             self.assertTrue(5 <= gap <= 8)
         self.assertEqual(len(session.calls), 3)
+
+    def test_name_only_items_resolve_through_by_name(self):
+        named = dict(make_item("X", PUB_EARLY, "a"), symbol=None, company="Reliance Limited")
+        unknown = dict(make_item("Y", PUB_LATE, "b"), symbol=None, company="Nobody Ltd")
+        parsed = ParseResult(items=[named, unknown], dropped=0)
+        by_name = {"RELIANCE LTD": ("RELIANCE", UNIVERSE["RELIANCE"])}
+        result, _session, _sleep, post, _cooldown = run_cycle_with(
+            [xml_ok()], feeds=ONE_FEED, parse_fn=ParseStub(result=parsed), by_name=by_name
+        )
+        self.assertEqual(result["status"], "ok")
+        rows = posted_rows(post)
+        self.assertEqual([row["isin"] for row in rows], [UNIVERSE["RELIANCE"]])
+        self.assertIn("universe=1", result["message"])
 
     def test_rows_go_to_post(self):
         parsed = ParseResult(

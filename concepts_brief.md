@@ -1,113 +1,214 @@
-# Redesign the Market Scanner UI
+# T4f: Name-based symbol and ISIN resolution for home_events NSE RSS items
 
-* **Author:** Vaibhav Pavtekar
-* **Date:** 2026-11-09
-* **Status:** Goldfish review done (BRAINSTORM mode). Not approved. Open questions below need your answers before design starts.
+* **Author:** Claude (Haiku 5.5), drafted for Vaibhav Pavtekar
+* **Date:** 2026-11-12
+* **Status:** Revised after the six-lens review. **Not ready to register tasks.** No code dispatched.
 
 ## Overview
 
-Concept under review: a dense, desktop-first screen for Indian equities (NSE/BSE, INR, IST). Each stock shows its scanner data beside it. The app gives no buy, sell or hold verdicts. Current filters, scan logic, API contracts and routes stay unchanged. The old UI keeps running until you approve the switch.
+NSE RSS items carry a company name in the title but no symbol and no ISIN. The parser (`scanner/home_events.py`, `_rss_item`) sets both to `None`, and `filter_items` (lines 143 to 166) then rejects every item as `universe`. T4f adds the step that turns the company name into a symbol and ISIN, then checks the result against the store's universe.
 
-Stack: Vite + React + TypeScript. Data grids and tables: TanStack Table (virtualized rows, sorting, filtering, column pinning). Charts: TradingView Lightweight Charts, or Chart.js as the alternative, for canvas-based financial rendering.
+The parser already sets `item["company"]`. For `Corporate_action` it is the text before ` - Ex-Date:`. For the other feeds it is the whole squashed title. The parser is not changed.
 
-Tailwind/shadcn/ui: not yet confirmed by owner.
+### Glossary (used in this brief)
 
-## Analysis
+* **Universe:** the set of symbols in `symbol_sector` with an ISIN (D3). It is the scope check. Not the same as the `universe` counter or the `filter_items` argument of the same name.
+* **Name index:** a dict built from the constituents CSV, mapping normalised company name to `(symbol, isin)`, or `None` when ambiguous.
+* **Company:** `item["company"]`. For six of the seven feeds it is the whole title, not a company name. The name "company name" in this brief means this field.
 
-Six lenses reviewed the concept: design, codebase details, zoom-out (scope), comprehension, implementation readiness and structure. The synthesis was done by Haiku. Sonnet should re-check it before it is treated as final.
+### Verified facts (checked 2026-11-12)
 
-The concept and the on-disk brief (`docs/designs/ui-redesign-brief.md`, 2026-11-08) describe different scope. The concept covers the scanner table and stock view. The brief also adds portfolio (Zerodha, Upstox, CSV), Telegram alerts, policy RSS with LLM classification, events, fundamentals, concall summaries and a Home feed. Settle scope first.
+* `load_universe` is named in the `filter_items` docstring (line 149) and spec 4.3. It is defined nowhere in `scanner/`. A different `load_universe` exists in `scripts/pull_upstox_5y.py`, with another meaning.
+* `scanner/symbol_sector.py` already reads the constituents CSV. `parse_csv` (lines 52 to 88) validates it, and the upsert (lines 38 to 43) sets `symbol_sector.isin` and `as_of` from the same CSV. So `symbol_sector.isin` is a copy of the CSV, not an independent source.
+* `scanner/constituents.py` has `CACHE_PATH = Path("data/...")`, which is cwd-relative. `docker-compose.yml` mounts `./data:/app/data` for an existing collector service (line 131). The `home_filings` service does not exist until T9.
+* The working checkout's CSV has 756 lines: a header and 755 rows. `GAMMON` is not in it. The fixture names in the sample are not in the CSV, so the 50 sample matches cannot all come from name spelling.
+* Spec 5.1 step 3 sets `deadline_at` and then calls `load_universe()`. `run_cycle` (line 389) takes `universe` as an argument and has no connection.
+* **The T4f row does not exist.** Spec section 9 has T0 to T7 and T9. The name is not in any branch or worktree.
 
-### Blockers
+## Blockers
 
-1. **No-verdict rule conflicts with approved decisions.** `docs/wireframe-review-2026-11-01.md` approved BUY, HOLD, EXIT and REJECT, plus a Trim, Add and Hold action set. `ui/wireframes/strategy.html` styles those labels. The brief gives holdings buy, add, hold, trim, sell or rebalance labels. The stance values CONSTRUCTIVE, MIXED and CAUTIOUS (`scanner/conclude.py`, `db/migrations/001_core.sql`) are part of the stance filter. Needed: a written decision on which rule governs, a banned-word list, and neutral wording.
-2. **Scope is unbounded.** The brief adds at least eight subsystems. Suggested v1: scanner table and stock page on existing endpoints, delayed or end-of-day data, five states, WebSocket live tickers on Fastify, no chart, no portfolio.
-3. **No live data path exists.** The app is REST only, with no WebSocket, SSE, polling or setInterval. Stored data is end-of-day from Upstox REST. The live, reconnecting and pre-open states cannot be built or tested on real data. Upstox supports live market data, but live data is not required for v1. WebSocket live tickers on Fastify are in v1 scope by owner decision. Broker licence terms for sharing data with others are still unchecked.
-4. **Backend and stack:** resolved by the owner. Backend is Node.js + TypeScript + Fastify, replacing FastAPI. Frontend is Vite + React + TypeScript, built to static files and served by Fastify. Fastify handles WebSocket connections for live stock tickers. Tailwind/shadcn/ui: not yet confirmed by owner.
-5. **Chart library:** resolved by the owner. TradingView Lightweight Charts v5 only. KLineChart is rejected and must not appear in new code or designs. Chart.js is the alternative only if Lightweight Charts cannot meet a need.
-6. **Baseline UI is ambiguous.** There is a root `ui/app/` (FastAPI, port 8080), a former nested `app/` git repo (removed 2026-11-09, with its backup kept outside the repo), and a third copy at `ui/wireframes/strategy.html`. A OneDrive path was named but not checked. No screenshots exist.
-7. **Security exposure.** `ui/app/main.py` binds 0.0.0.0:8080 with no auth. `README.md` says "loopback only, no login", which contradicts the code. Config and secrets write endpoints have no auth (not re-verified). The UI builds `innerHTML` from `location.hash`. Broker and Telegram tokens sit on the same server. Settle auth and bind address before any portfolio, broker or socket work.
-8. **Switch mechanism is undefined.** The catch-all route at `ui/app/main.py:37` would shadow or be shadowed by a second build. Missing: hash-route compatibility, port or prefix, flag, rollback command, approver.
-9. **Users are unknown.** Self, family or traders changes density, auth, holdings privacy and licence position. Do not start design until this is answered.
+**B1. Deadline contract conflict.** The run order (spec 5.1) puts the universe load after the deadline. The brief had `HomeFilings.run` load the universe and pass it to `run_cycle`, which changes the order. `docs/progress/home-events-filings-spec-review4.md` (lines 49 to 51) raised the same conflict. Options:
+  * (i) Inject a loader callable into `run_cycle`, so the load happens inside it after `deadline_at` is set. Changes the section 6 signature.
+  * (ii) Keep `HomeFilings.run` as the owner of both steps, set the deadline first, then call the load, and pass the deadline in. Changes section 5.1 wording.
+  * Recommendation: (ii). It keeps `run_cycle` free of database and file access, which the T4c fake-based tests depend on.
 
-### Major
+**B2. The main premise is unmeasured.** The brief said whole-title names often are not company names, and that this explains 0 of 3 Financial_Results and 0 of 20 Related_Party_Trans. The fixtures show clean names ("Gammon India Limited", "Shree Ram Proteins Limited", "Ballarpur Industries Limited"). The sample also matches 15 of 82 items across six whole-title feeds (spec 4.3). The likelier cause for the unmatched items is scope: the company is not in the Nifty Total Market list. Before any normalisation rule is added, classify the 92 unmatched sample items into:
+  * (a) NSE-listed but outside the CSV;
+  * (b) in the CSV under a different spelling;
+  * (c) not listed, or delisted.
+  Check each candidate symbol against `symbol_sector`. Normalisation is justified only if (b) is large. This is a read-only measurement on the 142-item sample, and it can be done before any build.
 
-10. **Virtualization conflicts with API caps.** Results cap `per_page` at 100. `/api/stocks` caps at 200. No all-rows endpoint exists. The 5,000-row figure is unsourced; the wireframe mentions 750 companies. TanStack Table does not virtualize rows.
-11. **Errors return HTTP 200.** Error bodies look like "no results", so the UI cannot tell them apart.
-12. **State definitions are missing.** Pre-open, market closed, stale and reconnecting have no triggers, thresholds, holiday calendar or session times. The "data as of" stamp uses the browser clock, so stale data looks fresh.
-13. **Timezone is inconsistent.** `api.py` line 419 uses naive server-local time. The UI uses browser locale. Docker containers often default to UTC.
-14. **Row key is undefined.** A stock can list on NSE and BSE and appear in several runs.
-15. **"Scanner data" and "beside it" are undefined.** No field list, column set, default sort or minimum width exists.
-16. **Filter parity is unclear.** The API has bucket and stance filters; the UI has no bucket control. `/api/stocks` returns only symbol, bucket, stance score and run date.
-17. **Layout decision is not recorded.** The brief says Option D awaits your confirmation; the directions doc recommends C. Option D makes Home the scan table, which conflicts with the brief's Home requirement.
-18. **Accessibility and format rules are missing.** The brief requires WCAG AA, never colour alone for gain and loss, reduced motion, tabular numerals, lakh and crore grouping. The existing UI fails several of these.
-19. **Rollback is missing.** Migrations 025 and 026 are untracked. `fundamentals-tables.md` proposes deleting old Mongo documents.
-20. **Phases are referenced but not defined** in the brief.
-21. **Phase 1 audit status contradicts the concept.** `docs/designs/ui-redesign-audit.md` exists and is untracked. The brief says Phase 2 is complete. Decide which governs.
-22. **Fundamentals source rule conflicts.** `directions.md` says layout and fields only, no scraping. `fundamentals-tables.md` uses screener.in row labels verbatim.
-23. **Three design systems conflict.** `ui/DESIGN.md`, the approved wireframe and the brief's shadcn tokens differ.
-24. **No observability.** One `logger.exception`, no metrics or request IDs.
-25. **Query load.** Each request opens a new connection with no pool. `get_results` is `async def` but calls synchronous code. Cache by run ID and query string; completed runs do not change.
+  **Measured (2026-11-12, read-only, scratchpad scripts, no repo change).** 142 items parsed; 50 matched the CSV by the settled normalised rule; 92 unmatched.
+  * Loose check (also drops THE, COMPANY to CO, PHARMACEUTICALS to PHARMA, PVT): 2 of the 92 match the CSV under a spelling variant. They are "The Great Eastern Shipping Company Limited" (GESHIP, Corporate_action) and "Ajanta Pharma Limited" (AJANTPHARM, Sast_Regulation31). The settled rule rejects both. Adding those words would change a settled decision, so it needs your approval.
+  * Class (a), 43 items: the normalised name is an exact name in the Upstox NSE_EQ/EQ master (2,757 rows) but not in the CSV. Name matching against the CSV cannot reach these.
+  * Class (b) against the master: 0 by the loose check. The only spelling gap is against the CSV, as shown above.
+  * Class (c), 49 items: no exact name in the NSE_EQ/EQ master. Examples: "Gammon India Limited", "Ballarpur Industries Limited", "Gaja Alternative Asset Management Limited". Whether these are delisted, renamed or simply absent from the master is not yet known. Symbol_sector and stock_snapshots were not checked (no DB access attempted).
 
-### Minor
+  Per feed (unmatched, a / c): Corporate_action 23 (17 / 6); Integrated_Filing_Financials 18 (7 / 11); Related_Party_Trans 20 (5 / 15); Sast_Regulation29 17 (7 / 10); Sast_Regulation31 10 (7 / 3); Financial_Results 3 (0 / 3); Shareholding_Pattern 1 (0 / 1). Corporate_Governance 0.
 
-26. Dark and light mode doubles token and test work. Define the token set once.
-27. Named skills are not installed; their rules must be written into the spec.
-28. TanStack Query is in the brief but not the concept. Decide whether it stays.
-29. "Calm, not fear" is not actionable. Turn it into rules, such as no full-row red or green fills and a visible "data as of" on every screen.
-30. The brief uses phase numbers and "Option D" without definitions.
-31. Existing tests (`tests/test_ui_api.py`, `test_ui_stocks_page.py`, `test_results_sort.py`, `test_relative_strength_ui.py`) could serve as API contract checks. Their contents were not read.
-32. The root API has no published contract. `app/docs/contract/openapi.yaml` exists in the nested repo; its coverage is unchecked.
+  Reading: the sample does not support normalisation as the main lever. Scope explains the 43 class (a) items. The other 49 are not in the master by name and need the symbol_sector and DB check before they can be called delisted or outside the universe.
 
-## Goals vs. Non-Goals
+**B3. Wrong matches are permanent.** `dedupe_key` excludes symbol and ISIN (spec 4.2). A wrong resolution is stored once, and every refetch hits `ON CONFLICT DO NOTHING`. The API role has no DELETE (spec 5.5). Before T9 switches the feed to `scheduled`: run one feed, review the resolved rows by hand, and write an owner-run correction runbook (`pg_dump` first). This belongs in the T9 gate.
 
-* **In-Scope Goals (proposed v1):** Scanner table and stock page on existing endpoints. Delayed or end-of-day data. Five states. WebSocket live tickers on Fastify. No chart, no portfolio.
-* **Out-of-Scope Non-Goals:** Portfolio, broker feeds, Telegram alerts, policy RSS, concall summaries, Home feed. Pending your decision.
+## Majors
 
-## Key Decisions & Staging for Next Steps
+* **M1. The ISIN authority rationale is unsupported.** The brief said the store ISIN is the one to trust because ISINs change. But `symbol_sector.isin` is written from the same CSV (verified above). `isin_resolver` writes `isin_history` and `symbol_alias`, not `symbol_sector`. So the store ISIN is a same-source copy and may be stale. Either take the ISIN from `isin_resolver.resolve` or `isin_history`, or drop the rationale and treat the universe check only as a scope gate. Evidence to change the view: a write path from `isin_resolver` to `symbol_sector.isin`, or a comparison of store ISINs with the current Upstox master for symbols that changed ISIN.
+* **M2. ISIN precedence is contradictory.** Open Q1 fills ISIN from the universe. Risk 4 says "a resolved item whose parser-set `isin` is kept", but the parser never sets ISIN (spec 4.0 says no feed carries one). Replace that test with: the name path takes the universe ISIN.
+* **M3. An empty universe is silent.** If `symbol_sector` is empty, every ISIN is NULL, or the collector role lacks SELECT, every item is rejected as `universe` and `run_cycle` still returns `ok`. Fail the run with a named message (`names:universe_empty`) and test it. `load_universe`'s `WHERE isin IS NOT NULL` drops symbols with no count; report that count.
+* **M4. One counter hides three causes.** No match, ambiguous match and out-of-scope all go into `counts["universe"]`. Split them into `name_miss`, `name_ambiguous` and `out_of_scope` in `filter_items`, and keep `universe=` in the run message as their sum.
+* **M5. The fixture contradicts the storage rule.** Open Q3 says do not commit the CSV, then commits about 30 real rows. Use synthetic rows instead: invented names, symbols and ISINs that exercise each normalisation rule, plus DUMMY rows and duplicate names. Put them outside `tests/fixtures/home_events/`, which holds real feed samples.
+* **M6. The CSV dependency is a single point of failure.** The path is cwd-relative (`constituents.py:13`). Sibling readers (`symbol_sector.py:28`, `isin_resolver.py:31`) are repo-anchored. A missing file fails every feed on every tick. Inject an explicit path from config, name the refresh owner and command, and put the path, mtime, age, row count and hash in the run message.
+* **M7. Reinvention.** `symbol_sector.parse_csv` already reads and validates this CSV. It returns no name column, so extend it rather than adding `read_cached_constituents`, which would duplicate it. There is no name normaliser in the repo, so `normalise_name` is new.
+* **M8. Alternatives not weighed.** Before choosing the CSV join, weigh:
+  * (a) a `company_name` column on `symbol_sector`, filled by the existing loader. Needs one migration; the migration number is contested in spec section 2.
+  * (b) `stock_snapshots.company`, the only name column already in the store (`docs/progress/home-events-decisions-needed.md` line 353). Coverage not checked.
+  * (c) the Upstox NSE master cached by `isin_resolver`. It has no name field today.
+  * (d) the NSE JSON endpoint, which carries symbol and `sm_isin` (spec 5.6). It reverses D1, and its host returned 403 on T0.
+  * (e) per-filing link shapes that carry the symbol (`nsearchives .../corporate/<SYMBOL>_...`). This could remove name matching for some feeds. Not verified: `data/home_samples/` is absent from this checkout.
+* **M9. Task count and build order.** T4f-1 touches only `constituents.py` and its test file, so the shared-file reason for ordering it first is wrong. Serialise only `home_events.py` edits. T4f-3 can be avoided: a wrapper around `parse_fn` in `HomeFilings` sets `item["symbol"]` to the resolved symbol or `None`, and `filter_items` already counts `None` as `universe`. That leaves the 40 T4c tests untouched. `load_universe` belongs to T4d, which needs it regardless. T4f-5 is T4d wiring. The realistic unit is one pure resolver plus a wrapper.
+* **M10. Spec drift.** The amendments the spec needs before build: a T4f row in section 9; the serial `home_events.py` order in section 9; section 2 build order; the section 4.0 ISIN line; section 4.3 ("symbol and ISIN are checked against the universe"); section 5.2 new message tokens (`names:constituents_missing`, `names:stale=<days>`) and the failure status; section 6 signatures for `filter_items`, `run_cycle` and the loader; section 8 test names; the section 6 module table (`constituents.py` is missing).
+* **M11. Undefined and overloaded terms.** `resolve_name` has no signature. "names" means a parameter, a message prefix and prose. "universe" means three things (see the glossary). `build_name_index` takes tuples "after `_clean`", but `_clean` returns a DataFrame. The return type and missing-file behaviour of the reader are unspecified.
+* **M12. Normalisation rules.** Stripping `-` merges TATAMOTORS and TATA MOTORS under one reading; replacing it with a space gives another key. Specify whole-token matching for LIMITED and LTD (so UNLIMITED is unchanged). Address PVT. Measure same-name collisions across the full CSV, not only the sample. Dedupe on `(symbol, isin)` before the ambiguity check, because the Series column can give one company two rows. Drop any rule the B2 measurement does not justify.
+* **M13. Database and grant.** The brief does not say which database. `symbol_sector` is in the main DB; the events DB is separate (spec 4.5, D8, D9). The only grant found is to `market_scanner_app` (migration 026). The collector role is unverified. The fake-cursor test cannot catch a wrong connection or a missing privilege, so add one Postgres-backed check. Rename the new loader (for example `load_store_universe`) to avoid the clash with `scripts/pull_upstox_5y.py`.
+* **M14. Acceptance gaps.** The acceptance commands run whole modules and can pass with no new tests. Name the four Risk 4 cases and give expected counts. Add an end-to-end regression on the 142-item set: expected 50 matched, 0 ambiguous (spec 4.3 line 289), split by the M4 classes. The limit of 40 on T4f-5 is not in the spec for this task.
+* **M15. Copy divergence.** The 755 and 754 checkout copies differ in real rows. "The container copy is the authority" is asserted, and the container mount is still open (M6). Diff the two copies on the sample names. Do not treat them as interchangeable in acceptance tests.
+* **M16. Observability.** "Visible" is unsourced: spec 5.2 says the dashboard does not parse the message, so the stale note is visible only to someone who reads it. Name a reader, or say it is not surfaced. Add a DEBUG log of the normalised key and chosen symbol (not the raw title) for wrong-match diagnosis, and keep raw titles so rejected items can be replayed.
 
-Answers received (2026-11-09):
+## Nits
 
-1. **Verdicts:** the approved 2026-11-01 labels (BUY, HOLD, EXIT, REJECT) stay as they are. The user's reply, "any one of them, but not all", is still open. Clarify whether one label per stock is allowed, or only on holdings.
-2. **Scope:** the full 2026-11-08 brief is in scope as a redesign requirement. Portfolio, Telegram, policy RSS, concall summaries and Home feed are all included. Ordering is still to be set.
-3. **Live data:** agreed. No live path. Design uses REST and end-of-day data. Live and reconnecting states are out of v1.
-4. **Security:** agreed that bind address and auth must be settled before any broker or socket work. Preferred secret store: Docker secret. Docker Swarm is not present (see the earlier decision record), so the option is Compose file-based secrets, which need no Swarm. Migration not started.
-5. **Chart:** lightweight-charts v5 (TradingView, Apache 2.0). KLineChart is a separate open-source candlestick library and is not chosen.
+* The 30-day staleness threshold has no rationale. "Freshness does not matter" conflicts with the stale flag.
+* "Settled" references cite no decision ID in spec section 10.
+* The `.venv` acceptance path assumes a setup step the brief does not describe.
+* Line numbers have no commit reference, and this brief is uncommitted.
+* Mark T4f-2 to T4f-4 as not registered until T4d is approved, to avoid dead code.
 
-Answers received (2026-11-09, round 2):
+## Weakest point
 
-- **Verdicts:** one label per stock. A stock may show one of BUY, HOLD, EXIT or REJECT. No view shows all four together for the same stock.
-- **Users:** me and family, on one home network. Needs login and per-user holdings privacy. Not reachable outside the home network.
-- **Stack:** chosen by the owner's criteria (fast, low resource use, wide UI design choice). Confirmed by owner: Backend is Node.js + TypeScript + Fastify, replacing FastAPI. Frontend is Vite + React + TypeScript, built to static files and served by Fastify. Fastify handles WebSocket connections for live stock tickers. Data grids and tables: TanStack Table (virtualized rows, sorting, filtering, column pinning). Charts: TradingView Lightweight Charts, or Chart.js as the alternative, for canvas-based financial rendering. Tailwind/shadcn/ui: not yet confirmed by owner.
-- **Secrets:** Docker secret. Swarm is not present, so this means Compose file-based secrets. Migration needs docker-compose.yml to change, which earlier notes said to hold until the alert service exists. Owner to confirm.
+The CSV-as-name-source join. B2 is now measured: 43 of 92 unmatched items are listed on NSE but outside the CSV, so the CSV cannot reach them. The store ISIN claim (M1) is still unverified (no DB check yet).
 
-Answers received (2026-11-09, round 3):
+## Evidence that would change the design
 
-- **Docker-compose hold:** lifted by owner. Compose file-based secrets may be wired now.
-- **Ordering:** data collection first, then backend, then API, then UI.
-- **Baseline and switch:** the current UI is the baseline. The switch target is the final UI revamp, which replaces it once approved.
-- **Migrations 025 and 026:** in scope as the first step of data collection. Application is pending a separate explicit go, because `start.ps1` applies every pending migration on its next run.
+1. The B2 classification of the 92 unmatched items. If most are (b), normalisation is the lever. If most are (a), compare the Upstox master, `stock_snapshots.company` and the NSE JSON endpoint.
+2. Per-feed containment: the share of whole-title items whose title contains a normalised constituent name.
+3. A documented write path from `isin_resolver` to `symbol_sector.isin`, or an `as_of` comparison showing drift.
+4. Counts of same-normalised-name and same-`(symbol, isin)` collisions across the full CSV.
+5. The collector DB role's SELECT grant on `symbol_sector`.
+6. `stock_snapshots.company` coverage of the universe.
+7. Per-filing link shapes in the T0 samples (not available in this checkout).
 
-Collector note (2026-11-09):
+## Revised decisions to approve
 
-- **Cause:** `collector_settings` has rows for `index_eod`, `exchange_results` and `gov_feeds`. `scanner/collect/sources.py` defines none of them (it defines announcements, ath_scan, candles_eod, corporate_actions, filings, fundamentals). The serve loop tried to run the two scheduled rows, failed with "unknown source", and never recorded a run. So they were due, and failed, every minute from at least 20:30 UTC on 8 Nov.
-- **Fix in code:** `collect.split_registered` skips rows with no collector and logs each name once. Tests in `tests/test_collect_missing_source.py`. Running collector still has the old code until it is rebuilt and restarted.
-- **Done (2026-11-09):** the three orphan `collector_settings` rows were deleted, with their 12 `collector_runs` rows and 1 `collector_requests` row (approved by you). Backup of the settings is in the session scratchpad.
+| # | Question | Revised recommendation |
+|---|---|---|
+| 1 | Name source and join | Undecided. Choose between the CSV name index (current), a `company_name` column (M8a), or `stock_snapshots.company` (M8b). Run B2 first. |
+| 2 | Network and failure mode | No network in a run. Missing file fails the run; stale file used with the path and age in the message. Refresh is an owner command outside the run. Owner still to name (M6). |
+| 3 | Which copy, `data/` | `data/` stays ignored. Synthetic fixture (M5). Diff the two checkout copies before relying on either (M15). |
+| 4 | Signature | Pure `normalise_name`, `build_name_index`, `resolve`. `filter_items` keeps `names=None`, or uses the wrapper in M9. Split counters (M4). |
+| 5 | `load_universe` | Keep the name, but in `HomeFilings` (T4d) and renamed to avoid the clash (M13). Fix the deadline order first (B1). |
 
-Completed (2026-11-09, round 4):
+## Reference tables in the DB (approved 2026-11-12, not applied)
 
-- **Sector load:** run for real. 751 symbols in 22 NSE industries upserted into `symbol_sector` with `as_of` 2026-11-09. The first attempt stamped 2026-11-08 because the container clock is UTC. The loader now uses the IST date (`today_ist`), and the load was rerun to correct it. The `sub_sector` columns were not touched.
-- **Face value:** `fund_derive.key_ratios` now outputs `face_value` from the #top-ratios "Face Value" row (`face_value_from_overview`). Market cap and book value use it. A missing or zero face value leaves those two values empty. Tests: `tests/test_fund_derive.py`, plus IST tests in `tests/test_symbol_sector.py`.
-- **Chart library:** KLineChart replaced with TradingView lightweight-charts v5 in `ui/wireframes/strategy.html` (4 places) and `app/docs/strategy/handoff_ui_rollout.md` (3 places).
-- **UI stack:** Vite + React + TypeScript (owner confirmed). Tailwind/shadcn/ui: not yet confirmed by owner.
+Approved by the user: the `company_reference` table, the `company_reference_by_isin` view, the six lookup indexes, DB-only reads at run time, and the monthly refresh. Still open, and needed before the task breakdown is registered:
+* O1. **Decided 2026-11-12: widen to the master.** The resolver's universe is the union of the stored CSV and master rows in `company_reference`, not `symbol_sector` alone. This changes the settled D3 rule ("resolved symbol must be in `symbol_sector`"). Consequences: the 43 class (a) items become resolvable; the universe check queries `company_reference` by (symbol, ISIN); a symbol present in both sources must carry the same ISIN, and a disagreement is counted as `universe` and listed for review.
+* O2. Loader role: a separate role with DELETE for the monthly reload, or a different reload method under the collector role.
+* O2. **Decided 2026-11-12: separate loader role.** A new DB role gets INSERT, UPDATE and DELETE on `company_reference` only. The collector role is unchanged (spec 5.5 holds).
+* O3. **Decided 2026-11-12: collector job.** The monthly refresh runs inside the existing collector schedule, and its failure alert uses the collector's alert path.
 
-Still open:
+All open decisions are now answered. Task registration and the call-site migration have not started.
 
-- Secrets (decided 2026-11-09): deferred to the end of development. Until then, `.env` stays the single secrets file. Compose file secrets are not wired. The Swarm route needs `docker stack deploy`, because Compose cannot read Swarm secrets (tested locally).
-- Migrations 025, 026 and 027 (fundamentals tables, empty): applied on 2026-11-09. The scanner image was rebuilt so 027 was included.
+Requirement (user, 2026-11-12): the DB holds a table or view with reference rows from both the Upstox NSE master and the NSE CSV, keyed by ISIN, symbol and company name. Lookups must work on each combination of those keys.
 
-## Verification notes
+**Profile of the two sources (read-only, 2026-11-12):**
+* CSV: 755 rows, no blank ISIN, no duplicate symbol, no duplicate (symbol, ISIN).
+* Master (NSE_EQ/EQ): 2,757 rows, no blank ISIN, no duplicate symbol, no duplicate ISIN.
+* ISIN overlap: 743. CSV-only: 12. Master-only: 2,014.
+* Precedent: `symbol_sector` (migration 025) already stores CSV ISINs and industries. `isin_history` and `symbol_alias` (migration 012) already store master-derived pairs. The new tables would add a name key that neither has.
 
-- Confirmed in code by reviewers: no WebSocket or polling; end-of-day data only; `per_page` cap of 100; `/api/stocks` cap of 200; bind to 0.0.0.0; the stamp uses the browser clock; errors return HTTP 200.
-- Not re-verified: innerHTML, dark-token duplication, keyboard access, the OneDrive wireframe, and the cost of the announcement-coverage query.
-- The 750 and 5,000 row figures are unresolved. No reviewer queried the database.
+**Proposed table `company_reference`** (new migration 047, not yet written):
+
+```sql
+CREATE TABLE company_reference (
+  source        text NOT NULL CHECK (source IN ('nse_csv', 'upstox_master')),
+  symbol        text NOT NULL,            -- upper(btrim(...)), same rule as symbol_sector
+  isin          text NOT NULL,            -- upper(btrim(...))
+  company_name  text NOT NULL,            -- as published by the source
+  name_key      text NOT NULL,            -- computed by the Python normaliser, not in SQL
+  series        text,
+  as_of         date NOT NULL,
+  loaded_at     timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (source, symbol, isin)
+);
+CREATE INDEX company_reference_isin_idx        ON company_reference (isin);
+CREATE INDEX company_reference_symbol_idx      ON company_reference (symbol);
+CREATE INDEX company_reference_name_key_idx    ON company_reference (name_key);
+CREATE INDEX company_reference_symbol_isin_idx ON company_reference (symbol, isin);
+CREATE INDEX company_reference_isin_name_idx   ON company_reference (isin, name_key);
+CREATE INDEX company_reference_name_symbol_idx ON company_reference (name_key, symbol);
+```
+
+* `name_key` is computed by one Python function (the settled normaliser), so SQL never re-implements it. The Python function is the single source of truth.
+* One row per (source, symbol, ISIN). The source column keeps the two copies apart, so a later disagreement is visible rather than overwritten.
+
+**Proposed view `company_reference_by_isin`** (joins the two sources on ISIN):
+
+```sql
+CREATE VIEW company_reference_by_isin AS
+SELECT coalesce(c.isin, m.isin) AS isin,
+       c.symbol AS csv_symbol,     c.company_name AS csv_name,    c.name_key AS csv_name_key,
+       m.symbol AS master_symbol,  m.company_name AS master_name, m.name_key AS master_name_key,
+       (c.symbol = m.symbol)       AS symbol_agrees,
+       (c.name_key = m.name_key)   AS name_agrees
+FROM (SELECT * FROM company_reference WHERE source = 'nse_csv') c
+FULL JOIN (SELECT * FROM company_reference WHERE source = 'upstox_master') m
+       ON c.isin = m.isin;
+```
+
+**Lookup combinations the table must serve:**
+
+| Lookup | Use | Index |
+|---|---|---|
+| name_key alone | The only key an RSS item carries. The resolver's name step. Must return one (symbol, ISIN) across both sources after dedupe, else reject as `universe`. | name_key |
+| name_key + symbol | Confirm a name hit when the item has a symbol. Not all items do. | name_key_symbol |
+| ISIN alone | Fetch name and symbol from either source. Cross-check. | isin |
+| ISIN + name_key | Check that a name and an ISIN agree. | isin_name |
+| symbol alone | Symbol to ISIN and name, for the universe check and the `symbol_sector` join. | symbol |
+| symbol + ISIN | Exact row check, for example the final universe check. | symbol_isin |
+
+**Facts that limit the design (must be decided before the build):**
+
+1. **RSS items carry no ISIN and no symbol.** `_rss_item` sets both to `None` (spec 4.3). The name is the only input. The ISIN and symbol combinations serve cross-checks and the universe check, not the initial match.
+2. **The universe check excludes master-only companies.** The settled rule (D3) requires the resolved symbol to be in `symbol_sector`. That table holds CSV rows only. So a name that matches a master-only company (class a, 43 of 92) still fails the universe check, even with this table in place. Widening the universe to the master is a separate decision.
+3. **Data use (user rule, 2026-11-12).** No NSE or Upstox data is used directly, except the live feed. All reference data is stored in the DB and reused. Refresh runs once a month. Consequences for the design:
+   * The run path reads only the DB. `load_constituents` (CSV download, `data/` cache, 30-day age) and `isin_resolver.try_load_master` (reads `data/upstox_nse_master.json.gz`) must not be read at run time. Both move to a monthly refresh job that writes `company_reference`.
+   * Each refresh sets `as_of` and `loaded_at`. A run warns when the newest `as_of` is more than 31 days old. It does not fetch.
+   * The `data/` files become an intermediate step inside the refresh job, not a runtime input. They stay git-ignored.
+   * The refresh job needs a schedule owner (cron or the collector), a retry, and a rule for a failed month: keep last month's rows, and alert.
+   * Restated 2026-11-12 (user, repeated): no symbol or ISIN data from NSE or Upstox is used directly, except the live feed. Every symbol and ISIN used by a run, a scan, or a universe check comes from the stored tables.
+
+   **Existing direct uses that break this rule (found by grep, not yet changed):**
+   * `ath_scan.py:143` calls `load_constituents` (CSV download or `data/` cache). `ath_scan.py:167` calls `isin_resolver.try_load_master` (reads `data/upstox_nse_master.json.gz`).
+   * `enrich.py:112` calls `load_constituents`.
+   * `scanner/collect/sources.py:144, 211, 255` call `load_constituents`. These are collector paths.
+   * `scanner/symbol_sector.py:28` reads `data/ind_niftytotalmarket_list.csv` (the cache written by `constituents.py`). It is the source of `symbol_sector`'s ISIN and industry values.
+   * `scripts/pull_upstox_5y.py:174, 195, 210` call `load_constituents` and `try_load_master(refresh=True)`, which hits Upstox.
+   * `scanner/constituents.py` downloads the CSV from NSE at run time (30-day cache). `scanner/isin_resolver.py` fetches the master at run time.
+   * Not symbol or ISIN data, so outside this rule but worth a decision: `scanner/crosscheck.py:89-97` fetches NSE bhavdata directly.
+   * `scripts/fetch_index_constituents.py` fetches NSE index lists. It may be the refresh job's source, if it writes to the DB.
+
+   Migrating these is a separate, sizeable change. It needs your go-ahead to start, and it should follow approval of the `company_reference` design.
+4. **Refresh and grants.** A full reload per source needs DELETE on `company_reference`. Spec 5.5 says the collector role has no DELETE. Either use a separate loader role, or confirm that a reload can run under the existing role. Grants should follow the pattern of migration 026.
+
+## Draft task breakdown (not registered; depends on the approvals above)
+
+Each task would need a named test list, not a whole-module command (M14). Work on `scanner/home_events.py` is serial.
+
+1. **Measure (read-only):** B2 classification done (see B2). Still open: M12 collision counts across the full CSV, and the symbol_sector / stock_snapshots check for the 49 class (c) items. No code change.
+2. **Spec amendments:** the M10 list, including a T4f row in section 9 and the B1 deadline order.
+3. **Pure resolver:** normalisation, name index and resolve, with synthetic-row tests and the M4 counters. Files: `scanner/home_events.py`, `tests/test_home_events_pure.py`, `tests/fixtures/home_events_synthetic/` (new).
+4. **Loader and guard:** store universe loader and the M3 empty-universe guard, with the M13 Postgres check. Depends on T4d.
+5. **Wiring:** the `HomeFilings` wrapper, after T4d. Acceptance: named tests in `tests/test_collect_sources.py` and `tests/test_home_events_run.py`, plus the 142-item end-to-end check.
+6. **T9 gate:** B3 manual review and correction runbook.
+
+## Review status
+
+The six lenses and synthesizer ran in parallel. The synthesizer also ran one extra lens, `egm-style`, which was not in the requested six. Its findings are merged above and marked where they came from in the review. Findings were not re-reviewed after the revision.
