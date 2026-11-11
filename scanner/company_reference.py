@@ -196,6 +196,21 @@ def load_index(conn) -> Index:
     return build_index(rows)
 
 
+def load_index_for_source(conn, source: str) -> Index:
+    """Read company_reference rows for one source and build the Index. Read only."""
+    fetched = conn.execute(
+        "SELECT source, symbol, isin, name_key FROM company_reference WHERE source = %s",
+        (source,),
+    ).fetchall()
+    # Same row mapping as load_index: dict rows from scanner.pg.db, or plain tuples.
+    rows = [
+        (r["source"], r["symbol"], r["isin"], r["name_key"]) if isinstance(r, dict)
+        else (r[0], r[1], r[2], r[3])
+        for r in fetched
+    ]
+    return build_index(rows)
+
+
 class EmptySourceError(RuntimeError):
     """A source parsed to zero rows. The refresh is refused and last month's rows stay."""
 

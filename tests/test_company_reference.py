@@ -122,6 +122,21 @@ class _ExecConn:
         return type("Cur", (), {"fetchall": lambda _s: rows})()
 
 
+class _ParamExecConn:
+    """Fake psycopg3-style connection that records the SQL and params of execute()."""
+
+    def __init__(self, rows):
+        self.rows = rows
+        self.sql = None
+        self.params = None
+
+    def execute(self, sql, params=()):
+        self.sql = sql
+        self.params = tuple(params)
+        rows = self.rows
+        return type("Cur", (), {"fetchall": lambda _s: rows})()
+
+
 class IndexTests(unittest.TestCase):
     def test_build_index_union_and_by_name(self):
         idx = cr.build_index([
@@ -178,6 +193,31 @@ class IndexTests(unittest.TestCase):
         idx = cr.load_index(conn)
         self.assertIn("company_reference", conn.sql)
         self.assertEqual(idx.universe, {"ALPHA": "INE1"})
+
+    def test_load_index_for_source_filters_by_source(self):
+        conn = _ParamExecConn([])
+        cr.load_index_for_source(conn, "nse_csv")
+        self.assertIn("WHERE source = %s", conn.sql)
+        self.assertEqual(conn.params, ("nse_csv",))
+
+    def test_load_index_for_source_builds_from_that_source(self):
+        conn = _ParamExecConn([
+            {"source": "nse_csv", "symbol": "ALPHA", "isin": "INE1", "name_key": "ALPHA LTD"},
+            {"source": "nse_csv", "symbol": "BETA", "isin": "INE2", "name_key": "BETA LTD"},
+        ])
+        idx = cr.load_index_for_source(conn, "nse_csv")
+        self.assertEqual(conn.params, ("nse_csv",))
+        self.assertEqual(idx.universe, {"ALPHA": "INE1", "BETA": "INE2"})
+        self.assertEqual(idx.by_name, {"ALPHA LTD": ("ALPHA", "INE1"), "BETA LTD": ("BETA", "INE2")})
+
+    def test_load_index_for_source_same_name_two_pairs_is_conflict(self):
+        conn = _ParamExecConn([
+            {"source": "nse_csv", "symbol": "AAA", "isin": "INE1", "name_key": "SAME NAME LTD"},
+            {"source": "nse_csv", "symbol": "BBB", "isin": "INE2", "name_key": "SAME NAME LTD"},
+        ])
+        idx = cr.load_index_for_source(conn, "nse_csv")
+        self.assertNotIn("SAME NAME LTD", idx.by_name)
+        self.assertIn("name:SAME NAME LTD", idx.conflicts)
 
 
 class RefreshTests(unittest.TestCase):
