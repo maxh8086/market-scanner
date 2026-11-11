@@ -318,6 +318,8 @@ def make_item(symbol, published_at=PUB_EARLY, url_tag="a"):
         "symbol": symbol,
         "company": f"{symbol} Ltd",
         "headline": f"{symbol} filing",
+        "title": "Example Ltd",
+        "description": "RELATING TO:First Quarter |AUDITED/UNAUDITED:Unaudited",
         "source_id": None,
         "source_url": f"https://example.invalid/{url_tag}",
         "published_at": published_at,

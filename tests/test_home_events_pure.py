@@ -5,6 +5,7 @@ Nothing reaches NSE or the network: requests.Session.get is replaced.
 from __future__ import annotations
 
 import hashlib
+import json
 import io
 import unittest
 from contextlib import redirect_stdout
@@ -58,43 +59,91 @@ FEED = home_events.Feed(
 )
 SAMPLE_URL = "https://example.invalid/filings/abc"
 SAMPLE_PUBLISHED = datetime(2026, 11, 10, 15, 30, tzinfo=IST)
+SAMPLE_TITLE = "Example Ltd"
+SAMPLE_DESC = "RELATING TO:First Quarter |AUDITED/UNAUDITED:Unaudited"
 
 
 class DedupeKeyTests(unittest.TestCase):
     def test_with_id(self):
-        key = home_events.dedupe_key("nse:Financial_Results", "98765", SAMPLE_URL, SAMPLE_PUBLISHED)
+        key = home_events.dedupe_key(
+            "nse:Financial_Results", "98765", SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC, SAMPLE_PUBLISHED
+        )
         self.assertEqual(key, "nse:Financial_Results:98765")
 
+    def test_whitespace_source_id_is_no_id(self):
+        fallback = home_events.dedupe_key(
+            "nse:Financial_Results", None, SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC, SAMPLE_PUBLISHED
+        )
+        blank = home_events.dedupe_key(
+            "nse:Financial_Results", "   ", SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC, SAMPLE_PUBLISHED
+        )
+        self.assertEqual(blank, fallback)
+        padded = home_events.dedupe_key(
+            "nse:Financial_Results", " 98765 ", SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC, SAMPLE_PUBLISHED
+        )
+        self.assertEqual(padded, "nse:Financial_Results:98765")
+
     def test_fallback_hash(self):
-        key = home_events.dedupe_key("nse:Financial_Results", None, SAMPLE_URL, SAMPLE_PUBLISHED)
+        key = home_events.dedupe_key(
+            "nse:Financial_Results", None, SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC, SAMPLE_PUBLISHED
+        )
         utc_iso = SAMPLE_PUBLISHED.astimezone(timezone.utc).isoformat()
-        digest = hashlib.sha256(f"{SAMPLE_URL}|{utc_iso}".encode()).hexdigest()
+        payload = json.dumps([SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC, utc_iso], ensure_ascii=False)
+        digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         self.assertEqual(key, f"nse:Financial_Results:{digest}")
         # An empty id counts as no id.
         self.assertEqual(
-            home_events.dedupe_key("nse:Financial_Results", "", SAMPLE_URL, SAMPLE_PUBLISHED), key
+            home_events.dedupe_key(
+                "nse:Financial_Results", "", SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC, SAMPLE_PUBLISHED
+            ),
+            key,
         )
         # A naive timestamp would be read as machine-local time, so it is refused.
         with self.assertRaises(ValueError):
             home_events.dedupe_key(
-                "nse:Financial_Results", None, SAMPLE_URL, datetime(2026, 11, 10, 15, 30)
+                "nse:Financial_Results", None, SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC,
+                datetime(2026, 11, 10, 15, 30),
             )
 
     def test_stable_across_refetch(self):
-        first = home_events.dedupe_key("nse:Financial_Results", None, SAMPLE_URL, SAMPLE_PUBLISHED)
-        refetch = home_events.dedupe_key("nse:Financial_Results", None, SAMPLE_URL, SAMPLE_PUBLISHED)
+        first = home_events.dedupe_key(
+            "nse:Financial_Results", None, SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC, SAMPLE_PUBLISHED
+        )
+        refetch = home_events.dedupe_key(
+            "nse:Financial_Results", None, SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC, SAMPLE_PUBLISHED
+        )
         same_instant_utc = home_events.dedupe_key(
-            "nse:Financial_Results", None, SAMPLE_URL, SAMPLE_PUBLISHED.astimezone(timezone.utc)
+            "nse:Financial_Results", None, SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC,
+            SAMPLE_PUBLISHED.astimezone(timezone.utc),
+        )
+        # Extra whitespace in the feed text does not change the key.
+        spaced = home_events.dedupe_key(
+            "nse:Financial_Results", None, SAMPLE_URL, SAMPLE_TITLE + " \n",
+            SAMPLE_DESC.replace("|", "  |"), SAMPLE_PUBLISHED,
         )
         self.assertEqual(first, refetch)
         self.assertEqual(first, same_instant_utc)
+        self.assertEqual(first, spaced)
 
     def test_different_link_differs(self):
-        first = home_events.dedupe_key("nse:Financial_Results", None, SAMPLE_URL, SAMPLE_PUBLISHED)
+        first = home_events.dedupe_key(
+            "nse:Financial_Results", None, SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC, SAMPLE_PUBLISHED
+        )
         other = home_events.dedupe_key(
-            "nse:Financial_Results", None, SAMPLE_URL + "-amended", SAMPLE_PUBLISHED
+            "nse:Financial_Results", None, SAMPLE_URL + "-amended", SAMPLE_TITLE, SAMPLE_DESC,
+            SAMPLE_PUBLISHED,
         )
         self.assertNotEqual(first, other)
+
+    def test_different_description_differs(self):
+        first = home_events.dedupe_key(
+            "nse:Financial_Results", None, SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC, SAMPLE_PUBLISHED
+        )
+        revised = home_events.dedupe_key(
+            "nse:Financial_Results", None, SAMPLE_URL, SAMPLE_TITLE, SAMPLE_DESC + " Revised",
+            SAMPLE_PUBLISHED,
+        )
+        self.assertNotEqual(first, revised)
 
 
 class EventRowMapperTests(unittest.TestCase):
@@ -105,6 +154,8 @@ class EventRowMapperTests(unittest.TestCase):
         "isin": "INE000000001",
         "company": "Example Ltd",
         "headline": "Board approves quarterly results",
+        "title": SAMPLE_TITLE,
+        "description": SAMPLE_DESC,
         "published_at": SAMPLE_PUBLISHED,
     }
 
@@ -141,6 +192,8 @@ def _parsed_item(symbol: str, isin: str | None = None) -> dict:
         "isin": isin,
         "company": "Example Ltd",
         "headline": "Board approves quarterly results",
+        "title": "Example Ltd",
+        "description": "RELATING TO:First Quarter |AUDITED/UNAUDITED:Unaudited",
         "published_at": SAMPLE_PUBLISHED,
     }
 
