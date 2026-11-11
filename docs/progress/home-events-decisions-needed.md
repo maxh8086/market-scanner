@@ -1,7 +1,7 @@
 # Home events sources: decisions needed (consolidated)
 
 Date: 2026-11-10
-Status: A1 to A9 decided (see each entry). B, C, D and E entries remain recommendations only.
+Status: A1 to A9 decided (see each entry). D4 is resolved (2026-11-10). Other B, C, D and E entries remain recommendations unless their own Status line says decided.
 
 A1 to A9 are decided. The B, C, D and E recommendations are the orchestrator's suggestions only. No build task is dispatched from the news and Telegram, macro and calendar, or Upstox news docs.
 
@@ -487,7 +487,7 @@ Reply "apply" to have these made. Items marked "after" wait for a decision first
 - Overview 6 and 7.7 (after A5): amend the LLM-only rule (line 98) against the RSS keyword-only build (line 202). Applied 2026-11-10 (A5 accepted).
 - Overview 5.3 and 7.6 (after A8): align direct message versus group. Applied 2026-11-10 (A8 accepted).
 - Overview section 9.2 and the filings keyword lists (after C16): align the macro prefilter and the feed filter.
-- `docs/designs/ui-redesign-brief.md` line 53: the Telegram token is described as a Swarm secret read from `/run/secrets/`. It is stored in the secrets store, per `secrets-and-roles.md`.
+- `docs/designs/ui-redesign-brief.md` line 53 (resolved 2026-11-11): the brief now says the Telegram token is in the secrets store, per `secrets-and-roles.md`. The earlier Docker-secret wording is gone.
 - `docs/designs/fundamentals-upstox-secondary.md` line 177: cites "section 4.2 of home-event-sources.md" for the Telegram group. The current location is overview 7.6.
 - `docs/progress/execution-ledger.md` line 39: cites `home-event-sources.md` 4.5 for Upstox News terms. The content is now at overview 4.1 and 5.4.
 - `docs/designs/secrets-and-roles.md` (after A1 and C6): add the `macro_ingest` and `upstox_news_ingest` role rows if kept, the FRED key name, and the service-token mapping to `collector` (Upstox finding 19).

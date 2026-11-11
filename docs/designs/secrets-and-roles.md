@@ -1,6 +1,6 @@
 # Secrets, roles and primary data source
 
-Status: decided 2026-11-09 (user answers recorded below). Not built. The design goes to the EGM brainstorm before any task is dispatched.
+Status: decided 2026-11-09 (user answers recorded below). S1 to S6 are built (ledger rows 1 and 5 to 9). No EGM review of this design is recorded. The plaintext data/secrets.env is not yet deleted (needs the user's yes). The web admin screen is deferred to v2.
 Related: `scanner/secrets_store.py` (today's plaintext store), `docs/designs/fundamentals-tables.md`, `docs/designs/home-event-sources.md`.
 
 ## Decisions
@@ -96,7 +96,7 @@ Stored encrypted in `app_secret` as an app-level key, set by the admin (decision
 - The collector reads its service token from a file mounted at `/run/app-keys` (same mount folder as the master key). The token is the only credential the collector holds. The master key stays in the API container only.
 - The collector requests each secret it needs from the API over the internal endpoint, authenticated with that token. The API decrypts and returns the value.
 - Each service gets its own token file. The file is readable by that service's user only.
-- Status: approved. Build (S5) not started yet.
+- Status: approved. Built: S5 (PR #73, merge 8b26503).
 
 ## Decision 16: Kite access token is runtime-only (decided 2026-11-10)
 - `kite_access_token` is not stored in `app_secret`, not imported from `data/secrets.env`, and not shared with any service. It is issued by Kite at the daily login (`scanner/auth.py`, cached in the git-ignored `.kite_token`).
