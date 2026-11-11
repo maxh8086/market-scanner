@@ -14,6 +14,7 @@ from scanner.home_events import FEEDS, ParseError, dedupe_key, parse
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Financial_Results.xml"
 FEED_CODE = "nse:Financial_Results"
 FIXTURE_LINK = "https://www.nseindia.com/companies-listing/corporate-filings-financial-results"
+INTEGRATED_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "home_events" / "nse_Integrated_Filing_Financials.xml"
 
 
 def _squash(text: str) -> str:
@@ -85,6 +86,42 @@ class HomeEventsParserTest(unittest.TestCase):
         )
         expected = "nse:Financial_Results:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
         self.assertEqual(keys[0], expected)
+
+    def test_fixture_Integrated_Filing_Financials(self):
+        body = INTEGRATED_FIXTURE.read_bytes()
+        result = parse("nse:Integrated_Filing_Financials", body)
+        self.assertEqual(len(result.items), 20)
+        self.assertEqual(result.dropped, 0)
+
+        # Literals read from the fixture bytes with xml.etree, not from parse() or the module helpers.
+        first = result.items[0]
+        self.assertEqual(first["company"], "Bajaj Hindusthan Sugar Limited")
+        self.assertEqual(
+            first["source_url"],
+            "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1756034_11112026031015_WEB.xml",
+        )
+        self.assertEqual(first["published_at"].astimezone(timezone.utc).isoformat(), "2026-11-11T09:38:07+00:00")
+
+        last = result.items[19]
+        self.assertEqual(last["company"], "Dar Credit & Capital Limited")
+        self.assertEqual(
+            last["source_url"],
+            "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_NONINDAS_1755909_10112026080955_WEB.xml",
+        )
+        self.assertEqual(last["published_at"].astimezone(timezone.utc).isoformat(), "2026-11-10T14:39:56+00:00")
+
+        keys = {
+            dedupe_key(
+                "nse:Integrated_Filing_Financials",
+                item["source_id"],
+                item["source_url"],
+                item["title"],
+                item["description"],
+                item["published_at"],
+            )
+            for item in result.items
+        }
+        self.assertEqual(len(keys), 20)
 
     def test_empty_feed(self):
         result = parse(FEED_CODE, b'<rss version="2.0"><channel></channel></rss>')
