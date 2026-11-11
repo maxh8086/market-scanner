@@ -17,6 +17,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Protocol
 from zoneinfo import ZoneInfo
 
+from scanner.company_reference import fill_from_name
+
 # Query strings: everything from "?" up to whitespace or a quote/bracket.
 _QUERY_RE = re.compile(r"(https?://[^\s'\"<>?]+)\?[^\s'\"<>]*")
 # "Bearer <token>" pairs.
@@ -399,6 +401,7 @@ def run_cycle(
     rng: Any,
     clock: Callable[[], datetime],
     cooldown: Cooldown,
+    by_name: dict[str, tuple[str, str]] | None = None,
 ) -> dict:
     """Run one NSE filings cycle (spec 5.1 to 5.4) and return the run result.
 
@@ -406,6 +409,8 @@ def run_cycle(
     enabled feeds from the rotation start. The random gap before each request is
     drawn inside `fetch_feed`, so this function does not sleep itself. Cooldown
     calls take `clock()` (the current time), not `now` (the run start).
+    `by_name` (name_key to (symbol, ISIN), from company_reference.build_index) fills
+    the symbol of items that carry only a company name; None skips that step.
     """
     try:
         cfg, enabled = _run_config(params, feeds)
@@ -468,7 +473,8 @@ def run_cycle(
         feeds_ok += 1
         fetched += len(outcome.items)
         dropped += outcome.dropped
-        kept, counts = filter_items(outcome.items, universe)
+        items = outcome.items if by_name is None else fill_from_name(outcome.items, by_name)
+        kept, counts = filter_items(items, universe)
         universe_rejected += counts["universe"]
         rows = [to_event_row(feed, item) for item in kept]
         seen: set[str] = set()
