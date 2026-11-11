@@ -249,8 +249,8 @@ def stage_filings(db, df: pd.DataFrame, limit: int | None = None,
     if "isin" not in df.columns or not (df["isin"].astype(str) != "").any():
         _die("no usable 'isin' for any row, and NSE announcements are keyed by "
              "ISIN rather than by symbol.\n"
-             "  Re-run ath_scan.py, or check data/ind_niftytotalmarket_list.csv "
-             "is present and readable.\n"
+             "  Re-run ath_scan.py, or check that the monthly job has loaded index_constituents "
+             "(python -m scanner.company_reference_job).\n"
              "  --report still works without it.")
     today = date.today()
     candidates, funnel = _candidate_filings(df, today, refresh=refresh_factors)

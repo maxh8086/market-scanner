@@ -36,7 +36,7 @@ import pandas as pd  # noqa: E402
 from psycopg import Error as PsycopgError  # noqa: E402
 
 from scanner import isin_resolver  # noqa: E402
-from scanner.constituents import load_constituents  # noqa: E402
+from scanner.constituents import DEFAULT_INDEX, load_constituents  # noqa: E402
 from scanner.history import _to_frame  # noqa: E402
 from scanner.pg import db as pg_db  # noqa: E402
 from scanner.upstox import (  # noqa: E402
@@ -169,9 +169,24 @@ def _error_text(exc: BaseException) -> str:
     return text[:ERROR_MAX_CHARS]
 
 
-def load_universe(symbols_arg: str | None, limit: int | None) -> list[tuple[str, str]]:
-    """Return [(symbol, isin)] from the Nifty Total Market constituents list."""
-    df = load_constituents()
+def _master_from_db() -> tuple[dict | None, str]:
+    """The Upstox master from company_reference. Never raises; (None, reason) when unavailable."""
+    try:
+        with pg_db.connect(connect_timeout=5) as conn:
+            return isin_resolver.try_load_master(conn)
+    except Exception as exc:  # unconfigured or unreachable
+        first = (str(exc).splitlines() or [""])[0]
+        return None, f"{type(exc).__name__}: {first}"
+
+
+def load_universe(symbols_arg: str | None, limit: int | None, index_name: str = DEFAULT_INDEX) -> list[tuple[str, str]]:
+    """Return [(symbol, isin)] from the constituents of index_name (read from the database)."""
+    try:
+        df = load_constituents(index_name=index_name)
+    except Exception as exc:  # no database, bad POSTGRES_* settings, or no rows for the index
+        # The exception names the cause; pass it through instead of a generic hint.
+        print(f"error: {_one_line(exc)}")
+        raise SystemExit(1) from None
     df = df.assign(
         Symbol=df["Symbol"].astype(str).str.strip().str.upper(),
         ISIN=df["ISIN Code"].fillna("").astype(str).str.strip(),
@@ -192,7 +207,7 @@ def load_universe(symbols_arg: str | None, limit: int | None) -> list[tuple[str,
 def _apply_isin_resolution(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """Swap stale CSV ISINs for the master's ISIN. Symbols stay as they are (storage is symbol-keyed).
     If the master is unavailable, the CSV ISINs are returned unchanged."""
-    master, reason = isin_resolver.try_load_master()
+    master, reason = _master_from_db()
     if master is None:
         print(f"Warning: ISIN master unavailable ({reason}); using constituents CSV ISINs.")
         return pairs
@@ -203,18 +218,6 @@ def _apply_isin_resolution(pairs: list[tuple[str, str]]) -> list[tuple[str, str]
             print(isin_resolver.describe_change(symbol, isin, res))
         out.append((symbol, res.isin if res.resolved and res.isin else isin))
     return out
-
-
-def _refreshed_isin(symbol: str, isin: str) -> str | None:
-    """Re-resolve one symbol from a freshly downloaded master. Returns the new ISIN only when it differs."""
-    master, reason = isin_resolver.try_load_master(refresh=True)
-    if master is None:
-        print(f"{symbol}: ISIN refresh skipped ({reason})")
-        return None
-    res = isin_resolver.resolve(symbol, isin, master)
-    if not res.resolved or not res.isin or res.isin == isin.strip().upper():
-        return None
-    return res.isin
 
 
 def _as_date(value) -> date:
@@ -338,18 +341,7 @@ def pull_symbol(client, conn: sqlite3.Connection, symbol: str, isin: str,
     if start > today:
         df = pd.DataFrame()
     else:
-        try:
-            df = _fetch_range(client, instrument_key(isin), start, today)
-        except UpstoxError as exc:
-            # HTTP 400 can mean a stale ISIN. Re-resolve once from a fresh master; retry only if it changed.
-            if _status_code(exc) != 400:
-                raise
-            new_isin = _refreshed_isin(symbol, isin)
-            if new_isin is None:
-                raise
-            print(f"{symbol}: HTTP 400 with ISIN {isin}; retrying with {new_isin} from refreshed master")
-            isin = new_isin
-            df = _fetch_range(client, instrument_key(isin), start, today)
+        df = _fetch_range(client, instrument_key(isin), start, today)
 
     written = _write_candles(conn, symbol, df) if len(df) else 0
     first, last = conn.execute(
@@ -415,6 +407,8 @@ def main(argv: list[str] | None = None) -> int:
                         help=f"calendar days back from today (default {DEFAULT_DAYS})")
     parser.add_argument("--db", default=str(DEFAULT_DB), help=f"SQLite file (default {DEFAULT_DB})")
     parser.add_argument("--limit", type=int, default=None, help="process only the first N symbols")
+    parser.add_argument("--index", default=DEFAULT_INDEX,
+                        help=f"index whose constituents define the universe, loaded monthly into the database (default {DEFAULT_INDEX})")
     args = parser.parse_args(argv)
 
     if args.days < 1:
@@ -424,7 +418,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         parser.error(str(exc))
 
-    universe = load_universe(args.symbols, args.limit)
+    universe = load_universe(args.symbols, args.limit, args.index)
     if not universe:
         print("No symbols to pull.")
         return 0

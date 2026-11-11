@@ -24,7 +24,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from scanner import ath, factors, history, indicators, isin_resolver, report
-from scanner.constituents import load_constituents
+from scanner.constituents import DEFAULT_INDEX, load_constituents
 from scanner.upstox import QUOTE_BATCH_SIZE, UpstoxClient, instrument_key
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -78,6 +78,18 @@ def _record_isin_history(resolutions) -> None:
         print(f"Warning: ISIN history not recorded ({type(exc).__name__}).", file=sys.stderr)
 
 
+def _load_master_for_scan() -> tuple[dict | None, str]:
+    """The Upstox master from company_reference. Read from the database whatever the market-data
+    backend, because the constituents come from the database too. (None, reason) when unreadable."""
+    try:
+        from scanner.pg import db
+        with db.connect() as conn:
+            return isin_resolver.try_load_master(conn)
+    except Exception as exc:  # noqa: BLE001 - the scan carries on with the constituents ISINs
+        first = (str(exc).splitlines() or [""])[0]
+        return None, f"{type(exc).__name__}: {first}"
+
+
 def _is_backend_failure(exc: Exception) -> bool:
     """True for infrastructure errors that would hit every symbol: a dropped or
     refused Postgres connection, or a configuration error raised from the
@@ -100,7 +112,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--constituents", type=str, default=None, help="Path to a local constituents CSV override")
     p.add_argument("--symbols", type=str, default=None, help="Comma-separated symbols to scan instead of the full index")
     p.add_argument("--verbose", action="store_true", help="Verbose logging")
-    p.add_argument("--rebuild", action="store_true", help="Re-download constituents, instruments, and all history")
+    p.add_argument("--index", type=str, default=DEFAULT_INDEX,
+                   help="index whose constituents define the scan universe (loaded monthly into the database)")
+    p.add_argument("--rebuild", action="store_true",
+                   help="constituents and the ISIN master no longer refresh here (the monthly job loads them); still forces a full price-history re-fetch")
     p.add_argument("--refresh-history", type=str, default=None, help="Comma-separated symbols to force-refresh history for")
     p.add_argument("--no-factors", action="store_true", help="Skip corporate factors enrichment")
     p.add_argument("--refresh-factors", action="store_true", help="Force re-fetch corporate factors data")
@@ -140,7 +155,16 @@ def main() -> int:
     client = UpstoxClient()
 
     print("Loading Nifty Total Market constituents...")
-    constituents_df = load_constituents(override_path=args.constituents, refresh=args.rebuild)
+    try:
+        constituents_df = load_constituents(override_path=args.constituents, index_name=args.index)
+    except Exception as exc:  # no database, bad POSTGRES_* settings, or no rows for the index
+        if args.constituents:
+            raise  # a bad local CSV is not a database problem
+        # The exception names the cause (unset POSTGRES_*, unreachable server, or an index the
+        # monthly job has not loaded), so pass its first line through.
+        first = (str(exc).splitlines() or [type(exc).__name__])[0]
+        print(f"error: {first}", file=sys.stderr)
+        return 1
     if args.verbose:
         print(f"  {len(constituents_df)} constituents (DUMMY rows already dropped)")
 
@@ -164,7 +188,7 @@ def main() -> int:
 
     # The Upstox NSE master corrects stale CSV ISINs and renames. Loaded once per run;
     # if it is unavailable the CSV ISINs are used and the scan carries on.
-    master, master_reason = isin_resolver.try_load_master()
+    master, master_reason = _load_master_for_scan()
     if master is None:
         print(f"Warning: ISIN master unavailable ({master_reason}); using constituents CSV ISINs.", file=sys.stderr)
     resolutions: list[isin_resolver.Resolution] = []

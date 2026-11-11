@@ -1,11 +1,6 @@
 """Offline tests for scanner.isin_resolver. No network and no database."""
-import gzip
-import json
-import os
-import tempfile
 import unittest
 from datetime import date
-from pathlib import Path
 from unittest import mock
 
 from scanner import isin_resolver as ir
@@ -24,17 +19,26 @@ class FakeConn:
         self.calls.append((" ".join(sql.split()), params))
 
 
-def _master_rows():
-    return [
-        {"trading_symbol": "CCAVENUE", "isin": "INE483S01038", "segment": "NSE_EQ", "instrument_type": "EQ"},
-        {"trading_symbol": "RELIANCE", "isin": "INE002A01018", "segment": "NSE_EQ", "instrument_type": "EQ"},
-        {"trading_symbol": "NIFTY50", "isin": "INE999X01001", "segment": "NSE_INDEX", "instrument_type": "INDEX"},
-        {"trading_symbol": "RELBOND", "isin": "INE002A08001", "segment": "NSE_EQ", "instrument_type": "BE"},
-    ]
+class _MasterCursor:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def fetchall(self):
+        return self._rows
 
 
-def _gz_bytes(rows):
-    return gzip.compress(json.dumps(rows).encode("utf-8"))
+class _MasterConn:
+    """Fake connection for the company_reference read: execute() returns rows from fetchall()."""
+
+    def __init__(self, rows):
+        self.rows = rows
+        self.sql = None
+        self.params = None
+
+    def execute(self, sql, params=()):
+        self.sql = " ".join(sql.split())
+        self.params = params
+        return _MasterCursor(self.rows)
 
 
 class ResolveTests(unittest.TestCase):
@@ -121,72 +125,79 @@ class ResolveAllTests(unittest.TestCase):
             conn = FakeConn()
             out = ir.resolve_all(pairs, conn=conn)
         self.assertEqual(lm.call_count, 1)
+        lm.assert_called_once_with(conn)
         self.assertEqual([r.isin for r in out], ["INE483S01038", "INE002A01018"])
         self.assertEqual(len(conn.calls), 2)
 
-    def test_no_conn_writes_nothing(self):
-        with mock.patch.object(ir, "load_master", return_value=MASTER):
-            out = ir.resolve_all([("RELIANCE", "INE002A01018")])
-        self.assertEqual(len(out), 1)
+    def test_record_results_false_writes_nothing(self):
+        statements = []
+
+        class _ReadOnlyConn(_MasterConn):
+            def execute(self, sql, params=()):
+                statements.append(" ".join(sql.split()))
+                return super().execute(sql, params)
+
+        conn = _ReadOnlyConn([
+            {"symbol": "CCAVENUE", "isin": "INE483S01038"},
+            {"symbol": "RELIANCE", "isin": "INE002A01018"},
+        ])
+        pairs = [("CCAVENUE", "INE483S01020"), ("RELIANCE", "INE002A01018")]
+        out = ir.resolve_all(pairs, conn, record_results=False)
+        self.assertEqual(len(statements), 1)  # the master read only
+        self.assertIn("company_reference", statements[0])
+        self.assertEqual([r.isin for r in out], ["INE483S01038", "INE002A01018"])
 
 
-class LoadMasterTests(unittest.TestCase):
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.dir = Path(self._tmp.name)
-        self.cache = self.dir / "data" / "upstox_nse_master.json.gz"
-
-    def tearDown(self):
-        self._tmp.cleanup()
-
-    def _write_cache(self, rows, age_seconds):
-        self.cache.parent.mkdir(parents=True, exist_ok=True)
-        self.cache.write_bytes(_gz_bytes(rows))
-        mtime = 1_000_000_000 + 0  # arbitrary fixed epoch
-        os.utime(self.cache, (mtime, mtime))
-        return mtime + age_seconds  # "now" that makes the file this old
-
-    def test_parse_keeps_only_nse_equity(self):
-        m = ir._parse(_gz_bytes(_master_rows()))
+class LoadMasterFromDbTests(unittest.TestCase):
+    def test_shape_matches_resolver(self):
+        conn = _MasterConn([
+            {"symbol": "CCAVENUE", "isin": "INE483S01038"},
+            {"symbol": "RELIANCE", "isin": "INE002A01018"},
+        ])
+        m = ir.load_master(conn)
         self.assertEqual(m["by_symbol"], {"CCAVENUE": "INE483S01038", "RELIANCE": "INE002A01018"})
         self.assertEqual(m["by_isin"], {"INE483S01038": "CCAVENUE", "INE002A01018": "RELIANCE"})
+        self.assertIn("company_reference", conn.sql)
+        self.assertEqual(conn.params, ("upstox_master",))
 
-    def test_fresh_cache_used_without_download(self):
-        now = self._write_cache(_master_rows(), age_seconds=60)
-        with mock.patch.object(ir, "_download") as dl:
-            m = ir.load_master(cache_path=self.cache, now=now)
-        dl.assert_not_called()
-        self.assertIn("CCAVENUE", m["by_symbol"])
+    def test_tuple_rows_accepted(self):
+        m = ir.load_master(_MasterConn([("RELIANCE", "INE002A01018")]))
+        self.assertEqual(m["by_isin"], {"INE002A01018": "RELIANCE"})
 
-    def test_stale_cache_triggers_download_and_refresh(self):
-        now = self._write_cache([], age_seconds=ir.MAX_AGE_SECONDS + 1)
-        with mock.patch.object(ir, "_download", return_value=_gz_bytes(_master_rows())) as dl:
-            m = ir.load_master(cache_path=self.cache, now=now)
-        dl.assert_called_once_with(ir.MASTER_URL)
-        self.assertEqual(m["by_isin"]["INE483S01038"], "CCAVENUE")
-        # cache rewritten with the fresh bytes
-        self.assertEqual(ir._parse(self.cache.read_bytes())["by_symbol"]["RELIANCE"], "INE002A01018")
+    def test_no_connection_raises(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            ir.load_master(None)
+        self.assertIn("no database connection", str(ctx.exception))
 
-    def test_missing_cache_downloads(self):
-        with mock.patch.object(ir, "_download", return_value=_gz_bytes(_master_rows())):
-            m = ir.load_master(cache_path=self.cache, now=2_000_000_000)
-        self.assertTrue(self.cache.exists())
-        self.assertIn("RELIANCE", m["by_symbol"])
+    def test_empty_table_raises(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            ir.load_master(_MasterConn([]))
+        self.assertIn("monthly job", str(ctx.exception))
 
-    def test_download_failure_with_stale_cache_uses_it_and_warns(self):
-        now = self._write_cache(_master_rows(), age_seconds=ir.MAX_AGE_SECONDS * 3)
-        with mock.patch.object(ir, "_download", side_effect=OSError("network down")):
-            with self.assertLogs("scanner.isin_resolver", level="WARNING") as logs:
-                m = ir.load_master(cache_path=self.cache, now=now)
-        self.assertEqual(m["by_symbol"]["CCAVENUE"], "INE483S01038")
-        self.assertTrue(any("stale cache" in line for line in logs.output))
+    def test_try_load_master_returns_master(self):
+        master, reason = ir.try_load_master(_MasterConn([("RELIANCE", "INE002A01018")]))
+        self.assertEqual(reason, "")
+        self.assertIn("RELIANCE", master["by_symbol"])
 
-    def test_download_failure_without_cache_raises(self):
-        with mock.patch.object(ir, "_download", side_effect=OSError("network down")):
-            with self.assertRaises(RuntimeError) as ctx:
-                ir.load_master(cache_path=self.cache, now=2_000_000_000)
-        self.assertNotIn("\n", str(ctx.exception))
-        self.assertIn("no cache", str(ctx.exception))
+    def test_try_load_master_never_raises(self):
+        master, reason = ir.try_load_master(_MasterConn([]))
+        self.assertIsNone(master)
+        self.assertNotIn("\n", reason)
+        self.assertIn("monthly job", reason)
+
+    def test_try_load_master_without_conn(self):
+        master, reason = ir.try_load_master(None)
+        self.assertIsNone(master)
+        self.assertIn("no database connection", reason)
+
+    def test_try_load_master_query_error_is_caught(self):
+        class _Broken:
+            def execute(self, sql, params=()):
+                raise OSError("connection dropped\nsecond line")
+
+        master, reason = ir.try_load_master(_Broken())
+        self.assertIsNone(master)
+        self.assertEqual(reason, "OSError: connection dropped")
 
 
 if __name__ == "__main__":

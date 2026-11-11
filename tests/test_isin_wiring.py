@@ -3,9 +3,7 @@
 No network, no database: the master, the Upstox client, the constituents and the
 history loader are all patched.
 """
-import gzip
 import io
-import json
 import os
 import tempfile
 import unittest
@@ -61,8 +59,9 @@ def _ath_patches(stack, master_result, backend="sqlite", record_side_effect=None
     stack.enter_context(mock.patch.object(ath_scan.report, "write_outputs", return_value=("a.csv", "a.xlsx")))
     stack.enter_context(mock.patch.object(ath_scan.report, "print_summary"))
     stack.enter_context(mock.patch.object(ath_scan.report, "write_skipped"))
-    stack.enter_context(mock.patch.object(ath_scan.isin_resolver, "try_load_master", return_value=master_result))
+    stack.enter_context(mock.patch.object(ath_scan, "_load_master_for_scan", return_value=master_result))
     stack.enter_context(mock.patch("scanner.marketdata.get_backend", return_value=backend))
+    # The startup backend check and the ISIN history write both open a connection; keep them offline.
     stack.enter_context(mock.patch("scanner.pg.db.connect", return_value=mock.MagicMock()))
     stack.enter_context(mock.patch.object(
         ath_scan.history, "get_history",
@@ -143,13 +142,16 @@ class PullUniverseWiringTests(unittest.TestCase):
         ])
 
     def test_load_universe_applies_resolution(self):
-        with mock.patch.object(pull, "load_constituents", return_value=self._csv()), \
+        with mock.patch.object(pull, "load_constituents", return_value=self._csv()) as lc, \
+             mock.patch("scanner.pg.db.connect", return_value=mock.MagicMock()), \
              mock.patch.object(ir, "try_load_master", return_value=(MASTER, "")):
             pairs = pull.load_universe(None, None)
+        lc.assert_called_once_with(index_name="NIFTY TOTAL MARKET")
         self.assertEqual(pairs, [("AAA", NEW_AAA), ("BBB", "INE000000002")])
 
     def test_load_universe_falls_back_when_master_unavailable(self):
         with mock.patch.object(pull, "load_constituents", return_value=self._csv()), \
+             mock.patch("scanner.pg.db.connect", return_value=mock.MagicMock()), \
              mock.patch.object(ir, "try_load_master", return_value=(None, "RuntimeError: down")):
             out = io.StringIO()
             with redirect_stdout(out):
@@ -163,10 +165,13 @@ class PullSymbolRetryTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self._env = mock.patch.dict(os.environ, {"UPSTOX_PULL_LOG": "sqlite"})
         self._env.start()
+        self._db = mock.patch("scanner.pg.db.connect", return_value=mock.MagicMock())
+        self._db.start()
         self.conn = pull.connect(Path(self._tmp.name) / "candles.db")
 
     def tearDown(self):
         self.conn.close()
+        self._db.stop()
         self._env.stop()
         self._tmp.cleanup()
 
@@ -174,28 +179,21 @@ class PullSymbolRetryTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             return pull.pull_symbol(client, self.conn, "AAA", isin, 10, TODAY, NOW)
 
-    def test_retries_once_on_400_when_isin_changed(self):
+    def test_400_is_not_retried_even_when_master_has_new_isin(self):
+        # The master is the DB copy already applied, so a retry cannot find a new ISIN. One fetch, then raise.
         client = _Client400(bad_key=f"NSE_EQ|{OLD_AAA}")
-        with mock.patch.object(ir, "try_load_master", return_value=(MASTER, "")) as tlm:
-            status = self._pull(client)
-        self.assertEqual(status, "empty")
-        self.assertEqual(client.keys, [f"NSE_EQ|{OLD_AAA}", f"NSE_EQ|{NEW_AAA}"])
-        tlm.assert_called_once_with(refresh=True)
-
-    def test_no_retry_when_isin_unchanged(self):
-        same = {"by_symbol": {"AAA": OLD_AAA}, "by_isin": {OLD_AAA: "AAA"}}
-        client = _Client400(bad_key=f"NSE_EQ|{OLD_AAA}")
-        with mock.patch.object(ir, "try_load_master", return_value=(same, "")):
+        with mock.patch.object(ir, "try_load_master", return_value=(MASTER, "")):
             with self.assertRaises(UpstoxError) as ctx:
                 self._pull(client)
         self.assertEqual(client.keys, [f"NSE_EQ|{OLD_AAA}"])
         self.assertIn("HTTP 400", str(ctx.exception))
 
-    def test_refresh_failure_raises_original_400(self):
+    def test_400_raises_original_error_without_master_lookup(self):
         client = _Client400(bad_key=f"NSE_EQ|{OLD_AAA}")
-        with mock.patch.object(ir, "try_load_master", return_value=(None, "RuntimeError: down")):
+        with mock.patch.object(ir, "try_load_master") as tlm:
             with self.assertRaises(UpstoxError) as ctx:
                 self._pull(client)
+        tlm.assert_not_called()
         self.assertEqual(client.keys, [f"NSE_EQ|{OLD_AAA}"])
         self.assertIn("HTTP 400 from https://api.example", str(ctx.exception))
 
@@ -206,19 +204,6 @@ class PullSymbolRetryTests(unittest.TestCase):
                 self._pull(client)
         tlm.assert_not_called()
         self.assertEqual(client.keys, [f"NSE_EQ|{OLD_AAA}"])
-
-
-class LoadMasterRefreshTests(unittest.TestCase):
-    def test_refresh_downloads_even_with_fresh_cache(self):
-        rows = [{"segment": "NSE_EQ", "instrument_type": "EQ", "trading_symbol": "AAA", "isin": NEW_AAA}]
-        raw = gzip.compress(json.dumps(rows).encode("utf-8"))
-        with tempfile.TemporaryDirectory() as tmp:
-            cache = Path(tmp) / "master.json.gz"
-            cache.write_bytes(gzip.compress(b"[]"))  # fresh, but stale content
-            with mock.patch.object(ir, "_download", return_value=raw) as dl:
-                master = ir.load_master(cache_path=cache, refresh=True)
-        dl.assert_called_once()
-        self.assertEqual(master["by_symbol"], {"AAA": NEW_AAA})
 
 
 class DescribeChangeTests(unittest.TestCase):

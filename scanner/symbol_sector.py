@@ -3,15 +3,17 @@
     python scanner/symbol_sector.py [--dry-run] [--csv PATH]
     python -m scanner.symbol_sector [--dry-run] [--csv PATH]    (inside the scanner image)
 
-Reads data/ind_niftytotalmarket_list.csv (the cache written by scanner/constituents.py).
-The whole file is validated before anything is written; a bad file exits 1 with no rows
-written. Rows are upserted by symbol and set nse_industry, isin and as_of.
+Reads the index_constituents table through scanner.constituents.load_constituents(), which
+the monthly job (scanner/company_reference_job.py) fills. --csv PATH reads a local NSE CSV
+instead. The whole list is validated before anything is written; a bad list exits 1 with no
+rows written. Rows are upserted by symbol and set nse_industry, isin and as_of.
 
 sub_sector and sub_sector_source are the user's mapping. The upsert never names them,
 so a re-run cannot overwrite them. Rows that were in the table before and are no longer
 in the file are left alone; nothing is deleted.
 
---dry-run validates the file and prints counts. It does not connect to the database.
+--dry-run validates the list and prints counts. It writes nothing. With --csv it does not
+connect to the database; without --csv it reads the database to validate.
 """
 from __future__ import annotations
 
@@ -24,8 +26,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-DEFAULT_CSV = ROOT / "data" / "ind_niftytotalmarket_list.csv"
 
 # NSE dates are Indian. IST has no daylight saving, so a fixed offset is exact and needs no tz database.
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
@@ -88,6 +88,27 @@ def parse_csv(path: Path) -> list[tuple[str, str, str]]:
     return rows
 
 
+def rows_from_db() -> list[tuple[str, str, str]]:
+    """Return [(symbol, isin, industry)] from index_constituents. Raises BadCsv on any problem."""
+    from scanner.constituents import load_constituents  # imported here so --csv runs need no database
+
+    try:
+        df = load_constituents()
+    except Exception as exc:  # no database, bad POSTGRES_* settings, or no rows for the index
+        first = (str(exc).splitlines() or [type(exc).__name__])[0]
+        raise BadCsv(first) from None
+    rows = []
+    for s, i, n in zip(df["Symbol"], df["ISIN Code"], df["Industry"]):
+        missing = n is None or (isinstance(n, float) and n != n)  # None or NaN
+        industry = "" if missing else str(n).strip()
+        if not industry:  # same rule as the CSV path: a blank Industry is rejected
+            raise BadCsv(f"index_constituents: {str(s).strip()} has no Industry")
+        rows.append((str(s).strip(), str(i).strip(), industry))
+    if not rows:
+        raise BadCsv("index_constituents: zero data rows")
+    return rows
+
+
 def today_ist(now: dt.datetime | None = None) -> dt.date:
     """The IST calendar date. The container clock is UTC, so date.today() can be a day behind."""
     moment = now if now is not None else dt.datetime.now(IST)
@@ -107,13 +128,19 @@ def write_rows(rows: list[tuple[str, str, str]], as_of: dt.date) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--csv", type=Path, default=DEFAULT_CSV, help="path to the NSE constituents CSV")
+    parser.add_argument("--csv", type=Path, default=None,
+                        help="read this NSE constituents CSV instead of the database")
     parser.add_argument("--dry-run", action="store_true",
-                        help="validate and print counts; write nothing, do not connect")
+                        help="validate and print counts; write nothing")
     args = parser.parse_args(argv)
 
     try:
-        rows = parse_csv(args.csv)
+        if args.csv is None:
+            source = "index_constituents"
+            rows = rows_from_db()
+        else:
+            source = args.csv.name
+            rows = parse_csv(args.csv)
     except BadCsv as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -121,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
     counts: dict[str, int] = {}
     for _, _, industry in rows:
         counts[industry] = counts.get(industry, 0) + 1
-    print(f"{len(rows)} symbols in {len(counts)} NSE industries from {args.csv.name}")
+    print(f"{len(rows)} symbols in {len(counts)} NSE industries from {source}")
 
     if args.dry_run:
         print("dry run: nothing written")

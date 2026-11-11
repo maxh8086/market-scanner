@@ -90,6 +90,16 @@ class BackendCheckTests(unittest.TestCase):
         self.assertIn("scripts/ensure_postgres.ps1", err)
         self.assertIn("MARKETDATA_BACKEND=sqlite", err)
 
+    def test_constituents_failure_exits_1_with_clear_message(self):
+        code, _, err = self._run_main([
+            mock.patch.object(ath_scan, "load_constituents",
+                              side_effect=RuntimeError("no rows for index NIFTY TOTAL MARKET")),
+        ])
+        self.assertEqual(code, 1)
+        self.assertIn("error: no rows for index NIFTY TOTAL MARKET", err)
+        self.assertEqual(len(err.strip().splitlines()), 1)  # one line, no traceback
+        self.assertNotIn("MARKETDATA_BACKEND", err)
+
     def test_per_symbol_value_error_skips_only_that_symbol(self):
         def fake_history(client, key, sym, force_refresh=False, today=None):
             if sym == "AAA":

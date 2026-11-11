@@ -1,8 +1,10 @@
 """Tests for scanner/symbol_sector.py. Offline: uses temporary CSV files and no database."""
 import datetime as dt
+import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scanner import symbol_sector as ss
 
@@ -60,6 +62,47 @@ class TodayIstTests(unittest.TestCase):
     def test_ist_morning_stays_on_same_date(self):
         ist_morning = dt.datetime(2026, 11, 9, 1, 0, tzinfo=ss.IST)
         self.assertEqual(ss.today_ist(ist_morning), dt.date(2026, 11, 9))
+
+
+class DbSourceTests(unittest.TestCase):
+    def test_default_source_is_the_database_loader(self):
+        import pandas as pd
+        df = pd.DataFrame([{"Symbol": "ABB", "ISIN Code": "INE117A01022", "Industry": "Capital Goods"}])
+        with mock.patch("scanner.constituents.load_constituents", return_value=df) as load, \
+             mock.patch.object(ss, "write_rows") as write:
+            code = ss.main(["--dry-run"])
+        self.assertEqual(code, 0)
+        load.assert_called_once_with()
+        write.assert_not_called()
+
+    def test_database_failure_exits_1_with_clear_message(self):
+        with mock.patch("scanner.constituents.load_constituents", side_effect=RuntimeError("no rows")), \
+             mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            code = ss.main(["--dry-run"])
+        self.assertEqual(code, 1)
+        self.assertIn("no rows", err.getvalue())  # the real cause, not a generic hint
+
+
+class DbRowsTests(unittest.TestCase):
+    def test_blank_industry_from_db_is_rejected_not_stored_as_none(self):
+        import pandas as pd
+        df = pd.DataFrame([{"Symbol": "AAA", "ISIN Code": "INE000000001", "Industry": None}])
+        with mock.patch("scanner.constituents.load_constituents", return_value=df):
+            with self.assertRaises(ss.BadCsv):
+                ss.rows_from_db()
+
+    def test_nan_industry_from_db_is_rejected(self):
+        import pandas as pd
+        df = pd.DataFrame([{"Symbol": "AAA", "ISIN Code": "INE000000001", "Industry": float("nan")}])
+        with mock.patch("scanner.constituents.load_constituents", return_value=df):
+            with self.assertRaises(ss.BadCsv):
+                ss.rows_from_db()
+
+    def test_valid_industry_from_db_is_kept(self):
+        import pandas as pd
+        df = pd.DataFrame([{"Symbol": "ABB", "ISIN Code": "INE117A01022", "Industry": " Capital Goods "}])
+        with mock.patch("scanner.constituents.load_constituents", return_value=df):
+            self.assertEqual(ss.rows_from_db(), [("ABB", "INE117A01022", "Capital Goods")])
 
 
 class UpsertSqlTests(unittest.TestCase):

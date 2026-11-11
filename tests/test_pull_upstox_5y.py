@@ -154,7 +154,7 @@ class PullUpstox5yTests(unittest.TestCase):
         client = FakeClient(TODAY - timedelta(days=9), TODAY,
                             fail={"NSE_EQ|INE000000003": UpstoxError("HTTP 400 from x -- bad input")})
         # The 400 would trigger an ISIN master lookup; keep it offline and unresolved.
-        with patch("scanner.isin_resolver.try_load_master", return_value=(None, "offline test")):
+        with patch.object(pull, "_master_from_db", return_value=(None, "offline test")):
             s = pull.run(client, self.conn, [("CCAVENUE", "INE000000003")], 10, TODAY,
                          datetime(2026, 11, 1, 9))
         self.assertEqual(s["failed"], ["CCAVENUE"])
@@ -163,6 +163,18 @@ class PullUpstox5yTests(unittest.TestCase):
         ).fetchone()[0]
         self.assertIn("HTTP 400", error)
         self.assertIn("bad input", error)
+
+    def test_400_is_not_retried_even_when_master_has_new_isin(self):
+        # The master is the same DB copy that was already applied, so a new ISIN cannot appear
+        # on retry. A 400 must fail the symbol after one fetch.
+        client = FakeClient(TODAY - timedelta(days=9), TODAY,
+                            fail={"NSE_EQ|INE000000003": UpstoxError("HTTP 400 from x -- bad input")})
+        master = {"by_symbol": {"CCAVENUE": "INE999999999"}, "by_isin": {"INE999999999": "CCAVENUE"}}
+        with patch.object(pull, "_master_from_db", return_value=(master, "test")):
+            s = pull.run(client, self.conn, [("CCAVENUE", "INE000000003")], 10, TODAY,
+                         datetime(2026, 11, 1, 9))
+        self.assertEqual(s["failed"], ["CCAVENUE"])
+        self.assertEqual(len(client.calls), 1)
 
     def test_error_text_is_redacted_and_capped(self):
         secret = "Bearer eyJsecret123"

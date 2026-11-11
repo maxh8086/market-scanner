@@ -1,35 +1,29 @@
-"""Resolve each constituent's ISIN and symbol against Upstox's public NSE instrument master.
+"""Resolve each constituent's ISIN and symbol against the Upstox NSE instrument master.
 
-The constituents CSV (scanner/constituents.py) goes stale: an ISIN can change (CCAVENUE
+The constituents list (scanner/constituents.py) goes stale: an ISIN can change (CCAVENUE
 moved from INE483S01020 to INE483S01038) and a symbol can be renamed while its ISIN stays.
 This module checks each (symbol, ISIN) pair against the master and reports what changed.
 
-    master = load_master()                      # cached for one day
+    master = load_master(conn)                  # read from company_reference (monthly job)
     res = resolve("CCAVENUE", "INE483S01020", master)
     # res.isin == "INE483S01038", res.changed is True
 
-The master is a gzip JSON list. Only NSE equity rows are kept (segment NSE_EQ, instrument_type EQ).
-No auth is needed for this file.
+The master is stored in Postgres by the monthly job (scanner/company_reference_job.py). This
+module never downloads it at run time.
 """
 from __future__ import annotations
 
-import gzip
-import json
 import logging
-import os
-import time
 from dataclasses import dataclass
 from datetime import date
-from pathlib import Path
 from typing import Optional
 
-import requests
+from scanner import company_reference as cr
 
 logger = logging.getLogger(__name__)
 
+# Used by the monthly job (scanner/company_reference_job.py); not used at run time.
 MASTER_URL = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
-CACHE_PATH = Path(__file__).resolve().parents[1] / "data" / "upstox_nse_master.json.gz"
-MAX_AGE_SECONDS = 24 * 60 * 60
 SOURCE = "upstox_nse_master"
 DOWNLOAD_TIMEOUT = 60
 
@@ -44,64 +38,15 @@ class Resolution:
     resolved: bool = True
 
 
-def _download(url: str) -> bytes:
-    resp = requests.get(url, timeout=DOWNLOAD_TIMEOUT)
-    resp.raise_for_status()
-    return resp.content
-
-
-def _parse(raw_gz: bytes) -> dict:
-    rows = json.loads(gzip.decompress(raw_gz).decode("utf-8"))
-    by_symbol: dict = {}
-    by_isin: dict = {}
-    for row in rows:
-        if row.get("segment") != "NSE_EQ" or row.get("instrument_type") != "EQ":
-            continue
-        symbol = (row.get("trading_symbol") or "").strip().upper()
-        isin = (row.get("isin") or "").strip().upper()
-        if not symbol or not isin:
-            continue
-        by_symbol[symbol] = isin
-        by_isin[isin] = symbol
-    return {"by_symbol": by_symbol, "by_isin": by_isin}
-
-
-def _is_fresh(path: Path, now: float) -> bool:
-    return path.exists() and (now - path.stat().st_mtime) < MAX_AGE_SECONDS
-
-
-def _write_cache(path: Path, raw_gz: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_bytes(raw_gz)
-    os.replace(tmp, path)
-
-
-def load_master(cache_path: Optional[Path] = None, now: Optional[float] = None, refresh: bool = False) -> dict:
+def load_master(conn=None) -> dict:
     """Return {"by_symbol": {SYMBOL: isin}, "by_isin": {isin: SYMBOL}} for NSE equities.
 
-    Uses the cache when it is under a day old. Otherwise downloads and refreshes it. If the
-    download fails, a stale cache is used with a warning; with no cache at all, RuntimeError.
-    refresh=True skips the fresh-cache check and always downloads first.
+    Read from company_reference (source upstox_master). Raises RuntimeError when no
+    connection is given or the table has no master rows.
     """
-    path = Path(cache_path) if cache_path is not None else CACHE_PATH
-    now = time.time() if now is None else now
-    if not refresh and _is_fresh(path, now):
-        return _parse(path.read_bytes())
-    try:
-        raw = _download(MASTER_URL)
-        master = _parse(raw)
-    except Exception as exc:
-        reason = f"{type(exc).__name__}: {exc}".splitlines()[0]
-        if not path.exists():
-            raise RuntimeError(f"Upstox NSE instrument master unavailable and no cache at {path} ({reason})") from exc
-        logger.warning("Upstox NSE instrument master download failed (%s); using stale cache %s", reason, path)
-        try:
-            return _parse(path.read_bytes())
-        except Exception as bad:
-            raise RuntimeError(f"Upstox NSE instrument master unavailable: download failed ({reason}) and cache {path} is unreadable") from bad
-    _write_cache(path, raw)
-    return master
+    if conn is None:
+        raise RuntimeError("no database connection: the Upstox master is read from company_reference")
+    return cr.load_master_from_db(conn)
 
 
 def resolve(symbol: str, csv_isin: Optional[str], master: Optional[dict] = None) -> Resolution:
@@ -134,13 +79,14 @@ def resolve(symbol: str, csv_isin: Optional[str], master: Optional[dict] = None)
     return Resolution(sym, isin, changed=False, reason="not found in master", resolved=False)
 
 
-def try_load_master(refresh: bool = False) -> tuple[Optional[dict], str]:
+def try_load_master(conn=None) -> tuple[Optional[dict], str]:
     """load_master that never raises. Returns (master, "") or (None, one-line reason)."""
     try:
-        return load_master(refresh=refresh), ""
-    except Exception as exc:  # noqa: BLE001 - callers keep the CSV ISINs
-        reason = f"{type(exc).__name__}: {str(exc).splitlines()[0] if str(exc).strip() else ''}"
-        return None, reason.rstrip(": ")
+        return load_master(conn), ""
+    except Exception as exc:  # noqa: BLE001 - callers keep the constituents ISINs
+        first = (str(exc).splitlines() or [""])[0].strip()
+        reason = f"{type(exc).__name__}: {first}" if first else type(exc).__name__
+        return None, reason
 
 
 def describe_change(symbol: str, csv_isin: Optional[str], res: Resolution) -> str:
@@ -178,10 +124,11 @@ def record(conn, resolutions, today: Optional[date] = None) -> int:
     return written
 
 
-def resolve_all(pairs, conn=None) -> list:
-    """Resolve (symbol, csv_isin) pairs against one master load. Records them when conn is given."""
-    master = load_master()
+def resolve_all(pairs, conn, record_results: bool = True) -> list:
+    """Resolve (symbol, csv_isin) pairs against one master read from conn.
+    Records the results with record(conn, results) only when record_results is True."""
+    master = load_master(conn)
     results = [resolve(symbol, isin, master) for symbol, isin in pairs]
-    if conn is not None:
+    if record_results:
         record(conn, results)
     return results
