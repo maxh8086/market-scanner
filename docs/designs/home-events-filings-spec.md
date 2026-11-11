@@ -274,23 +274,34 @@ Deferred by the cuts: `value_cr`, `pct_shares`, `mcap_cr`, `mcap_as_of` (Z3: the
 ### 4.3 Universe and rejections
 
 Symbol and ISIN come from the company name in the item title. For `Corporate_action`, the company name is the text before ` - Ex-Date:`.
-- `load_constituents()` (`scanner/constituents.py`) reads `data/ind_niftytotalmarket_list.csv`: columns `Company Name, Industry, Symbol, Series, ISIN Code`. It re-downloads the file from NSE when it is missing, older than 30 days, or `refresh=True`. `_clean` drops rows whose Symbol starts with `DUMMY` (a prefix match, not equality). The main checkout's copy has 755 rows (751 after `_clean`); this worktree's copy has 754 (752 after `_clean`). The copies differ in real rows. Coverage on the sample is the same on both: 50 matched, 0 ambiguous, 92 unmatched.
-- Normalise both sides: uppercase; `&` becomes `AND`; strip `.,'()-`; `LIMITED` and `LTD` become `LTD`; collapse spaces.
-- Match is exact on the normalised name. A name matching more than one row is ambiguous and is rejected. A name with no match is rejected. Both are counted as universe rejections.
-- The resolved symbol and ISIN are then checked against the universe (D3: `symbol_sector` rows with ISIN).
-- Universe (D3 confirmed 2026-11-10): `SELECT upper(btrim(symbol)), isin FROM symbol_sector WHERE isin IS NOT NULL`, loaded once at run start by `load_universe()`. Company name comes from the feed, or null.
-- Rejection reasons, one vocabulary everywhere (`parse`, `universe`):
-  - `parse`: counted by `parse()` itself (missing required field, unparseable date) as `dropped` (`ParseResult.dropped`). The run message reports it as `rejected parse=<n>` (5.2).
-  - `universe`: the name did not resolve (no match, or ambiguous), or the resolved symbol is not in the universe.
-  - An item that fails both the name match and the universe check is counted once, as `universe`.
-- **Deferred (decided 2026-11-10): the ingest floor (`date_floor`, `ingest_floor_days`) and the future-date test (`date_future`).** The sample contradicts "recent items only": Related_Party_Trans holds items up to 628 days old (back to 21-Feb-2025), and Sast_Regulation29 and Sast_Regulation31 hold items 8 to 21 days old (4.0). Consequence: an item with a wrong date (far past or far future) is stored as given. The API still rejects a `published_at` without an offset (4.6). Decision 6 (2026-11-11) accepted about one year of RSS depth; the floor itself is still deferred and must be settled before the first run.
-- **Loss to know about:** a rejected item is gone. If the universe grows, earlier events are not recoverable from this table.
 
-Sample coverage (142 real items, measured 2026-11-11): 50 matched, 0 ambiguous, 92 unmatched. Per feed: Financial_Results 0 of 3; Integrated_Filing_Financials 2 of 20; Sast_Regulation29 3 of 20; Sast_Regulation31 10 of 20; Corporate_action 35 of 58; Related_Party_Trans 0 of 20; Shareholding_Pattern 0 of 1.
+Two universes, one per consumer. The split is the user's decision (2026-11-12).
 
-**Conflict (a), accepted by the user 2026-11-11 ("agreed").** About 35% coverage means about 65% of items are dropped by name.
+- **Scanner universe (751):** the NIFTY Total Market plus holdings list, stored in `index_constituents` (migration 048). Read with `scanner.constituents.load_constituents()`. The default path reads the database. A CSV is read only when an explicit `override_path` is given. This universe is used by the scanner only.
+- **Events, symbol, and fundamental universe (full NSE list):** the NSE equity list, stored in `company_reference` with `source = 'nse_csv'` (migration 047). The events path resolves names against this list. It does not read `symbol_sector` for its universe.
 
-**Design only, not built.** The name-based resolution and the `load_universe` change are not built. `filter_items` (T3c) still filters on `symbol`. `load_universe` is not present in the code.
+Name resolution (events path):
+
+- Normalise both sides with `normalise_name` (`scanner/company_reference.py`): uppercase; `&` becomes `AND`; each of `.,'()-` is replaced by a space (not deleted); `LIMITED` and `LTD` become `LTD`; runs of spaces collapse to one. Stored `name_key` values use the same function. Any change to this function needs a full recompute of `name_key` in one transaction, plus a drift check (see the concepts brief, Decision 1).
+- Match is exact on the normalised name against `company_reference.name_key`. A name that matches more than one (symbol, ISIN) pair is ambiguous and is rejected. A name with no match is rejected. Both count as `universe` rejections.
+- A resolved item is accepted only if its ISIN agrees with any ISIN the item carries.
+
+Universe gates: the 751 universe applies to the scanner only. The events path has no separate universe check. A name that resolves against the full NSE list is already a listed symbol, so a second check against the same list cannot reject it (decided 2026-11-12).
+
+Rejection reasons, one vocabulary everywhere (`parse`, `universe`):
+
+- `parse`: counted by `parse()` itself (missing required field, unparseable date) as `dropped` (`ParseResult.dropped`). The run message reports it as `rejected parse=<n>` (5.2).
+- `universe`: the name did not resolve (no match, or ambiguous).
+
+**Deferred (decided 2026-11-10): the ingest floor (`date_floor`, `ingest_floor_days`) and the future-date test (`date_future`).** The sample contradicts "recent items only": Related_Party_Trans holds items up to 628 days old (back to 21-Feb-2025), and Sast_Regulation29 and Sast_Regulation31 hold items 8 to 21 days old (4.0). Consequence: an item with a wrong date (far past or far future) is stored as given. The API still rejects a `published_at` without an offset (4.6). Decision 6 (2026-11-11) accepted about one year of RSS depth; the floor itself is still deferred and must be settled before the first run.
+
+**Loss to know about:** a rejected item is gone. If the universe grows, earlier events are not recoverable from this table.
+
+Sample coverage (142 real items, measured 2026-11-11, against the 751 universe): 50 matched, 0 ambiguous, 92 unmatched. Against the full NSE list (measured 2026-11-12): 111 matched, 0 ambiguous, 31 unmatched. Per feed (751 universe): Financial_Results 0 of 3; Integrated_Filing_Financials 2 of 20; Sast_Regulation29 3 of 20; Sast_Regulation31 10 of 20; Corporate_action 35 of 58; Related_Party_Trans 0 of 20; Shareholding_Pattern 0 of 1.
+
+**Conflict (a), accepted by the user 2026-11-11 ("agreed"), now superseded for events.** Under the 751 universe, about 65% of items were dropped by name. The full NSE list lifts events coverage to 111 of 142. The 751 universe still applies to the scanner.
+
+**Partly built, not wired.** `filter_items` (`scanner/home_events.py:145-162`) takes a `universe` dict (symbol to ISIN). The events name lookup is `load_index_for_source(conn, 'nse_csv')` in `scanner/company_reference.py`. Its `.by_name` resolves names, and its `.universe` is the dict that `filter_items` takes. No runner calls `run_cycle` with these yet. That wiring is a separate task (filings T9). The docstring at `scanner/home_events.py:151` now names this loader.
 
 ### 4.3a Order-win feed (`nse:Online_announcements`): deferred (Q2, decided 2026-11-10)
 
@@ -363,7 +374,7 @@ Requirement carried forward: it gets its own spec (`fundamentals-trigger-spec.md
 Order of a run:
 1. The container has already checked API health. Validate `params` (section 7); an invalid value ends the run `failed`, message `config:<key>`, with no request.
 2. Read the `nse` cooldown. Active: stop with status `skipped`, message `exchange_cooldown`, no request made.
-3. Compute `deadline_at = clock() + run_deadline_s` first, then `load_universe()`. Choose the start feed: `int(now.timestamp() // 300) % n`, then walk the enabled feeds in registry order from that index, wrapping. This rotation stops a persistently slow run from never reaching the last feeds.
+3. Compute `deadline_at = clock() + run_deadline_s` first, then the run takes no universe load. Choose the start feed: `int(now.timestamp() // 300) % n`, then walk the enabled feeds in registry order from that index, wrapping. This rotation stops a persistently slow run from never reaching the last feeds.
 4. For each feed, one at a time: (a) stop if `clock() + gap_max_s + request_timeout_s > deadline_at` (`clock` is an injected callable returning the current time, so elapsed time is testable); (b) re-read the cooldown and stop if another container set it; (c) wait a random gap of `gap_min_s` to `gap_max_s`; (d) fetch; (e) classify (5.2); (f) parse (the injected `parse_fn`), filter (4.3), then post the rows via `post`.
 5. At the end of a run in which no block occurred, no cooldown was seen mid-run (step 4b) and at least one feed succeeded, call `cooldown.reset("nse")`. Never reset earlier (review M2: a reset after the first success would stop the backoff from ever escalating).
 6. Return `{"status", "fetched", "new", "from", "to", "message"}`. `fetched` is the parsed item count after `parse()`. `new` is the sum of `inserted` from the API. The API's `invalid` count is summed too (5.2). `from` and `to` are the earliest and latest `published_at` kept, or `None`.
@@ -401,7 +412,7 @@ Post failure: if `post` raises or returns a non-2xx, stop the loop, status `fail
 
 ### 5.3 Run deadline and isolation (decided by the split spec)
 
-One container per source, so a slow `announcements` run cannot delay `home_filings`; the earlier shared-lock idea is dropped. A feed is started only when `now + gap_max_s + request_timeout_s <= deadline_at`, so with the 20-second timeout the last fetch ends by the deadline. `deadline_at` is set before `load_universe()` so the universe query counts against it. Each post has `post_timeout_s`. A feed already fetched is posted even after the deadline. The worst case is therefore `run_deadline_s` plus about three `post_timeout_s` (a feed's items can span up to 3 batches of 500), 285 s with the defaults. The watchdog max-runtime for `home_filings` is requested at 330 s (S4): 285 s plus container start (split risk 3, up to about 20 s) leaves about 25 s of margin, against about 15 s at 300 s. A run still going at the next 5-minute tick is the split spec's due rule to handle. When the watchdog kills a run anyway, it finalises the row as `failed` with message `killed` (section 2). Happy-path cost: 8 feeds at a 5 to 8 s gap is 40 to 64 s plus fetch time; with a slow NSE, 8 x (8 + 20) = 224 s, just inside the 240 s deadline. This figure has no retries: one request retry on a slow feed adds `backoff_s` plus a timeout, about 50 s, which is why the retry has its own deadline check (5.4).
+One container per source, so a slow `announcements` run cannot delay `home_filings`; the earlier shared-lock idea is dropped. A feed is started only when `now + gap_max_s + request_timeout_s <= deadline_at`, so with the 20-second timeout the last fetch ends by the deadline. `deadline_at` is set before the name-index load so that query counts against it. Each post has `post_timeout_s`. A feed already fetched is posted even after the deadline. The worst case is therefore `run_deadline_s` plus about three `post_timeout_s` (a feed's items can span up to 3 batches of 500), 285 s with the defaults. The watchdog max-runtime for `home_filings` is requested at 330 s (S4): 285 s plus container start (split risk 3, up to about 20 s) leaves about 25 s of margin, against about 15 s at 300 s. A run still going at the next 5-minute tick is the split spec's due rule to handle. When the watchdog kills a run anyway, it finalises the row as `failed` with message `killed` (section 2). Happy-path cost: 8 feeds at a 5 to 8 s gap is 40 to 64 s plus fetch time; with a slow NSE, 8 x (8 + 20) = 224 s, just inside the 240 s deadline. This figure has no retries: one request retry on a slow feed adds `backoff_s` plus a timeout, about 50 s, which is why the retry has its own deadline check (5.4).
 
 ### 5.4 Request policy
 
@@ -467,7 +478,7 @@ def filter_items(items: list[dict], universe: dict[str, str])
 def to_event_row(feed: Feed, item: dict) -> dict            # exchange = "NSE" from the "nse:" prefix; published_at ISO 8601 with offset
 def classify_response(status: int | None, content_type: str, body: bytes) -> str   # "ok"|"blocked"|"retry"|"fail", table in 5.2
 def redact_error(text: str) -> str
-def load_universe(conn) -> dict[str, str]                   # symbol -> isin; not built; §4.3 uses `load_constituents()` for name resolution
+def load_events_name_index(conn) -> dict[str, tuple[str, str]]   # name_key -> (symbol, isin): load_index_for_source(conn, 'nse_csv').by_name; a name with two pairs is left out (conflicts); the same call's .universe is the symbol-to-ISIN dict that filter_items takes; §4.3 uses it for events name resolution
 def fetch_feed(feed: Feed, *, session, cfg: dict, parse_fn, sleep, rng, clock, deadline_at) -> FetchResult
     # session.get(url, timeout=) returns an object with .status_code, .headers (mapping) and .content (bytes); clock() -> datetime
 def post_events(rows: list[dict], *, base_url: str, token: str, http, timeout_s: int) -> dict
@@ -541,7 +552,7 @@ Tasks become `plan_add` entries only after approval. Each has an acceptance comm
 | T4c | T4b | `run_cycle` with injected `feeds`, `parse_fn`, a fake cooldown and a fake `post` | `.venv/Scripts/python.exe -m unittest tests.test_home_events_run -q` (40 tests) |
 | T4d | T4c, T4a, T6; split S1a, S2; the base-URL value (4.6, split S3/S4) | `HomeFilings`, `events_source = True`, `SOURCES` entry, the real `Cooldown` adapter, `post` built from `post_events`, updated `tests/test_collect_sources.py` (including `plan_makes_no_call_and_full_shape`) | `.venv/Scripts/python.exe -m unittest tests.test_collect_sources tests.test_home_events_run -q` |
 | T4e | T0, T3b | `FEEDS` with real URLs, first parser (`nse:Financial_Results`), its fixture (real NSE sample) | `.venv/Scripts/python.exe -m unittest tests.test_home_events_parsers -q` (that feed's tests) |
-| T4f | T3c, T4e | Name resolution (§4.3): the normalisation rules, `load_universe()` (the `symbol_sector` query in §4.3, with `isin IS NOT NULL`), and resolution of each parsed item to a symbol and ISIN so `filter_items` can accept it. Ambiguous or unmatched names stay `universe` | Named tests for §4.3 (exact match after normalisation; ambiguous and unmatched rejected as `universe`), fixed by the egm brainstorm before any dispatch; `.venv/Scripts/python.exe -m unittest tests.test_home_events_pure -q` |
+| T4f | T3c, T4e | Name resolution (§4.3): the normalisation rules, `load_events_name_index()` (reads `company_reference` with `source = 'nse_csv'`, as §4.3 describes; the `symbol_sector` query is no longer used for events), and resolution of each parsed item to a symbol and ISIN so `filter_items` can accept it. Ambiguous or unmatched names stay `universe` | Named tests for §4.3 (exact match after normalisation; ambiguous and unmatched rejected as `universe`), fixed by the egm brainstorm before any dispatch; `.venv/Scripts/python.exe -m unittest tests.test_home_events_pure -q` |
 | T5a | none | `homeEventsBatch.ts` (`validateBatch`, `buildInsert`), vitest, in the style of `collectorRefresh.ts` | `npm test --prefix server -- homeEventsBatch` |
 | T5b | T5a | `homeEventsAuth.ts`, `homeEventsRoute.ts` with injected `eventsTx` and `checkToken`, the `AppDeps` extension in `app.ts`. No `index.ts` change | `npm test --prefix server -- homeEventsRoute`; `npx tsc --noEmit --project server` |
 | T5c | T5b, T2a; split S3 | `eventsPoolConfig()`, the events pool, health check coverage and `index.ts` wiring. `server/src/index.ts` is modified in the working tree and `server/src/kiteToken.ts` is untracked: T5c starts only after those changes are committed or stashed by the user | `npx tsc --noEmit --project server`; `npm test --prefix server`; with the server running, `GET /api/health` reports the events pool |
