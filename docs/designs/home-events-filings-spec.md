@@ -301,7 +301,7 @@ Sample coverage (142 real items, measured 2026-11-11, against the 751 universe):
 
 **Conflict (a), accepted by the user 2026-11-11 ("agreed"), now superseded for events.** Under the 751 universe, about 65% of items were dropped by name. The full NSE list lifts events coverage to 111 of 142. The 751 universe still applies to the scanner.
 
-**Design only, not built.** The events path is not changed yet. `filter_items` (`scanner/home_events.py:145-162`) still filters on a `universe` dict that `run_cycle` (`scanner/home_events.py:391`) passes in. The events name-resolution step against `company_reference` is not built. `load_universe` (named in the docstring at `scanner/home_events.py:151`) does not exist; the docstring is stale.
+**Partly built, not wired.** `filter_items` (`scanner/home_events.py:145-162`) takes a `universe` dict (symbol to ISIN). The events name lookup is `load_index_for_source(conn, 'nse_csv')` in `scanner/company_reference.py`. Its `.by_name` resolves names, and its `.universe` is the dict that `filter_items` takes. No runner calls `run_cycle` with these yet. That wiring is a separate task (filings T9). The docstring at `scanner/home_events.py:151` now names this loader.
 
 ### 4.3a Order-win feed (`nse:Online_announcements`): deferred (Q2, decided 2026-11-10)
 
@@ -478,7 +478,7 @@ def filter_items(items: list[dict], universe: dict[str, str])
 def to_event_row(feed: Feed, item: dict) -> dict            # exchange = "NSE" from the "nse:" prefix; published_at ISO 8601 with offset
 def classify_response(status: int | None, content_type: str, body: bytes) -> str   # "ok"|"blocked"|"retry"|"fail", table in 5.2
 def redact_error(text: str) -> str
-def load_events_name_index(conn) -> dict[str, list[tuple[str, str]]]   # name_key -> [(symbol, isin)] from company_reference (source nse_csv); not built; §4.3 uses it for events name resolution
+def load_events_name_index(conn) -> dict[str, tuple[str, str]]   # name_key -> (symbol, isin): load_index_for_source(conn, 'nse_csv').by_name; a name with two pairs is left out (conflicts); the same call's .universe is the symbol-to-ISIN dict that filter_items takes; §4.3 uses it for events name resolution
 def fetch_feed(feed: Feed, *, session, cfg: dict, parse_fn, sleep, rng, clock, deadline_at) -> FetchResult
     # session.get(url, timeout=) returns an object with .status_code, .headers (mapping) and .content (bytes); clock() -> datetime
 def post_events(rows: list[dict], *, base_url: str, token: str, http, timeout_s: int) -> dict
