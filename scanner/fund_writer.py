@@ -64,3 +64,55 @@ def write_fund_lines(conn, symbol: str, lines: list[Line], source: str = "screen
         for row in rows:
             conn.execute(_UPSERT, row)
     return len(rows)
+
+
+_UPSERT_DAILY = (
+    "INSERT INTO fund_daily (symbol, day, close, ttm_eps, pe, source) "
+    "VALUES (%s, %s, %s, %s, %s, %s) "
+    "ON CONFLICT (symbol, day, source) "
+    "DO UPDATE SET close = EXCLUDED.close, ttm_eps = EXCLUDED.ttm_eps, pe = EXCLUDED.pe, "
+    "fetched_at = now()"
+)
+
+
+def fund_daily_rows(symbol: str, rows: list[dict], source: str = "screener") -> list[tuple]:
+    """Convert daily_valuation dicts into fund_daily parameter tuples, in SQL placeholder order.
+
+    Rows without a date are skipped. None values are kept. Duplicate dates keep the last value
+    at the position of the first occurrence. Pure: no database access.
+    """
+    sym = str(symbol).strip()
+    if not sym:
+        raise ValueError("symbol required")
+    if source not in SOURCES:
+        raise ValueError(f"unsupported source: {source!r}")
+
+    keyed: dict = {}
+    for row in rows:
+        day = row.get("date")
+        if not day:
+            continue
+        # Assigning an existing key keeps its first position and replaces its value.
+        keyed[day] = (sym, day, row.get("close"), row.get("ttm_eps"), row.get("pe"), source)
+    return list(keyed.values())
+
+
+def write_fund_daily(conn, symbol: str, rows: list[dict], source: str = "screener", *,
+                     lines: list[Line]) -> int:
+    """Upsert the daily valuation rows for one symbol in a single transaction. Returns the row count.
+
+    `lines` is required so the bank check cannot be skipped by omission: daily rows carry no
+    balance sheet. The check runs before any filtering or database call.
+    """
+    if is_bank(list(lines)):
+        raise BankNotSupported(
+            "bank input is not supported: balance sheet has a Deposits row; "
+            "the bank row mapping is out of scope"
+        )
+    data = fund_daily_rows(symbol, rows, source=source)
+    if not data:
+        return 0
+    with conn.transaction():
+        for row in data:
+            conn.execute(_UPSERT_DAILY, row)
+    return len(data)

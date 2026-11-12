@@ -37,8 +37,8 @@ Rollback rules: `docs/progress/rollback.md`. Test command: `.venv\Scripts\python
 | 13 | Home event sources | home-event-sources.md | in progress | Design approval recorded 2026-11-11 (PR #94). Filings tasks merged: T2a (PR 75), T3a (PR 76), T4a (PR 77), T5a (PR 78). T4f name lookup merged in PRs 100 and 102 (spec 4.3 in PR 103), not wired to a caller. T1 migration number proposed 052 (S2 049, S5a 050, S8 cron 051) in docs/designs/collector-split-slices.md on PR #105, not merged, pending your review. T1, T4d, T5c and T9 wait on the collector-split slices. Rereview2 NOT READY stands. |
 | 14 | ROA, Quick Ratio and EV/EBITDA basis | fundamentals-upstox-secondary.md | decided: dropped 2026-11-12 | No Upstox written answer is possible, and Upstox gives no formulas. ROA check failed for Reliance, Airtel and HDFC Bank (only TCS matched; commits a9e40a0, c97622b). Removed from the fallback. Reversible only with a validated basis. |
 | 15 | Upstox News source | home-event-sources.md | decided: dropped 2026-11-12 | No written redistribution confirmation can be obtained. Source dropped and stays off. |
-| 16 | Screener password rotation | secrets-and-roles.md | blocked: user action | Decision 13: manual rotation after the password appeared in a HAR file. Exposure date not recorded; the 2026-11-10 decision date is used as a stand-in. Deadline set by you as six months from that date: 2027-05-10 (assumption, no documented limit). Rotation is a manual user action; no commit shows it done. |
-| 17 | Fundamentals tables | fundamentals-tables.md | in progress | Approved 2026-11-10 per Run 2 answers (the doc says 2026-11-11). Built earlier: scanner/fund_derive.py (on main). Migration 027 is applied (migrate --status, 2026-11-12); its file header still says NOT APPLIED, which is stale. This PR: quarterly and annual non-bank writer scanner/fund_writer.py, no runtime caller. Daily EOD series deferred: fund_line cannot hold it (section CHECK), so it needs a new table migration, decision pending. Bank mapping, summary wording, 52-week wiring and validation against saved pages remain open. |
+| 16 | Screener password rotation | secrets-and-roles.md | blocked: user action | Decision 13: manual rotation after the password was read from a HAR file in this session. Exposure date 2026-11-11 (session record, about 10:20 UTC). Deadline: six months from exposure, 2027-05-11 (your assumption; no documented limit). Rotation is a manual user action; no commit shows it done. |
+| 17 | Fundamentals tables | fundamentals-tables.md | in progress | Approved 2026-11-10 per Run 2 answers (the doc says 2026-11-11). Built: scanner/fund_derive.py (on main); migration 027 applied (migrate --status); scanner/fund_writer.py quarterly and annual non-bank writer (PR 106, merged); daily table fund_daily in migration 053 with write_fund_daily (ledger run 5 PR; 053 applies on the next start.ps1 run). Migration 027 header still says NOT APPLIED; it is stale and unedited because the runner rejects edited applied migrations. Bank mapping, summary wording, 52-week wiring and validation against saved pages remain open. |
 | 18 | ROE/ROCE second-stock check | fundamentals-upstox-secondary.md | decided: dropped 2026-11-12 | Part of the row 14 scope cut. TCS ROE/ROCE differ from Screener (51.8/63.0 vs 43.37/53.06) and the Upstox basis is unknown. Not dispatched. |
 
 ## Rollback points
@@ -164,3 +164,13 @@ Verified by the orchestrator on origin/main 83856a5 in a fresh worktree (no `.en
 - Migration status checked (migrate --status): 027 applied; 048 index_constituents PENDING and will apply on the next start.ps1 run.
 - Built in this run: quarterly and annual non-bank writer (row 17). Daily EOD series deferred pending a table decision.
 - Not dispatched: T1, T4d, T5c, T9. They are blocked on the collector-split slices, which are now a draft (PR #105) awaiting your review.
+
+## Run 5 (2026-11-12): merges, migration 048, daily table, S0
+
+- Merged in sequence: PR 106 (quarterly and annual writer), PR 105 (collector-split slice draft with decisions recorded).
+- Migration 048 (index_constituents): not applied or verified in this run. The database was not reachable from this shell, so the ledger still lists it as PENDING until a migrate --status check confirms it.
+- Migration 053_fund_daily.sql added (daily table). It applies on the next start.ps1 run, not in this run.
+- Migration 027 header: not edited. scanner/pg/migrate.py apply_on raises "was edited after it was applied" when a sha256 changes, so an edit would stop the next start.ps1 run. The header is stale; fixing it needs a runner change or a note only.
+- Screener rotation: exposure 2026-11-11, deadline 2027-05-11 (six months, your assumption).
+- S0 read-only report: not started. No docs/progress/collector-split-s0.md exists on this branch.
+- Not dispatched: T1, T4d, T5c, T9 (still waiting on the collector-split slices).
