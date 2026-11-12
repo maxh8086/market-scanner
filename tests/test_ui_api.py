@@ -155,7 +155,9 @@ class UIApiContractTests(unittest.TestCase):
     def test_responses_do_not_leak_credentials(self):
         for path in ("/api/runs", "/api/config", "/api/cost"):
             body = self.client.get(path).text.lower()
-            self.assertNotIn("password", body)
+            # Match the DSN form only: a stored run message may name an env var such as
+            # POSTGRES_LOADER_PASSWORD_FILE, which carries no secret value.
+            self.assertNotIn("password=", body)
             self.assertNotIn("postgres://", body)
             self.assertNotIn("mongodb://", body)
 
