@@ -34,15 +34,15 @@ IDX_PREFIX = "IDX:"
 INCREMENTAL_OVERLAP_DAYS = 7
 
 INDEX_KEYS = {
-    "Nifty 50": "NSE_INDEX|Nifty 50",
-    "Nifty Bank": "NSE_INDEX|Nifty Bank",
+    "NIFTY 50": "NSE_INDEX|Nifty 50",
+    "NIFTY BANK": "NSE_INDEX|Nifty Bank",
     "Nifty 500": "NSE_INDEX|Nifty 500",
-    "Nifty Next 50": "NSE_INDEX|Nifty Next 50",
-    "Nifty Midcap 150": "NSE_INDEX|NIFTY MIDCAP 150",
-    "NIFTY SMLCAP 250": "NSE_INDEX|NIFTY_SMLCAP_250",
+    "NIFTY NEXT 50": "NSE_INDEX|Nifty Next 50",
+    "NIFTY MIDCAP 150": "NSE_INDEX|NIFTY MIDCAP 150",
+    "NIFTY SMALLCAP 250": "NSE_INDEX|NIFTY_SMLCAP_250",
     "Nifty500 Mul50:25:25": "NSE_INDEX|NIFTY500 MULTICAP",
     "NIFTY Services": "NSE_INDEX|Nifty Serv Sector",
-    "Nifty Microcap 250": "NSE_INDEX|NIFTY MICROCAP250",
+    "NIFTY MICROCAP 250": "NSE_INDEX|NIFTY MICROCAP250",
     "INDIA VIX": "NSE_INDEX|India VIX",
     # Watchlist indices matched to the NSE instrument master by name (see server/src/live/liveRoute.ts).
     "NIFTY 100": "NSE_INDEX|Nifty 100",
@@ -88,10 +88,10 @@ INDEX_KEYS = {
 
 # Unverified spellings, tried in order when the primary key fails.
 ALTERNATE_KEYS = {
-    "Nifty Next 50": ["NSE_INDEX|NIFTY NEXT 50"],
-    "Nifty Midcap 150": ["NSE_INDEX|Nifty Midcap 150"],
-    "NIFTY SMLCAP 250": ["NSE_INDEX|NIFTY SMLCAP 250", "NSE_INDEX|NIFTY SMALLCAP 250"],
-    "Nifty Microcap 250": ["NSE_INDEX|NIFTY MICROCAP 250", "NSE_INDEX|Nifty Microcap250"],
+    "NIFTY NEXT 50": ["NSE_INDEX|NIFTY NEXT 50"],
+    "NIFTY MIDCAP 150": ["NSE_INDEX|Nifty Midcap 150"],
+    "NIFTY SMALLCAP 250": ["NSE_INDEX|NIFTY SMLCAP 250", "NSE_INDEX|NIFTY SMALLCAP 250"],
+    "NIFTY MICROCAP 250": ["NSE_INDEX|NIFTY MICROCAP 250", "NSE_INDEX|Nifty Microcap250"],
 }
 
 

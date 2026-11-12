@@ -70,20 +70,74 @@ def csv_rows(records: Iterable[dict], as_of: date) -> list[RefRow]:
 EQUITY_LIST_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
 
 
-def equity_list_rows(records: Iterable[dict], as_of: date) -> list[RefRow]:
-    """Rows from NSE's full equity list (EQUITY_L.csv). Keys are stripped first, because the
-    file's header has stray spaces (" SERIES"). Uses SYMBOL, NAME OF COMPANY, SERIES and
-    ISIN NUMBER. Blank symbol or ISIN is skipped. A repeated (symbol, ISIN) keeps its first row."""
-    out: dict[tuple[str, str], RefRow] = {}
+_BE_BZ = frozenset({"BE", "BZ"})
+EQUITY_LIST_DROP_RULES = (
+    "blank_symbol",
+    "blank_isin",
+    "blank_name",
+    "duplicate_pair",
+    "be_bz_with_eq",
+    "be_bz_duplicate_isin",
+)
+
+
+def _equity_list_select(records: Iterable[dict]) -> tuple[list[tuple[str, str, str, str | None]], dict[str, int]]:
+    """Pick the EQUITY_L.csv rows to keep and count the drops by rule. Pure.
+
+    One row per ISIN, using the EQ row (decision O3). A BE or BZ row is kept only when its
+    ISIN has no EQ row, and then only its first row. Other series keep the first row per
+    (symbol, ISIN), as before.
+    """
+    counts = dict.fromkeys(EQUITY_LIST_DROP_RULES, 0)
+    valid: list[tuple[str, str, str, str | None]] = []
     for raw in records:
         rec = {str(k).strip(): v for k, v in raw.items() if k is not None}
         symbol, isin = _key(rec.get("SYMBOL")), _key(rec.get("ISIN NUMBER"))
         name = str(rec.get("NAME OF COMPANY") or "")
-        if not symbol or not isin or not name.strip():
-            continue
-        series = str(rec.get("SERIES") or "").strip() or None
-        out.setdefault((symbol, isin), _make(SOURCE_CSV, symbol, isin, name, series, as_of))
-    return list(out.values())
+        if not symbol:
+            counts["blank_symbol"] += 1
+        elif not isin:
+            counts["blank_isin"] += 1
+        elif not name.strip():
+            counts["blank_name"] += 1
+        else:
+            series = str(rec.get("SERIES") or "").strip() or None
+            valid.append((symbol, isin, name, series))
+    eq_isins = {isin for _symbol, isin, _name, series in valid if series == "EQ"}
+    kept: list[tuple[str, str, str, str | None]] = []
+    seen_pairs: set[tuple[str, str]] = set()
+    be_isins: set[str] = set()
+    for symbol, isin, name, series in valid:
+        if series in _BE_BZ:
+            if isin in eq_isins:
+                counts["be_bz_with_eq"] += 1
+                continue
+            if isin in be_isins:
+                counts["be_bz_duplicate_isin"] += 1
+                continue
+            be_isins.add(isin)
+        else:
+            if (symbol, isin) in seen_pairs:
+                counts["duplicate_pair"] += 1
+                continue
+            seen_pairs.add((symbol, isin))
+        kept.append((symbol, isin, name, series))
+    return kept, counts
+
+
+def equity_list_rows(records: Iterable[dict], as_of: date) -> list[RefRow]:
+    """Rows from NSE's full equity list (EQUITY_L.csv). Keys are stripped first, because the
+    file's header has stray spaces (" SERIES"). Uses SYMBOL, NAME OF COMPANY, SERIES and
+    ISIN NUMBER. Blank symbol or ISIN is skipped. One row per ISIN: the EQ row wins over a
+    BE or BZ row whatever the file order. A repeated (symbol, ISIN) keeps its first row."""
+    kept, _counts = _equity_list_select(records)
+    return [_make(SOURCE_CSV, symbol, isin, name, series, as_of) for symbol, isin, name, series in kept]
+
+
+def equity_list_drop_counts(records: Iterable[dict]) -> dict[str, int]:
+    """Count the EQUITY_L.csv rows that equity_list_rows drops, by rule (keys:
+    EQUITY_LIST_DROP_RULES). Pure."""
+    return _equity_list_select(records)[1]
 
 
 def master_rows(raw: bytes, as_of: date) -> list[RefRow]:
@@ -114,7 +168,9 @@ _INSERT = (
 
 @dataclass(frozen=True)
 class Index:
-    """Lookups built from company_reference rows (decision O1: union of both sources).
+    """Lookups built from company_reference rows.
+
+    Built per design 4.3: NSE rows own their ISINs and symbols; Upstox rows fill only what NSE does not cover; by_name uses nse_csv rows only.
 
     universe : symbol -> ISIN, for symbols whose ISIN agrees across every row.
     by_name  : name_key -> (symbol, ISIN), for names that map to exactly one usable pair.
@@ -128,14 +184,25 @@ class Index:
 def build_index(rows: Iterable[tuple[str, str, str, str]]) -> Index:
     """Build an Index from (source, symbol, isin, name_key) tuples. Pure.
 
+    Source precedence (design 4.3). NSE rows (SOURCE_CSV) own their ISINs and symbols:
+    R1 drops every other-source row whose ISIN appears in an NSE row; R2 drops every
+    other-source row whose symbol appears in an NSE row. R3 builds by_name from surviving NSE
+    rows only.
+
     A symbol with two ISINs, an ISIN with two symbols, or a name that maps to two pairs is
-    left out and recorded in `conflicts`. Those items then resolve to nothing and are
-    rejected as "universe".
+    left out and recorded in `conflicts` ("symbol:", "isin:", "name:"). Those items then
+    resolve to nothing and are rejected as "universe".
     """
     rows = list(rows)
+    nse_isins = {isin for src, _symbol, isin, _nk in rows if src == SOURCE_CSV}
+    nse_symbols = {symbol for src, symbol, _isin, _nk in rows if src == SOURCE_CSV}
+    survivors = [
+        r for r in rows
+        if r[0] == SOURCE_CSV or (r[2] not in nse_isins and r[1] not in nse_symbols)
+    ]
     symbol_isins: dict[str, set[str]] = {}
     isin_symbols: dict[str, set[str]] = {}
-    for _src, symbol, isin, _nk in rows:
+    for _src, symbol, isin, _nk in survivors:
         symbol_isins.setdefault(symbol, set()).add(isin)
         isin_symbols.setdefault(isin, set()).add(symbol)
     conflicts: list[str] = []
@@ -149,17 +216,20 @@ def build_index(rows: Iterable[tuple[str, str, str, str]]) -> Index:
     bad_isins = {i for i, symbols in isin_symbols.items() if len(symbols) > 1}
     universe: dict[str, str] = {}
     name_pairs: dict[str, set[tuple[str, str]]] = {}
-    for _src, symbol, isin, name_key in rows:
+    for src, symbol, isin, name_key in survivors:
+        if src == SOURCE_CSV:
+            name_pairs.setdefault(name_key, set()).add((symbol, isin))
         if symbol in bad_symbols or isin in bad_isins:
             continue
         universe[symbol] = isin
-        name_pairs.setdefault(name_key, set()).add((symbol, isin))
     by_name: dict[str, tuple[str, str]] = {}
     for name_key, pairs in sorted(name_pairs.items()):
-        if len(pairs) == 1:
-            by_name[name_key] = next(iter(pairs))
-        else:
+        if len(pairs) > 1:
             conflicts.append(f"name:{name_key}")
+            continue
+        symbol, isin = next(iter(pairs))
+        if symbol not in bad_symbols and isin not in bad_isins:
+            by_name[name_key] = (symbol, isin)
     return Index(universe=universe, by_name=by_name, conflicts=tuple(conflicts))
 
 
