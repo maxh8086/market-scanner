@@ -4,6 +4,8 @@
 
 Idempotent: a slug whose CSV already exists and validates is skipped without a
 request. Requests are spaced 2 seconds apart with a generic User-Agent.
+Index names and candidate URLs come from scanner/index_sources.py. The slug is the
+lowercased name with underscores, so existing files keep their names.
 """
 from __future__ import annotations
 
@@ -14,41 +16,14 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from scanner.index_sources import INDEX_SOURCES  # noqa: E402
+
 OUT_DIR = ROOT / "data" / "constituents"
 
-PRIMARY_BASE = "https://nsearchives.nseindia.com/content/indices/"
-FALLBACK_BASE = "https://www.niftyindices.com/IndexConstituent/"
 USER_AGENT = "Mozilla/5.0"
 PAUSE_SECONDS = 2.0
-MAX_VARIANTS = 3
-
-# slug -> (index name, filename variants; the first is the known candidate)
-INDICES = {
-    "nifty_50": (
-        "Nifty 50",
-        ["ind_nifty50list.csv", "ind_nifty_50_list.csv", "ind_nifty50_list.csv"],
-    ),
-    "nifty_next_50": (
-        "Nifty Next 50",
-        ["ind_niftynext50list.csv", "ind_nifty_next50_list.csv", "ind_niftynext50_list.csv"],
-    ),
-    "nifty_midcap_150": (
-        "Nifty Midcap 150",
-        ["ind_niftymidcap150list.csv", "ind_nifty_midcap150_list.csv", "ind_niftymidcap_150list.csv"],
-    ),
-    "nifty_smallcap_250": (
-        "Nifty Smallcap 250",
-        ["ind_niftysmallcap250list.csv", "ind_nifty_smallcap250_list.csv", "ind_niftysmallcap_250list.csv"],
-    ),
-    "nifty_microcap_250": (
-        "Nifty Microcap 250",
-        ["ind_niftymicrocap250_list.csv", "ind_niftymicrocap250list.csv", "ind_nifty_microcap250_list.csv"],
-    ),
-    "nifty_bank": (
-        "Nifty Bank",
-        ["ind_niftybanklist.csv", "ind_nifty_bank_list.csv", "ind_niftybank_list.csv"],
-    ),
-}
 
 _last_request = 0.0
 
@@ -79,11 +54,9 @@ def _get(url: str) -> str | None:
         return None
 
 
-def fetch_one(slug: str, name: str, variants: list[str]) -> tuple[str, str] | None:
-    """Try the primary host with up to MAX_VARIANTS filenames, then the fallback host."""
-    attempts: list[str] = [PRIMARY_BASE + f for f in variants[:MAX_VARIANTS]]
-    attempts.append(FALLBACK_BASE + variants[0])
-    for url in attempts:
+def fetch_one(candidates: tuple[str, ...]) -> tuple[str, str] | None:
+    """Try each candidate URL in order and return the first that validates as a CSV."""
+    for url in candidates:
         print(f"  trying {url}")
         text = _get(url)
         if text is not None and _valid(text):
@@ -96,15 +69,16 @@ def fetch_one(slug: str, name: str, variants: list[str]) -> tuple[str, str] | No
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     failures: list[str] = []
-    for slug, (name, variants) in INDICES.items():
+    for name, candidates in INDEX_SOURCES.items():
+        slug = name.lower().replace(" ", "_")
         target = OUT_DIR / f"{slug}.csv"
         if target.exists() and _valid(target.read_text(encoding="utf-8-sig", errors="replace")):
             print(f"{name}: already present, skipping ({target.name})")
             continue
         print(f"{name}:")
-        found = fetch_one(slug, name, variants)
+        found = fetch_one(candidates)
         if found is None:
-            print(f"  NOT FOUND after {len(variants[:MAX_VARIANTS]) + 1} requests")
+            print(f"  NOT FOUND after {len(candidates)} requests")
             failures.append(name)
             continue
         url, text = found

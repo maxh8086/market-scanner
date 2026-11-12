@@ -428,17 +428,28 @@ class IndexJobTests(unittest.TestCase):
         self.assertEqual(conn.calls, [])
         self.assertFalse(conn.begun)
 
-    def test_empty_index_refuses_whole_refresh(self):
+    def test_empty_index_is_skipped_and_reported(self):
         conn = _FakeConn()
-        with self.assertRaises(cr.EmptySourceError):
-            self._run(conn, fetch_indexes=lambda: {"NIFTY TOTAL MARKET": b"Company Name,Industry,Symbol,Series,ISIN Code\n"})
-        self.assertEqual(conn.calls, [])
+        failures: list[str] = []
+        self._run(
+            conn,
+            failures=failures,
+            fetch_indexes=lambda: {"NIFTY TOTAL MARKET": b"Company Name,Industry,Symbol,Series,ISIN Code\n"},
+        )
+        index_deletes = [c for c in conn.calls
+                         if c[0].startswith("DELETE FROM index_constituents") and c[1] == ("NIFTY TOTAL MARKET",)]
+        self.assertEqual(index_deletes, [], "an empty index must not be written")
+        self.assertTrue(conn.committed, "the master refresh must still commit")
+        self.assertTrue(any("NIFTY TOTAL MARKET" in f for f in failures), failures)
 
-    def test_index_missing_from_fetch_result_refuses(self):
+    def test_missing_index_is_reported_and_master_commits(self):
         conn = _FakeConn()
-        with self.assertRaises(RuntimeError):
-            self._run(conn, fetch_indexes=lambda: {})
-        self.assertEqual(conn.calls, [])
+        failures: list[str] = []
+        self._run(conn, failures=failures, fetch_indexes=lambda: {})
+        index_deletes = [c for c in conn.calls if c[0].startswith("DELETE FROM index_constituents")]
+        self.assertEqual(index_deletes, [], "a missing index must not be written")
+        self.assertTrue(conn.committed, "the master refresh must still commit")
+        self.assertTrue(any("NIFTY TOTAL MARKET" in f for f in failures), failures)
 
 
 class LoaderDsnTests(unittest.TestCase):
