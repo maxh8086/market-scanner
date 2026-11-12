@@ -23,7 +23,11 @@ Date: 2026-11-12. Parent: `docs/designs/collector-split-spec.md` (the "split spe
 | 050 | S5a | `SELECT` grants to `market_scanner_app` on `collector_settings` and `source_cooldown` (both are new reads from Fastify); plus any `collector_requests` change S5a finds it needs |
 | 051 | S8 | `filings` cron migration (`UPDATE ... WHERE value = <old default>`) |
 | 052 | filings T1 | `home_filings` registration (`manual` mode) |
+| 054 | LC1 (group B, llm-client) | llm provider store (`llm_provider`, `ai_setting`); `db/migrations/054_llm_provider_store.sql` |
+| 055 | LC5 (group B, llm-client) | `llm_calls` provider columns; `db/migrations/055_llm_calls_provider.sql` |
 | S2a | later | "a number when written": next free number after 052 at that time |
+
+Group B (llm-client, `docs/designs/home-events-t4f-design.md`) claims 054 and 055 above. BSE takes no migration number.
 
 Rules: numbers are assigned in merge order only if no slice merges out of this order; if two branches are open, the later one renumbers on merge. The events database has its own series (`db/events_migrations/`, numbers in `home-event-sources.md` 6.3) and is not used by any slice here. Each migration gets a down file in `db/migrations/down/` (manual, not run by the runner), following 047 and 048 (`047_company_reference.down.sql`, `048_index_constituents.down.sql`).
 
