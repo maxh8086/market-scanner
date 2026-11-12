@@ -537,6 +537,21 @@ class RunCycleTests(unittest.TestCase):
         self.assertEqual([row["isin"] for row in rows], [UNIVERSE["RELIANCE"]])
         self.assertIn("universe=1", result["message"])
 
+    def test_name_resolved_item_with_disagreeing_isin_is_rejected(self):
+        # The name maps to RELIANCE with ISIN_A, but the item supplies a different ISIN_B.
+        # fill_from_name leaves it unresolved (symbol None), so filter_items counts it under
+        # "universe", and count_isin_conflicts records the reason as isin_conflict=1.
+        named = dict(make_item("X", PUB_EARLY, "a"), symbol=None, company="Reliance Limited", isin="INE999Z01099")
+        parsed = ParseResult(items=[named], dropped=0)
+        by_name = {"RELIANCE LTD": ("RELIANCE", UNIVERSE["RELIANCE"])}
+        result, _session, _sleep, post, _cooldown = run_cycle_with(
+            [xml_ok()], feeds=ONE_FEED, parse_fn=ParseStub(result=parsed), by_name=by_name
+        )
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(posted_rows(post), [])
+        self.assertIn("universe=1", result["message"])
+        self.assertIn("isin_conflict=1", result["message"])
+
     def test_rows_go_to_post(self):
         parsed = ParseResult(
             items=[make_item("RELIANCE", PUB_EARLY, "a"), make_item("TCS", PUB_LATE, "b")],

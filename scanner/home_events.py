@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Protocol
 from zoneinfo import ZoneInfo
 
-from scanner.company_reference import fill_from_name
+from scanner.company_reference import fill_from_name, normalise_name
 
 # Query strings: everything from "?" up to whitespace or a quote/bracket.
 _QUERY_RE = re.compile(r"(https?://[^\s'\"<>?]+)\?[^\s'\"<>]*")
@@ -166,6 +166,23 @@ def filter_items(
             filled["isin"] = isin
         kept.append(filled)
     return kept, counts
+
+
+def count_isin_conflicts(items: list[dict], by_name: dict[str, tuple[str, str]]) -> int:
+    """Count name-only items whose name resolves but whose own ISIN disagrees. Pure.
+
+    Such items are left unresolved by fill_from_name, so filter_items also counts them
+    under "universe". This count gives the reason. It is a subset of the universe count.
+    """
+    count = 0
+    for item in items:
+        if item.get("symbol") is not None:
+            continue
+        pair = by_name.get(normalise_name(item.get("company")))
+        supplied = item.get("isin")
+        if pair is not None and supplied and supplied != pair[1]:
+            count += 1
+    return count
 
 
 def classify_response(status: int | None, content_type: str, body: bytes) -> str:
@@ -431,7 +448,7 @@ def run_cycle(
     except OverflowError:
         return _run_result("failed", message="config:gap_max_s")
 
-    fetched = new = invalid = dropped = universe_rejected = feeds_ok = 0
+    fetched = new = invalid = dropped = universe_rejected = isin_conflicts = feeds_ok = 0
     transient: list[str] = []
     fatal: list[str] = []
     kept_times: list[datetime] = []
@@ -473,6 +490,8 @@ def run_cycle(
         feeds_ok += 1
         fetched += len(outcome.items)
         dropped += outcome.dropped
+        if by_name is not None:
+            isin_conflicts += count_isin_conflicts(outcome.items, by_name)
         items = outcome.items if by_name is None else fill_from_name(outcome.items, by_name)
         kept, counts = filter_items(items, universe)
         universe_rejected += counts["universe"]
@@ -525,7 +544,7 @@ def run_cycle(
             parts.append(f"deadline: {deadline_left} feeds not fetched")
     if mid_run_cooldown:
         parts.append("exchange_cooldown")
-    parts.append(f"rejected parse={dropped} universe={universe_rejected}")
+    parts.append(f"rejected parse={dropped} universe={universe_rejected} isin_conflict={isin_conflicts}")
     parts.append(f"invalid={invalid}")
     status = "failed" if fatal or feeds_ok == 0 else "ok"
     return _run_result(
@@ -672,9 +691,9 @@ def _parse_rss_feed(
 def _parse_financial_results(body: bytes) -> ParseResult:
     """Parse the nse:Financial_Results RSS feed (spec 4.0, 4.3, 6).
 
-    symbol and isin are None because name resolution (spec 4.3) is not built
-    yet. filter_items therefore rejects every item as "universe", which is
-    intended until that work lands.
+    symbol and isin are None on parsed items. Name-only items are resolved in
+    run_cycle through company_reference.fill_from_name. No production code calls
+    run_cycle yet; wiring it in is task T2.
     """
     return _parse_rss_feed(body, _PUB_DATE_FORMAT)
 

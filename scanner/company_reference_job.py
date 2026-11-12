@@ -8,7 +8,7 @@ Scans then read the database only (decision O3: this runs in the collector job, 
 scan). The run path never calls this module. It needs a DB role with DELETE and INSERT on the
 tables (decision O2). The fetchers are injectable, so tests run offline.
 
-Usage (once the loader role exists):
+Usage:
     python -m scanner.company_reference_job
 The loader password is read from the file named by POSTGRES_LOADER_PASSWORD_FILE. The loader
 user comes from POSTGRES_LOADER_USER (default market_scanner_loader).
