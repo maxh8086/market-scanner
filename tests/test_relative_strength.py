@@ -66,49 +66,49 @@ class AssignTiersTests(unittest.TestCase):
 
     def test_bank_isin_takes_bank_tier_even_when_in_nifty_50(self):
         members = {
-            "Nifty 50": {"INE_BANK": "HDFCBANK"},
-            "Nifty Bank": {"INE_BANK": "HDFCBANK"},
+            "NIFTY 50": {"INE_BANK": "HDFCBANK"},
+            "NIFTY BANK": {"INE_BANK": "HDFCBANK"},
         }
         self.assertEqual(self._tier_of(rs.assign_tiers(members), "INE_BANK"),
-                         ("Bank", "Nifty Bank", "HDFCBANK"))
+                         ("Bank", "NIFTY BANK", "HDFCBANK"))
 
     def test_bank_isin_outside_the_five_tiers_still_gets_bank(self):
-        members = {"Nifty Bank": {"INE_X": "XBANK"}}
+        members = {"NIFTY BANK": {"INE_X": "XBANK"}}
         self.assertEqual(self._tier_of(rs.assign_tiers(members), "INE_X"),
-                         ("Bank", "Nifty Bank", "XBANK"))
+                         ("Bank", "NIFTY BANK", "XBANK"))
 
     def test_highest_priority_index_wins(self):
         members = {
-            "Nifty Next 50": {"INE_A": "ALPHA"},
-            "Nifty Midcap 150": {"INE_A": "ALPHA"},
+            "NIFTY NEXT 50": {"INE_A": "ALPHA"},
+            "NIFTY MIDCAP 150": {"INE_A": "ALPHA"},
         }
         self.assertEqual(self._tier_of(rs.assign_tiers(members), "INE_A"),
-                         ("Nifty Next 50", "Nifty Next 50", "ALPHA"))
+                         ("NIFTY NEXT 50", "NIFTY NEXT 50", "ALPHA"))
 
     def test_nifty_50_beats_next_50(self):
         members = {
-            "Nifty 50": {"INE_A": "ALPHA"},
-            "Nifty Next 50": {"INE_A": "ALPHA"},
+            "NIFTY 50": {"INE_A": "ALPHA"},
+            "NIFTY NEXT 50": {"INE_A": "ALPHA"},
         }
         self.assertEqual(self._tier_of(rs.assign_tiers(members), "INE_A"),
-                         ("Nifty 50", "Nifty 50", "ALPHA"))
+                         ("NIFTY 50", "NIFTY 50", "ALPHA"))
 
     def test_microcap_only_stock_gets_microcap_tier(self):
-        members = {"Nifty Microcap 250": {"INE_M": "MICRO"}}
+        members = {"NIFTY MICROCAP 250": {"INE_M": "MICRO"}}
         self.assertEqual(self._tier_of(rs.assign_tiers(members), "INE_M"),
-                         ("Nifty Microcap 250", "Nifty Microcap 250", "MICRO"))
+                         ("NIFTY MICROCAP 250", "NIFTY MICROCAP 250", "MICRO"))
 
     def test_stock_in_no_index_gets_no_row(self):
-        members = {"Nifty 50": {"INE_A": "ALPHA"}}
+        members = {"NIFTY 50": {"INE_A": "ALPHA"}}
         self.assertIsNone(self._tier_of(rs.assign_tiers(members), "INE_NONE"))
 
     def test_symbol_falls_back_to_other_index_when_chosen_row_has_none(self):
         members = {
-            "Nifty 50": {"INE_A": None},
-            "Nifty Next 50": {"INE_A": "ALPHA"},
+            "NIFTY 50": {"INE_A": None},
+            "NIFTY NEXT 50": {"INE_A": "ALPHA"},
         }
         self.assertEqual(self._tier_of(rs.assign_tiers(members), "INE_A"),
-                         ("Nifty 50", "Nifty 50", "ALPHA"))
+                         ("NIFTY 50", "NIFTY 50", "ALPHA"))
 
 
 class FakeConn:
@@ -135,8 +135,8 @@ def _closes_for(prices):
 class MainTests(unittest.TestCase):
     def _members(self):
         return {
-            "Nifty 50": {"INE_A": "ALPHA"},
-            "Nifty Bank": {"INE_B": "BETA"},
+            "NIFTY 50": {"INE_A": "ALPHA"},
+            "NIFTY BANK": {"INE_B": "BETA"},
         }
 
     def _patches(self, anchor, members, prices):
@@ -174,7 +174,7 @@ class MainTests(unittest.TestCase):
         output = " ".join(str(c.args[0]) for c in printer.call_args_list)
         self.assertIn("2026-11-06", output)
         self.assertIn("Bank: 1", output)
-        self.assertIn("Nifty 50: 1", output)
+        self.assertIn("NIFTY 50: 1", output)
 
     def test_missing_anchor_returns_1(self):
         code, write, _ = self._run([], None, self._members(), {})
@@ -188,7 +188,7 @@ class MainTests(unittest.TestCase):
 
     def test_missing_returns_are_written_as_none(self):
         # No candle exists on the 365-day baseline for any symbol, so both returns are missing.
-        members = {"Nifty 50": {"INE_A": "ALPHA"}}
+        members = {"NIFTY 50": {"INE_A": "ALPHA"}}
         prices = {"IDX:NIFTY 50": 100, "ALPHA": 200}
         patches, conn = self._patches(AS_OF, members, prices)
         for p in patches:
@@ -212,14 +212,14 @@ class MainTests(unittest.TestCase):
         self.assertIsNone(stock_ret)
         self.assertIsNone(index_ret)
         self.assertIsNone(gap)
-        self.assertEqual(tier, "Nifty 50")
-        self.assertEqual(index_name, "Nifty 50")
+        self.assertEqual(tier, "NIFTY 50")
+        self.assertEqual(index_name, "NIFTY 50")
 
 
 class WriteRowsTests(unittest.TestCase):
     def test_upsert_keys_on_symbol_and_as_of_and_updates_all_columns(self):
         conn = FakeConn()
-        rows = [("ALPHA", AS_OF, None, "Nifty 50", Decimal("10"), None, "Nifty 50")]
+        rows = [("ALPHA", AS_OF, None, "NIFTY 50", Decimal("10"), None, "NIFTY 50")]
         self.assertEqual(rs.write_rows(conn, rows), 1)
         sql, params = conn.cursor_obj.executemany.call_args[0]
         self.assertIn("ON CONFLICT (symbol, as_of) DO UPDATE SET", sql)

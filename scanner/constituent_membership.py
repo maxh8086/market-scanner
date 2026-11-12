@@ -25,15 +25,15 @@ if str(ROOT) not in sys.path:
 
 DATA_DIR = ROOT / "data" / "constituents"
 
-# slug -> index name. Names match INDICES in scripts/fetch_index_constituents.py.
+# slug -> index name. Names match the keys of INDEX_SOURCES in scanner/index_sources.py.
 # Duplicated here because the scanner image does not ship the scripts/ folder.
 SLUG_TO_INDEX = {
-    "nifty_50": "Nifty 50",
-    "nifty_next_50": "Nifty Next 50",
-    "nifty_midcap_150": "Nifty Midcap 150",
-    "nifty_smallcap_250": "Nifty Smallcap 250",
-    "nifty_microcap_250": "Nifty Microcap 250",
-    "nifty_bank": "Nifty Bank",
+    "nifty_50": "NIFTY 50",
+    "nifty_next_50": "NIFTY NEXT 50",
+    "nifty_midcap_150": "NIFTY MIDCAP 150",
+    "nifty_smallcap_250": "NIFTY SMALLCAP 250",
+    "nifty_microcap_250": "NIFTY MICROCAP 250",
+    "nifty_bank": "NIFTY BANK",
 }
 
 UPSERT_SQL = (
@@ -90,6 +90,32 @@ def load_all(data_dir: Path = DATA_DIR) -> dict[str, list[tuple[str, str]]]:
         result[index_name] = parse_csv(path)
     if not result:
         raise BadCsv(f"no mapped constituent files in {data_dir}")
+    return result
+
+
+_SELECT_MEMBERS = (
+    "SELECT symbol, isin FROM index_constituents WHERE index_name = %s ORDER BY symbol"
+)
+
+
+def build_membership_from_db(index_names) -> dict[str, list[tuple[str, str]]]:
+    """Return {index_name: [(isin, symbol)]} read from index_constituents. Reads only.
+
+    Raises RuntimeError when an index has zero rows (the monthly job has not loaded it).
+    """
+    from scanner.pg import db  # imported here so --dry-run never needs psycopg or a DSN
+
+    result: dict[str, list[tuple[str, str]]] = {}
+    with db.connect() as conn:
+        for index_name in index_names:
+            fetched = conn.execute(_SELECT_MEMBERS, (index_name,)).fetchall()
+            if not fetched:
+                raise RuntimeError(f"index_constituents has no rows for {index_name}")
+            rows: list[tuple[str, str]] = []
+            for r in fetched:
+                symbol, isin = (r["symbol"], r["isin"]) if isinstance(r, dict) else (r[0], r[1])
+                rows.append((isin, symbol))
+            result[index_name] = rows
     return result
 
 

@@ -8,9 +8,9 @@ before the target is within BASELINE_TOLERANCE_DAYS of it. The same tolerance ap
 to the as_of close.
 
 Membership comes from the latest snapshot of constituent_membership per index. Tier:
-  - ISIN in the latest "Nifty Bank" set -> tier "Bank", comparison index "Nifty Bank"
-  - otherwise the highest of Nifty 50, Nifty Next 50, Nifty Midcap 150,
-    Nifty Smallcap 250, Nifty Microcap 250 that contains the ISIN; the comparison
+  - ISIN in the latest "NIFTY BANK" set -> tier "Bank", comparison index "NIFTY BANK"
+  - otherwise the highest of NIFTY 50, NIFTY NEXT 50, NIFTY MIDCAP 150,
+    NIFTY SMALLCAP 250, NIFTY MICROCAP 250 that contains the ISIN; the comparison
     index is that tier's own index
   - in no index -> no row
 
@@ -34,18 +34,18 @@ from decimal import Decimal
 from scanner.index_candles import index_symbol
 from scanner.pg.db import connect
 
-ANCHOR_SYMBOL = index_symbol("Nifty 50")
+ANCHOR_SYMBOL = index_symbol("NIFTY 50")
 BASELINE_MONTHS = 3
 BASELINE_TOLERANCE_DAYS = 7
-BANK_INDEX = "Nifty Bank"
+BANK_INDEX = "NIFTY BANK"
 BANK_TIER = "Bank"
 # Priority order: first match wins. Each tier is compared to its own index.
 TIER_INDEXES = [
-    "Nifty 50",
-    "Nifty Next 50",
-    "Nifty Midcap 150",
-    "Nifty Smallcap 250",
-    "Nifty Microcap 250",
+    "NIFTY 50",
+    "NIFTY NEXT 50",
+    "NIFTY MIDCAP 150",
+    "NIFTY SMALLCAP 250",
+    "NIFTY MICROCAP 250",
 ]
 
 UPSERT_SQL = (

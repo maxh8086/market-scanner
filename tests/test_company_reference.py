@@ -138,32 +138,64 @@ class _ParamExecConn:
 
 
 class IndexTests(unittest.TestCase):
-    def test_build_index_union_and_by_name(self):
+    def test_build_index_source_precedence_and_nse_names(self):
         idx = cr.build_index([
             ("nse_csv", "ALPHA", "INE1", "ALPHA LTD"),
             ("upstox_master", "ALPHA", "INE1", "ALPHA LTD"),
             ("upstox_master", "BETA", "INE2", "BETA LTD"),
         ])
         self.assertEqual(idx.universe, {"ALPHA": "INE1", "BETA": "INE2"})
-        self.assertEqual(idx.by_name, {"ALPHA LTD": ("ALPHA", "INE1"), "BETA LTD": ("BETA", "INE2")})
+        self.assertEqual(idx.by_name, {"ALPHA LTD": ("ALPHA", "INE1")})
         self.assertEqual(idx.conflicts, ())
 
-    def test_symbol_with_two_isins_is_excluded(self):
+    def test_upstox_symbol_collision_keeps_nse_pair(self):
         idx = cr.build_index([
             ("nse_csv", "ALPHA", "INE1", "ALPHA LTD"),
             ("upstox_master", "ALPHA", "INE9", "ALPHA LTD"),
         ])
-        self.assertNotIn("ALPHA", idx.universe)
-        self.assertNotIn("ALPHA LTD", idx.by_name)
-        self.assertIn("symbol:ALPHA", idx.conflicts)
+        self.assertEqual(idx.universe, {"ALPHA": "INE1"})
+        self.assertEqual(idx.by_name, {"ALPHA LTD": ("ALPHA", "INE1")})
+        self.assertEqual(idx.conflicts, ())
 
-    def test_isin_with_two_symbols_is_excluded(self):
+    def test_upstox_isin_collision_keeps_nse_pair(self):
         idx = cr.build_index([
             ("nse_csv", "ALPHA", "INE1", "ALPHA LTD"),
             ("upstox_master", "ALPHX", "INE1", "ALPHX LTD"),
         ])
+        self.assertEqual(idx.universe, {"ALPHA": "INE1"})
+        self.assertEqual(idx.by_name, {"ALPHA LTD": ("ALPHA", "INE1")})
+        self.assertEqual(idx.conflicts, ())
+
+    def test_name_with_nse_pairs_in_a_conflict_is_still_ambiguous(self):
+        idx = cr.build_index([
+            ("nse_csv", "X", "I1", "N"),
+            ("nse_csv", "X", "I2", "NX"),
+            ("nse_csv", "Y", "I3", "N"),
+        ])
+        self.assertNotIn("N", idx.by_name)
+        self.assertIn("name:N", idx.conflicts)
+        self.assertIn("symbol:X", idx.conflicts)
+        self.assertEqual(idx.universe, {"Y": "I3"})
+
+    def test_nse_symbol_with_two_isins_is_excluded_and_recorded(self):
+        idx = cr.build_index([
+            ("nse_csv", "A", "I1", "A LTD"),
+            ("nse_csv", "A", "I2", "A2 LTD"),
+        ])
         self.assertEqual(idx.universe, {})
-        self.assertIn("isin:INE1", idx.conflicts)
+        self.assertIn("symbol:A", idx.conflicts)
+        self.assertNotIn("A LTD", idx.by_name)
+        self.assertNotIn("A2 LTD", idx.by_name)
+
+    def test_nse_isin_with_two_symbols_is_excluded_and_recorded(self):
+        idx = cr.build_index([
+            ("nse_csv", "A", "I1", "A LTD"),
+            ("nse_csv", "B", "I1", "B LTD"),
+        ])
+        self.assertEqual(idx.universe, {})
+        self.assertIn("isin:I1", idx.conflicts)
+        self.assertNotIn("A LTD", idx.by_name)
+        self.assertNotIn("B LTD", idx.by_name)
 
     def test_name_with_two_pairs_is_ambiguous(self):
         idx = cr.build_index([
@@ -428,17 +460,28 @@ class IndexJobTests(unittest.TestCase):
         self.assertEqual(conn.calls, [])
         self.assertFalse(conn.begun)
 
-    def test_empty_index_refuses_whole_refresh(self):
+    def test_empty_index_is_skipped_and_reported(self):
         conn = _FakeConn()
-        with self.assertRaises(cr.EmptySourceError):
-            self._run(conn, fetch_indexes=lambda: {"NIFTY TOTAL MARKET": b"Company Name,Industry,Symbol,Series,ISIN Code\n"})
-        self.assertEqual(conn.calls, [])
+        failures: list[str] = []
+        self._run(
+            conn,
+            failures=failures,
+            fetch_indexes=lambda: {"NIFTY TOTAL MARKET": b"Company Name,Industry,Symbol,Series,ISIN Code\n"},
+        )
+        index_deletes = [c for c in conn.calls
+                         if c[0].startswith("DELETE FROM index_constituents") and c[1] == ("NIFTY TOTAL MARKET",)]
+        self.assertEqual(index_deletes, [], "an empty index must not be written")
+        self.assertTrue(conn.committed, "the master refresh must still commit")
+        self.assertTrue(any("NIFTY TOTAL MARKET" in f for f in failures), failures)
 
-    def test_index_missing_from_fetch_result_refuses(self):
+    def test_missing_index_is_reported_and_master_commits(self):
         conn = _FakeConn()
-        with self.assertRaises(RuntimeError):
-            self._run(conn, fetch_indexes=lambda: {})
-        self.assertEqual(conn.calls, [])
+        failures: list[str] = []
+        self._run(conn, failures=failures, fetch_indexes=lambda: {})
+        index_deletes = [c for c in conn.calls if c[0].startswith("DELETE FROM index_constituents")]
+        self.assertEqual(index_deletes, [], "a missing index must not be written")
+        self.assertTrue(conn.committed, "the master refresh must still commit")
+        self.assertTrue(any("NIFTY TOTAL MARKET" in f for f in failures), failures)
 
 
 class LoaderDsnTests(unittest.TestCase):
@@ -498,6 +541,114 @@ class LoaderDsnTests(unittest.TestCase):
                        POSTGRES_LOADER_PASSWORD_FILE=self._pw_file(tmp, "s3cret-pw\n"))
             dsn = job.loader_dsn(env)
         self.assertIn("user=other_loader", dsn)
+
+
+class SourcePrecedenceTests(unittest.TestCase):
+    """MT2 (design section 4.3): NSE rows win over Upstox rows. Feeds build_index directly."""
+
+    def test_upstox_row_with_same_isin_loses_to_nse(self):
+        # R1: ISIN in both sources. The NSE symbol and name are used; the Upstox row is not.
+        idx = cr.build_index([
+            ("nse_csv", "ALPHA", "INE1", "ALPHA LTD"),
+            ("upstox_master", "BETA", "INE1", "BETA LTD"),
+        ])
+        self.assertEqual(idx.universe, {"ALPHA": "INE1"})
+        self.assertEqual(idx.by_name, {"ALPHA LTD": ("ALPHA", "INE1")})
+        self.assertNotIn("isin:INE1", idx.conflicts)
+
+    def test_upstox_only_collision_keeps_nse_row(self):
+        # R2: an Upstox row on the NSE symbol with another ISIN must not remove the NSE pair.
+        idx = cr.build_index([
+            ("nse_csv", "ALPHA", "INE1", "ALPHA LTD"),
+            ("upstox_master", "ALPHA", "INE9", "ALPHA ALT LTD"),
+        ])
+        self.assertEqual(idx.universe, {"ALPHA": "INE1"})
+        self.assertEqual(idx.by_name, {"ALPHA LTD": ("ALPHA", "INE1")})
+        self.assertNotIn("symbol:ALPHA", idx.conflicts)
+
+    def test_symbol_shared_across_sources_keeps_nse_pair(self):
+        # R1 with the same symbol and ISIN in both sources: the NSE name is the only name key
+        # for the pair, so the Upstox name adds nothing and nothing is in conflict.
+        idx = cr.build_index([
+            ("nse_csv", "ALPHA", "INE1", "ALPHA LTD"),
+            ("upstox_master", "ALPHA", "INE1", "ALPHA INDUSTRIES LTD"),
+        ])
+        self.assertEqual(idx.universe, {"ALPHA": "INE1"})
+        self.assertEqual(idx.by_name, {"ALPHA LTD": ("ALPHA", "INE1")})
+        self.assertEqual(idx.conflicts, ())
+
+    def test_name_lookup_ignores_upstox(self):
+        # R3: name lookup reads nse_csv only, so an Upstox row cannot make an NSE name ambiguous,
+        # and an Upstox-only name is not a name lookup key.
+        idx = cr.build_index([
+            ("nse_csv", "AAA", "INE1", "SAME NAME LTD"),
+            ("upstox_master", "BBB", "INE2", "SAME NAME LTD"),
+            ("upstox_master", "CCC", "INE3", "UPSTOX ONLY LTD"),
+        ])
+        self.assertEqual(idx.by_name, {"SAME NAME LTD": ("AAA", "INE1")})
+        self.assertNotIn("name:SAME NAME LTD", idx.conflicts)
+
+
+def _eq_rec(symbol, isin, name, series):
+    """One EQUITY_L.csv record, using the file's own headers (note the stray space in " SERIES")."""
+    return {"SYMBOL": symbol, "NAME OF COMPANY": name, " SERIES": series, "ISIN NUMBER": isin}
+
+
+class EquityListSeriesPreferenceTests(unittest.TestCase):
+    """MT3 (design M-13, O3): one row per ISIN, using the EQ row. A BE or BZ row is kept only
+    when its ISIN has no EQ row."""
+
+    def test_eq_row_wins_in_both_file_orders(self):
+        be = _eq_rec("ALPHA", "INE1", "Alpha Old Name Ltd", "BE")
+        eq = _eq_rec("ALPHA", "INE1", "Alpha Ltd", "EQ")
+        for label, recs in (("be_first", [be, eq]), ("eq_first", [eq, be])):
+            with self.subTest(order=label):
+                rows = cr.equity_list_rows(recs, AS_OF)
+                self.assertEqual(len(rows), 1)
+                self.assertEqual((rows[0].symbol, rows[0].isin, rows[0].series), ("ALPHA", "INE1", "EQ"))
+                self.assertEqual(rows[0].company_name, "Alpha Ltd")
+
+    def test_be_only_isin_kept(self):
+        # A BE row is kept when its ISIN has no EQ row. Two BE rows on that ISIN still give one row.
+        recs = [
+            _eq_rec("BETA", "INE2", "Beta Ltd", "BE"),
+            _eq_rec("BETA2", "INE2", "Beta Two Ltd", "BE"),
+        ]
+        rows = cr.equity_list_rows(recs, AS_OF)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0].isin, rows[0].series), ("INE2", "BE"))
+
+    def test_isin_with_eq_and_be_rows_keeps_eq(self):
+        # Different symbols on the two rows: the (symbol, ISIN) rule alone would keep both.
+        recs = [
+            _eq_rec("ALPHAB", "INE1", "Alpha B Ltd", "BE"),
+            _eq_rec("ALPHA", "INE1", "Alpha Ltd", "EQ"),
+        ]
+        rows = cr.equity_list_rows(recs, AS_OF)
+        self.assertEqual([(r.symbol, r.series) for r in rows], [("ALPHA", "EQ")])
+
+    def test_drop_counts_by_rule(self):
+        # equity_list_drop_counts is new in MT3; the import stays inside the test so the
+        # module still loads before it exists. Rule keys below are this test's naming.
+        from scanner.company_reference import equity_list_drop_counts
+
+        recs = [
+            _eq_rec("", "INE1", "No Symbol Ltd", "EQ"),        # blank_symbol
+            _eq_rec("NOISIN", "  ", "No ISIN Ltd", "EQ"),      # blank_isin
+            _eq_rec("NONAME", "INE5", "  ", "EQ"),              # blank_name
+            _eq_rec("ALPHA", "INE1", "Alpha Ltd", "EQ"),        # kept
+            _eq_rec("ALPHA", "INE1", "Alpha Ltd", "EQ"),        # duplicate_pair (first-row rule)
+            _eq_rec("ALPHAB", "INE1", "Alpha B Ltd", "BE"),     # be_bz_with_eq
+            _eq_rec("BETA", "INE2", "Beta Ltd", "BE"),          # kept (no EQ row for INE2)
+            _eq_rec("GAMMA", "INE3", "Gamma Ltd", "BZ"),        # kept (no EQ row for INE3)
+        ]
+        counts = equity_list_drop_counts(recs)
+        self.assertEqual(counts["blank_symbol"], 1)
+        self.assertEqual(counts["blank_isin"], 1)
+        self.assertEqual(counts["blank_name"], 1)
+        self.assertEqual(counts["duplicate_pair"], 1)
+        self.assertEqual(counts["be_bz_with_eq"], 1)
+        self.assertEqual(len(cr.equity_list_rows(recs, AS_OF)), 3)
 
 
 if __name__ == "__main__":

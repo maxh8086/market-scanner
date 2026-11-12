@@ -36,7 +36,14 @@ services:
     environment:
       <<: *scanner-db-env
       RUN_ID: ${RUN_ID:-}
-    volumes: *persist
+      # Container path of the loader password file; loader_dsn() in scanner/company_reference_job.py reads it.
+      POSTGRES_LOADER_PASSWORD_FILE: /run/secrets/company_reference_loader_password
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+      # Read-only single-file mount of the loader password file named in .env (git-ignored, never baked into the image).
+      - ${POSTGRES_LOADER_PASSWORD_FILE:?set POSTGRES_LOADER_PASSWORD_FILE in .env to the host path of the loader password file}:/run/secrets/company_reference_loader_password:ro
     restart: "no"
 
   enrich:

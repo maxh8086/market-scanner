@@ -72,13 +72,13 @@ class ParseCsvTests(unittest.TestCase):
     def test_load_all_maps_slugs_to_index_names(self):
         self._write("nifty_bank.csv", GOOD)
         data = cm.load_all(self.dir)
-        self.assertEqual(set(data), {"Nifty Bank"})
-        self.assertEqual(len(data["Nifty Bank"]), 2)
+        self.assertEqual(set(data), {"NIFTY BANK"})
+        self.assertEqual(len(data["NIFTY BANK"]), 2)
 
 
 class MainDryRunTests(unittest.TestCase):
     def test_dry_run_does_not_connect_to_database(self):
-        data = {"Nifty Bank": [("INE000A01010", "ALPHA")]}
+        data = {"NIFTY BANK": [("INE000A01010", "ALPHA")]}
         with mock.patch.object(cm, "load_all", return_value=data), \
                 mock.patch("scanner.pg.db.connect") as connect:
             code = cm.main(["--dry-run"])
@@ -95,7 +95,7 @@ class MainDryRunTests(unittest.TestCase):
 
 class WriteRowsTests(unittest.TestCase):
     def test_upsert_never_deletes_and_keeps_as_of(self):
-        data = {"Nifty Bank": [("INE000A01010", "ALPHA"), ("INE000B01020", "BETA")]}
+        data = {"NIFTY BANK": [("INE000A01010", "ALPHA"), ("INE000B01020", "BETA")]}
         as_of = dt.date(2026, 11, 8)
         cur = mock.MagicMock()
         conn = mock.MagicMock()
@@ -109,7 +109,76 @@ class WriteRowsTests(unittest.TestCase):
         self.assertIn("DO UPDATE SET symbol = EXCLUDED.symbol", sql)
         self.assertNotIn("DELETE", sql.upper())
         self.assertNotIn("index_membership", sql)
-        self.assertEqual(params[0], ("Nifty Bank", "INE000A01010", "ALPHA", as_of))
+        self.assertEqual(params[0], ("NIFTY BANK", "INE000A01010", "ALPHA", as_of))
+
+
+def _db_conn(rows):
+    """A psycopg-like connection whose execute(...).fetchall() returns rows."""
+    conn = mock.MagicMock()
+    conn.__enter__.return_value = conn
+    conn.execute.return_value.fetchall.return_value = rows
+    return conn
+
+
+# Tuple order matches load_index_constituents: symbol, isin, company_name, industry, series.
+DB_ROWS = [
+    ("ALPHA", "INE000A01010", "Alpha Ltd.", "Services", "EQ"),
+    ("BETA", "INE000B01020", "Beta Ltd.", "Metals", "EQ"),
+]
+
+
+class MembershipFromDatabaseTests(unittest.TestCase):
+    def test_membership_reads_database_rows(self):
+        conn = _db_conn(DB_ROWS)
+        with mock.patch("scanner.pg.db.connect", return_value=conn), \
+                mock.patch.object(cm, "load_all") as csv_reader:
+            data = cm.build_membership_from_db(["NIFTY BANK"])
+        self.assertEqual(
+            data,
+            {"NIFTY BANK": [("INE000A01010", "ALPHA"), ("INE000B01020", "BETA")]},
+        )
+        csv_reader.assert_not_called()
+        self.assertEqual(conn.execute.call_args[0][1], ("NIFTY BANK",))
+
+    def test_zero_rows_raises(self):
+        conn = _db_conn([])
+        with mock.patch("scanner.pg.db.connect", return_value=conn):
+            with self.assertRaises(RuntimeError):
+                cm.build_membership_from_db(["NIFTY BANK"])
+        conn.cursor.assert_not_called()
+
+    def test_csv_reader_kept_as_rollback(self):
+        path = mock.Mock(spec=Path)
+        path.read_text.return_value = GOOD
+        self.assertEqual(
+            cm.parse_csv(path),
+            [("INE000A01010", "ALPHA"), ("INE000B01020", "BETA")],
+        )
+
+    def test_each_index_name_round_trips(self):
+        # INDEX_NAMES is the single name list planned in MT1 (scanner/index_sources.py).
+        from scanner.index_sources import INDEX_NAMES
+
+        self.assertEqual(len(INDEX_NAMES), 7)
+        as_of = dt.date(2026, 11, 13)
+        for name in INDEX_NAMES:
+            with self.subTest(index=name):
+                cur = mock.MagicMock()
+                write_conn = mock.MagicMock()
+                write_conn.__enter__.return_value = write_conn
+                write_conn.cursor.return_value.__enter__.return_value = cur
+                with mock.patch("scanner.pg.db.connect", return_value=write_conn):
+                    cm.write_rows({name: [("INE000A01010", "ALPHA")]}, as_of)
+                written = cur.executemany.call_args[0][1][0][0]
+
+                read_conn = _db_conn([("ALPHA", "INE000A01010", "Alpha Ltd.", "Services", "EQ")])
+                with mock.patch("scanner.pg.db.connect", return_value=read_conn):
+                    membership = cm.build_membership_from_db([written])
+
+                self.assertEqual(written, name)
+                self.assertEqual(read_conn.execute.call_args[0][1], (name,))
+                self.assertEqual(list(membership), [name])
+                self.assertEqual(membership[name], [("INE000A01010", "ALPHA")])
 
 
 if __name__ == "__main__":

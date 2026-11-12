@@ -169,9 +169,9 @@ class SourcesRegistryTests(unittest.TestCase):
     """Test that all expected sources are registered."""
 
     def test_all_sources_present(self):
-        """The SOURCES dict should have all 5 feed sources, index_eod and the ath_scan source."""
+        """The SOURCES dict should have all 5 feed sources, index_eod, the ath_scan source and company_reference."""
         expected = {"candles_eod", "index_eod", "announcements", "corporate_actions", "filings", "fundamentals",
-                    "ath_scan"}
+                    "ath_scan", "company_reference"}
         self.assertEqual(set(SOURCES.keys()), expected)
 
     def test_sources_are_source_instances(self):

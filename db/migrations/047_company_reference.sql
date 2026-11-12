@@ -1,5 +1,5 @@
 -- Reference rows for company names, symbols and ISINs from two stored sources:
---   nse_csv        : NSE Nifty Total Market constituents list
+--   nse_csv        : NSE equity list, EQUITY_L.csv (one row per ISIN, EQ row preferred)
 --   upstox_master  : Upstox NSE_EQ/EQ instrument master
 -- Filled by the monthly refresh (collector job). Runs read only this table, never the
 -- source files or the source URLs. See concepts_brief.md, "Reference tables in the DB".

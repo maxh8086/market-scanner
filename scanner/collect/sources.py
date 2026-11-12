@@ -612,6 +612,60 @@ class IndexEOD(Source):
         return self._skip(f"dry-run: would fetch index closes through {self._target_date(ist_now)}")
 
 
+class CompanyReference(Source):
+    """Monthly reference refresh: NSE equity list, Upstox NSE master and index constituents.
+
+    Calls scanner.company_reference_job.run_refresh with the loader role; loader_dsn reads the
+    loader password from POSTGRES_LOADER_PASSWORD_FILE. The refresh is all-or-nothing: if any
+    download or parse fails, nothing is written and last month's rows stay in place.
+    """
+
+    def __init__(self):
+        super().__init__("company_reference")
+        self.tz = pytz.timezone("Asia/Kolkata")
+
+    def _today(self, now: Optional[datetime]) -> date:
+        if now is None:
+            now = datetime.now(pytz.UTC)
+        if now.tzinfo is None:
+            now = pytz.UTC.localize(now)
+        return now.astimezone(self.tz).date()
+
+    def run(self, params: dict, now: Optional[datetime] = None,
+            dry_run: bool = False) -> dict:
+        """Download and store the reference data. Success returns an empty message; `fetched`
+        is the total number of rows written, and `new` is 0 because the refresh replaces the rows."""
+        if dry_run:
+            return self.plan(params, now)
+
+        # Import late, as the other sources do
+        import psycopg
+        from scanner.company_reference_job import loader_dsn, run_refresh
+
+        today = self._today(now)
+        try:
+            conn = psycopg.connect(loader_dsn())
+            try:
+                counts = run_refresh(conn, today=today)
+            finally:
+                conn.close()
+        except Exception as e:
+            return {
+                "fetched": 0, "new": 0, "from": None, "to": None,
+                "message": _redact(f"{type(e).__name__}: {e}")
+            }
+        return {
+            "fetched": sum(counts.values()), "new": 0, "from": None, "to": today,
+            "message": ""
+        }
+
+    def plan(self, params: dict, now: Optional[datetime] = None) -> dict:
+        return {
+            "fetched": 0, "new": 0, "from": None, "to": None,
+            "message": "dry-run: would refresh NSE equity list, Upstox master and index constituents"
+        }
+
+
 # Registry of all sources
 SOURCES = {
     "candles_eod": CandlesEOD(),
@@ -621,4 +675,5 @@ SOURCES = {
     "filings": Filings(),
     "fundamentals": Fundamentals(),
     "ath_scan": AthScan(),
+    "company_reference": CompanyReference(),
 }

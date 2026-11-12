@@ -326,6 +326,6 @@ Still open:
 - CSV and xlsx fate (NB4): whether `scanner/report.py` keeps its human CSV and xlsx exports. Needed before S2a is written.
 - Risk 3 fallback: if S0 measures container start-up above about 20 s, `announcements` and `filings` may stay long-running. Gates S3's service set, not these slices' code.
 - Filings fetch host confirmation after S0: `filings` is assumed `nse` in S2 and S8 until S0 confirms the host inside `stage_filings`.
-- Migration numbers 049 to 052 are proposals (049 S2, 050 S5a, 051 S8, 052 filings T1); S2a takes the next free number when written.
+- Migration numbers 049 to 052 are assigned (user accepted the proposal, 2026-11-12): 049 S2, 050 S5a, 051 S8, 052 filings T1; S2a takes the next free number when written.
 - exchange_cooldown finding: no rename is needed, because the table was never created; S2 creates `source_cooldown` directly.
 - Stale text in docs/designs/collector-split-spec.md (S1a migration number, M14 "latest is 046", the 4.3 and S2 `exchange_cooldown` rows, the "filings spec 4.7" citations): the user edits that file. This draft does not touch it.
