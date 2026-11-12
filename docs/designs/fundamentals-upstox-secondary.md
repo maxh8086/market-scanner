@@ -193,3 +193,7 @@ Open for you:
 - **Wait for Upstox answers before building.** Item 11 stays blocked until the ROA, Quick Ratio and EV/EBITDA answers are in and each passes its check.
 - **Cache lifetime: 24 hours** for stored Upstox values.
 - **Bad Upstox rows:** removed by a manual SQL delete run by the user, after a `pg_dump` backup is recorded in the ledger. The app never deletes rows (see the migration grants).
+
+## Decision 2026-11-12: scope cut
+
+Decision 2026-11-12 (user): no written Upstox answer on the ROA, Quick Ratio, EV/EBITDA, ROE or ROCE basis can be obtained. Those metrics are removed from the Upstox fallback; the rest of the fallback stands. The token-expiry alert (PR #72) and the cache and rollback rules from Run 2 stand. Reversible only with a validated basis.
