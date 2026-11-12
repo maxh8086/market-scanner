@@ -91,6 +91,7 @@ It does not cover the wiring of the events runner (`run_cycle` with the name loo
 | D13 | Monthly refresh: the loader role's password is in a secret file; POSTGRES_LOADER_PASSWORD_FILE names it (Task MT5). Next refresh due 2026-12-12. The compose mount needs A 3. | Decided (Q5); mount needs A 3 |
 | D14 | Withdrawn. The number stays empty. | Withdrawn |
 | D15 | Order: MT1 six indices; MT2 NSE precedence; MT3 EQ row rule; MT4 membership read; MT5 loader grants; MT6 documents; then group B: LC0 to LC7. | Decided (Q2; user's chat answer 2026-11-12; not written in the repo; wording confirmed by the user 2026-11-13) |
+| D16 | Upstox-only rows that share a symbol or an ISIN (no NSE row for that key) | Keep the current behaviour: both colliding rows are left out of the universe and recorded as a symbol: or isin: conflict. Matches HEAD. | Decided (user's chat answer 2026-11-13) |
 
 ---
 

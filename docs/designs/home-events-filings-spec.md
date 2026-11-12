@@ -352,7 +352,7 @@ Symbol and ISIN come from the company name in the item title. For `Corporate_act
 
 Two universes, one per consumer. The split is the user's decision (2026-11-12).
 
-- **Scanner universe (751):** the NIFTY Total Market plus holdings list, stored in `index_constituents` (migration 048). Read with `scanner.constituents.load_constituents()`. The default path reads the database. A CSV is read only when an explicit `override_path` is given. This universe is used by the scanner only.
+- **Scanner universe (752):** the NIFTY Total Market plus holdings list, stored in `index_constituents` (migration 048). Read with `scanner.constituents.load_constituents()`. The default path reads the database. A CSV is read only when an explicit `override_path` is given. This universe is used by the scanner only.
 - **Events, symbol, and fundamental universe (full NSE list):** the NSE equity list, stored in `company_reference` with `source = 'nse_csv'` (migration 047). The events path resolves names against this list. It does not read `symbol_sector` for its universe.
 
 Name resolution (events path):
@@ -361,7 +361,7 @@ Name resolution (events path):
 - Match is exact on the normalised name against `company_reference.name_key`. A name that matches more than one (symbol, ISIN) pair is ambiguous and is rejected. A name with no match is rejected. Both count as `universe` rejections.
 - A resolved item is accepted only if its ISIN agrees with any ISIN the item carries.
 
-Universe gates: the 751 universe applies to the scanner only. The events path has no separate universe check. A name that resolves against the full NSE list is already a listed symbol, so a second check against the same list cannot reject it (decided 2026-11-12).
+Universe gates: the 752 universe applies to the scanner only. The events path has no separate universe check. A name that resolves against the full NSE list is already a listed symbol, so a second check against the same list cannot reject it (decided 2026-11-12).
 
 Rejection reasons, one vocabulary everywhere (`parse`, `universe`):
 
@@ -553,7 +553,7 @@ def filter_items(items: list[dict], universe: dict[str, str])
 def to_event_row(feed: Feed, item: dict) -> dict            # exchange = "NSE" from the "nse:" prefix; published_at ISO 8601 with offset
 def classify_response(status: int | None, content_type: str, body: bytes) -> str   # "ok"|"blocked"|"retry"|"fail", table in 5.2
 def redact_error(text: str) -> str
-def load_events_name_index(conn) -> dict[str, tuple[str, str]]   # name_key -> (symbol, isin): load_index_for_source(conn, 'nse_csv').by_name; a name with two pairs is left out (conflicts); the same call's .universe is the symbol-to-ISIN dict that filter_items takes; §4.3 uses it for events name resolution
+load_index_for_source(conn, 'nse_csv') and fill_from_name   # no new function; name_key -> (symbol, isin): load_index_for_source(conn, 'nse_csv').by_name; a name with two pairs is left out (conflicts); the same call's .universe is the symbol-to-ISIN dict that filter_items takes; §4.3 uses load_index_for_source and fill_from_name for events name resolution
 def fetch_feed(feed: Feed, *, session, cfg: dict, parse_fn, sleep, rng, clock, deadline_at) -> FetchResult
     # session.get(url, timeout=) returns an object with .status_code, .headers (mapping) and .content (bytes); clock() -> datetime
 def post_events(rows: list[dict], *, base_url: str, token: str, http, timeout_s: int) -> dict
@@ -627,7 +627,7 @@ Tasks become `plan_add` entries only after approval. Each has an acceptance comm
 | T4c | T4b | `run_cycle` with injected `feeds`, `parse_fn`, a fake cooldown and a fake `post` | `.venv/Scripts/python.exe -m unittest tests.test_home_events_run -q` (40 tests) |
 | T4d | T4c, T4a, T6; split S1a, S2; the base-URL value (4.6, split S3/S4) | `HomeFilings`, `events_source = True`, `SOURCES` entry, the real `Cooldown` adapter, `post` built from `post_events`, updated `tests/test_collect_sources.py` (including `plan_makes_no_call_and_full_shape`) | `.venv/Scripts/python.exe -m unittest tests.test_collect_sources tests.test_home_events_run -q` |
 | T4e | T0, T3b | `FEEDS` with real URLs, first parser (`nse:Financial_Results`), its fixture (real NSE sample) | `.venv/Scripts/python.exe -m unittest tests.test_home_events_parsers -q` (that feed's tests) |
-| T4f | T3c, T4e | Name resolution (§4.3): the normalisation rules, `load_events_name_index()` (reads `company_reference` with `source = 'nse_csv'`, as §4.3 describes; the `symbol_sector` query is no longer used for events), and resolution of each parsed item to a symbol and ISIN so `filter_items` can accept it. Ambiguous or unmatched names stay `universe` | Named tests for §4.3 (exact match after normalisation; ambiguous and unmatched rejected as `universe`), fixed by the egm brainstorm before any dispatch; `.venv/Scripts/python.exe -m unittest tests.test_home_events_pure -q` |
+| T4f | T3c, T4e | Name resolution (§4.3): the normalisation rules, `load_index_for_source(conn, 'nse_csv')` and `fill_from_name()` (reads `company_reference` with `source = 'nse_csv'`, as §4.3 describes; the `symbol_sector` query is no longer used for events), and resolution of each parsed item to a symbol and ISIN so `filter_items` can accept it. Ambiguous or unmatched names stay `universe` | Named tests for §4.3 (exact match after normalisation; ambiguous and unmatched rejected as `universe`), fixed by the egm brainstorm before any dispatch; `.venv/Scripts/python.exe -m unittest tests.test_home_events_pure -q` |
 | T5a | none | `homeEventsBatch.ts` (`validateBatch`, `buildInsert`), vitest, in the style of `collectorRefresh.ts` | `npm test --prefix server -- homeEventsBatch` |
 | T5b | T5a | `homeEventsAuth.ts`, `homeEventsRoute.ts` with injected `eventsTx` and `checkToken`, the `AppDeps` extension in `app.ts`. No `index.ts` change | `npm test --prefix server -- homeEventsRoute`; `npx tsc --noEmit --project server` |
 | T5c | T5b, T2a; split S3 | `eventsPoolConfig()`, the events pool, health check coverage and `index.ts` wiring. `server/src/index.ts` is modified in the working tree and `server/src/kiteToken.ts` is untracked: T5c starts only after those changes are committed or stashed by the user | `npx tsc --noEmit --project server`; `npm test --prefix server`; with the server running, `GET /api/health` reports the events pool |
