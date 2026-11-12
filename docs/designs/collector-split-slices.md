@@ -303,22 +303,29 @@ Down file: `DROP TABLE IF EXISTS source_cooldown;` then `DELETE FROM schema_migr
 
 ---
 
-## 9. Decisions needed from you
+## Decisions
 
-Each question is one the split spec or the requests file leaves to you. I give a default where I have one; none is applied until you say so.
+Resolved 2026-11-12:
 
-1. **Filings spec status.** The requests file says the filings spec is "described as approved (revision 4, 2026-11-10); the overview calls it a draft". Is it approved? The slices do not depend on it except for the names `events_source`, `EVENTS_API_BASE_URL` and `HOME_EVENTS_INGEST_TOKEN_FILE`.
-2. **S0 first.** Every slice here assumes the S0 report exists (run times, pacing, the symbol-update job name, `ath_scan` inputs). Do you want S0 dispatched first, as the split spec requires, or do you accept S1a and S2 starting before it? Default: S0 first (it is report-only).
-3. **Field name in `config/collector_services.json`.** The requests file says `exchange` per entry; the filings spec section 2 says `host`; the cooldown is host-keyed, so `host` is the consistent name. Default: `host`.
-4. **Table name.** Requests file: rename `exchange_cooldown` to `source_cooldown` ("you decide"). Since the old table was never created, S2 creates `source_cooldown` directly. Confirm the name, and that the split spec text (4.3, 4.2, S2, S5a) gets repointed by you, since I do not edit it.
-5. **Cooldown row shape.** S2's DDL columns (`host`, `backoff_class`, `cooldown_until`, `block_count`, `last_block_at`, `last_reason`, `updated_at`) are my proposal. Also: the eleven seed hosts (`nse`, `bse`, `upstox`, `screener`, `rbi`, `federal_reserve`, `fred`, `bls`, `mospi`, `investing_com`, `cnbc_tv18`) are seeded in 049; is seeding right, or should rows appear only through `ensure_source_row`? Default: seed.
-6. **Killed-run finalisation without a database path.** The watchdog has no database access, yet must mark a killed run `failed` / `killed`. Options: (a) a small token-gated Fastify endpoint the watchdog calls after `docker stop` (needs the `collector_runs` update grant for the app role, a new migration number); (b) the next run-once for that source finalises any stale `running` row of its own when it takes the advisory lock (the lock proves the earlier process is dead, so no new endpoint or grant); (c) the watchdog connects to the database after all (reverses decision 2). Default: (b), because the advisory lock already proves liveness (C3). This is also a change to S1a's scope if chosen.
-7. **Migration numbers.** I proposed 049 (S2), 050 (S5a), 051 (S8), 052 (filings T1), and a later number for S2a. You said "you decide best", so these stand unless you object. Note one consequence: S5a's grant migration 050 depends on S2's 049 being merged first.
-8. **S5a depends on S2.** The split spec lists S5a's dependency as S1a only, but `/internal/due` reads `source_cooldown`. Confirm the corrected dependency (S1a and S2).
-9. **Holiday calendar.** Python `due_sources` and the TypeScript rule are weekday-only; the holiday list lives only in `ui-v2/src/lib/marketSession.ts`. Holidays cost one wasted container start per tick. Accept weekday-only for now (default), or require a trading-day check in `/internal/due`?
-10. **Report CSV and xlsx fate (NB4).** Still listed as open in the split spec 7. Not in these six slices (it belongs to S2a), but S2a cannot be written until you decide whether `scanner/report.py` keeps its human CSV and xlsx exports (the split spec says yes, human-only).
-11. **Risk 3 fallback.** If S0 measures container start-up above about 20 s, `announcements` and `filings` might stay long-running, which contradicts decision 1. You said this can wait for the S0 measurement. It gates S3's service set for those two, not these slices' code.
-12. **Task Scheduler registration.** S4 builds the launcher and a documented registration command but does not register the logon task (system configuration change). Do you want the slice to register it when it merges, or will you do it?
-13. **Cron dependency for Fastify.** S5a adds one pinned cron library to `server/package.json`. The split spec leaves the choice to the slice. Do you approve a dependency add (default `cron-parser`, version pinned in the PR), or prefer a small hand-written evaluator for the few cron shapes in use?
-14. **`filings` host.** The split spec marks the fetch host inside `stage_filings` as unverified (S0 checks). `filings` (the existing source) is assumed `nse` in S2 and S8. Confirm after S0.
-15. **Stale text in the split spec.** S1a still says "the next migration is 047"; S1b says nothing on numbers; M14 says "latest is 046"; S2 text says the latest file is 048 (correct); 4.3 and the S2 row say `exchange_cooldown` with four exchanges and a 2 h cap (superseded by the host-keyed table and the 15 min to 1 hour class); the four "filings spec 4.7" citations (its 4.2, 4.6 weekly-sweep row, S5a, S7) still point at a stub. These are yours to edit; I did not touch the file.
+- Filings spec status: approved (user, 2026-11-12).
+- Field name in config/collector_services.json: host (user, 2026-11-12).
+- Killed-run finalisation: the next run-once finalises a stale running row under the advisory lock (primary). A Fastify endpoint is also provided (user reply "[the advisory lock] then fastify", read as both).
+- Cron dependency: pinned (user, 2026-11-12). cron-parser pinned in server/package.json.
+- Holiday calendar: weekday-only in /internal/due (user, 2026-11-12).
+- Task Scheduler logon task: registered by S4 (user, 2026-11-12).
+- Migration 048 (index_constituents): applied now (user, 2026-11-12).
+- Migration 027 header: stays unedited; the runner rejects edited applied migrations (sha256 check in scanner/pg/migrate.py apply_on).
+- Screener rotation exposure date: 2026-11-11, from the session record (the HAR was read about 10:20 UTC); deadline 2027-05-11 (six months, user assumption).
+- Daily EOD series: delivered as table fund_daily in migration 053 (user: "fix this").
+
+Still open:
+
+- S0 dispatch status: S0 is report-only and gates S1a, S2 and S3. Default: S0 first, as the split spec requires.
+- S5a depends on S2 and not only S1a: `/internal/due` reads `source_cooldown`, so S5a needs S1a and S2 merged first.
+- S2 DDL columns and the eleven hosts seeded in 049 (`host`, `backoff_class`, `cooldown_until`, `block_count`, `last_block_at`, `last_reason`, `updated_at`; seed rows versus `ensure_source_row` only). Default: seed.
+- CSV and xlsx fate (NB4): whether `scanner/report.py` keeps its human CSV and xlsx exports. Needed before S2a is written.
+- Risk 3 fallback: if S0 measures container start-up above about 20 s, `announcements` and `filings` may stay long-running. Gates S3's service set, not these slices' code.
+- Filings fetch host confirmation after S0: `filings` is assumed `nse` in S2 and S8 until S0 confirms the host inside `stage_filings`.
+- Migration numbers 049 to 052 are proposals (049 S2, 050 S5a, 051 S8, 052 filings T1); S2a takes the next free number when written.
+- exchange_cooldown finding: no rename is needed, because the table was never created; S2 creates `source_cooldown` directly.
+- Stale text in docs/designs/collector-split-spec.md (S1a migration number, M14 "latest is 046", the 4.3 and S2 `exchange_cooldown` rows, the "filings spec 4.7" citations): the user edits that file. This draft does not touch it.
