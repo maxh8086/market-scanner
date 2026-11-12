@@ -4,8 +4,11 @@ All notable changes to this project are recorded here. Newest first.
 
 ## [Unreleased]
 
+### Fixed
+- Migrations 048 (index_constituents) and 053 (fund_daily) now apply. The table owner was changed to market_scanner_app, so the runner's CREATE INDEX and GRANT statements in 048 succeed. The `scanner` Docker image was rebuilt because it was stale and skipped migrations 047 onward without an error (ledger run 5 follow-up).
+
 ### Added
-- Daily fundamentals table fund_daily (migration 053_fund_daily.sql) and write_fund_daily in scanner/fund_writer.py. Non-bank only, parameterised SQL, not wired to a caller. Blocked until 048 is fixed: 053 sorts after 048, which fails (ledger run 5).
+- Daily fundamentals table fund_daily (migration 053_fund_daily.sql) and write_fund_daily in scanner/fund_writer.py. Non-bank only, parameterised SQL, not wired to a caller. Applied 2026-11-12 (ledger run 5 follow-up).
 - Non-bank quarterly and annual fundamentals writer (ledger row 17): scanner/fund_writer.py and tests/test_fund_writer.py. Not wired to a caller. Daily EOD series deferred.
 - Home events T0 (NSE filings samples): all eight `tests/fixtures/home_events/nse_*.xml` files are now byte copies of the captured NSE RSS samples in `data/home_samples/host/cold/` (142 items). At HEAD, seven of the eight fixtures carried synthetic content (Financial_Results and Corporate_action had invented titles and descriptions); Corporate_Governance was already the real sample. Section 9 of `docs/designs/home-events-filings-spec.md` records the T0 status. This change is fixtures and docs only: no code changed, and no test reads these fixtures yet.
 - `docs/designs/home-event-sources.md`: user approval recorded (2026-11-11). Section 8.2 item 20 now reads approved. The approval waives none of the open items in section 8.1 (8.1 items 3, 5, 8 and 9 stay open), and 8.1 items 6 and 7 are resolved here. Upstox News default is on, and the source stays blocked until Upstox confirms in writing (section 5.4). For NSE, the user's personal-use risk acceptance is the terms gate (section 4). The status line, 8.1 item 4 and 8.2 item 11 now match the approved filings spec (2026-11-11). The EGM re-review of 2026-11-11 (`docs/progress/home-event-sources-rereview2.md`) still reads NOT READY; this approval does not change that verdict. Stale status text is fixed in section 7.3 (trading days), section 8.1 items 5 and 8, section 8.2 items 12 and 16, and the US CPI row in section 10.2. Doc only: no code changed.
