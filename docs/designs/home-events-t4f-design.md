@@ -32,6 +32,7 @@ It does not cover the wiring of the events runner (`run_cycle` with the name loo
 | D11 | One provider is active at a time, chosen by `LLM_PROVIDER`. No call site picks a provider. | Decision 13 |
 | D12 | Migration numbers: 049 S2 `source_cooldown`, 050 S5a grants, 051 S8 filings cron, 052 filings registration. Reserved 049 to 052 as listed. The next free number is 054, since 053 is `fund_daily`. S2a takes the next free number when written. | Q4 ("i accept proposal") |
 | D13 | Monthly refresh: the loader role's password is set and stored in a secret file. `POSTGRES_LOADER_PASSWORD_FILE` is set in `.env`. Next refresh due 2026-12-12. | Q5 |
+| D15 | Call-site order (brainstorm question 2, user 2026-11-12: "agree as proposed in design"). Order: T1 six indices into the monthly job; then T2 NSE precedence (D6); then T3 constituent membership read from the database; then T4 llm-client; then T5 scanner call sites and T6 test updates; then T7 documents. | Q2 |
 
 ## 3. Facts checked in the code (2026-11-12)
 
@@ -156,7 +157,7 @@ Each task names its files, one acceptance command, what must not change, and a t
 | T6 Test updates | `tests/test_llm.py`; `tests/test_llm_payload.py`; `tests/test_conclude_request.py`; `tests/test_conclude.py` | T5 | the assertions about payload content | 30 |
 | T7 Documents | `docs/designs/home-events-filings-spec.md` §4.3; `docs/designs/company-reference-handoff.md` items 4 and 6; `docs/designs/concall-vl-extraction-plan.md` line 14 | T1 to T6 | the spec's other sections | 15 |
 
-Order: T1, then T2 (if O1 is yes) and T3, then T4, then T5 and T6, then T7. T4 and T5 can run after T1 to T3 if the user prefers.
+Order (agreed 2026-11-12, decision D15): T1, then T2 and T3, then T4, then T5 and T6, then T7. The earlier option to run T4 and T5 after T1 to T3 is not chosen.
 
 T4 includes `docker-compose.yml` (the T4 row above, line 148 of the file before this edit), and the BL-2 test edits named in that row.
 
