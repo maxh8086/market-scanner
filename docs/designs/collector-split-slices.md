@@ -313,7 +313,7 @@ Resolved 2026-11-12:
 - Cron dependency: pinned (user, 2026-11-12). cron-parser pinned in server/package.json.
 - Holiday calendar: weekday-only in /internal/due (user, 2026-11-12).
 - Task Scheduler logon task: registered by S4 (user, 2026-11-12).
-- Migration 048 (index_constituents): applied now (user, 2026-11-12).
+- Migration 048 (index_constituents): go-ahead given 2026-11-12, but the apply failed with InsufficientPrivilege. The table is owned by market_scanner_admin and the runner connects as market_scanner_app. Still PENDING; needs the owner (see ledger Run 5).
 - Migration 027 header: stays unedited; the runner rejects edited applied migrations (sha256 check in scanner/pg/migrate.py apply_on).
 - Screener rotation exposure date: 2026-11-11, from the session record (the HAR was read about 10:20 UTC); deadline 2027-05-11 (six months, user assumption).
 - Daily EOD series: delivered as table fund_daily in migration 053 (user: "fix this").
