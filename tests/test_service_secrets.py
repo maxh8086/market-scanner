@@ -126,6 +126,74 @@ class InternalSecretsEndpoint(unittest.TestCase):
         joined = "\n".join(handler.lines)
         self.assertNotIn("VALUE-XYZ", joined)
 
+    # llm-client service token (LC2). Same request pattern as the collector tests above.
+    # Assumption: the llm-client token file is named by LLM_CLIENT_TOKEN_FILE. The collector
+    # token from setUp is left unchanged, and the llm-client token is a different value.
+    LLM_TOKEN = "tok-llm-client-456"
+    LLM_TOKEN_ENV = "LLM_CLIENT_TOKEN_FILE"
+
+    def _use_llm_client_token(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = os.path.join(tmp.name, "llm_client_token")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(self.LLM_TOKEN)
+        env = patch.dict(os.environ, {self.LLM_TOKEN_ENV: path})
+        env.start()
+        self.addCleanup(env.stop)
+        return self.LLM_TOKEN
+
+    def test_llm_client_token_cannot_read_upstox_token(self):
+        token = self._use_llm_client_token()
+        resp = self._get("upstox_analytics_token", token=token)
+        self.assertEqual(resp.status_code, 403)
+        self.get_value.assert_not_called()
+
+    def test_llm_client_token_reads_only_llm_key_names(self):
+        token = self._use_llm_client_token()
+        allowed = self._get("llm_key_openai", token=token)
+        self.assertTrue(200 <= allowed.status_code < 300,
+                        f"expected 2xx for llm_key_openai, got {allowed.status_code}")
+        denied = self._get("upstox_token", token=token)
+        self.assertEqual(denied.status_code, 403)
+
+    def test_llm_client_token_refused_for_near_miss_names(self):
+        token = self._use_llm_client_token()
+        for name in (
+            "llm_keyx",
+            "llm_key_",
+            "llm_",
+            "llm_key",
+            "llm_key_openai-main",
+            "llm_key_OpenAI",
+            "llm_key_1openai",
+            "llm_key_" + "x" * 42,
+        ):
+            with self.subTest(name=name):
+                self.get_value.reset_mock()
+                resp = self._get(name, token=token)
+                self.assertEqual(resp.status_code, 403)
+                self.get_value.assert_not_called()
+
+    def test_collector_token_refused_for_llm_key_names(self):
+        resp = self._get("llm_key_openai", token=self.TOKEN)
+        self.assertEqual(resp.status_code, 403)
+        self.get_value.assert_not_called()
+
+    def test_wrong_llm_style_token_is_401_on_secrets(self):
+        self._use_llm_client_token()
+        resp = self._get("llm_key_openai", token="tok-matches-neither")
+        self.assertEqual(resp.status_code, 401)
+        self.get_value.assert_not_called()
+
+    def test_llm_client_token_reads_llm_key_when_collector_file_missing(self):
+        token = self._use_llm_client_token()
+        missing = os.path.join(os.path.dirname(self.token_file), "does-not-exist")
+        with patch.dict(os.environ, {"COLLECTOR_TOKEN_FILE": missing}):
+            resp = self._get("llm_key_openai", token=token)
+        self.assertTrue(200 <= resp.status_code < 300,
+                        f"expected 2xx for llm_key_openai with collector file missing, got {resp.status_code}")
+
 
 # ---------------------------------------------------------------------------
 # B. Client: scanner/service_client.py
