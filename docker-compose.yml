@@ -38,12 +38,19 @@ services:
       RUN_ID: ${RUN_ID:-}
       # Container path of the loader password file; loader_dsn() in scanner/company_reference_job.py reads it.
       POSTGRES_LOADER_PASSWORD_FILE: /run/secrets/company_reference_loader_password
+      # Container path of the LLM chat token file (read-only mount below).
+      LLM_CHAT_TOKEN_FILE: /run/service-tokens/llm_chat_token
     volumes:
       - ./data:/app/data
       - ./output:/app/output
       - ./logs:/app/logs
       # Read-only single-file mount of the loader password file named in .env (git-ignored, never baked into the image).
       - ${POSTGRES_LOADER_PASSWORD_FILE:?set POSTGRES_LOADER_PASSWORD_FILE in .env to the host path of the loader password file}:/run/secrets/company_reference_loader_password:ro
+      # Read-only single-file mount of the LLM chat token named in .env (APP_LLM_CHAT_TOKEN_FILE).
+      - ${APP_LLM_CHAT_TOKEN_FILE:?set APP_LLM_CHAT_TOKEN_FILE in .env to the host path of the llm chat token file}:/run/service-tokens/llm_chat_token:ro
+    networks:
+      - default
+      - llm
     restart: "no"
 
   enrich:
@@ -150,6 +157,7 @@ services:
       <<: *scanner-db-env
       APP_MASTER_KEY_FILE: /run/app-keys/app_master_key   # container path; the UI process holds the master key
       COLLECTOR_TOKEN_FILE: /run/service-tokens/collector_token
+      LLM_CLIENT_TOKEN_FILE: /run/service-tokens/llm_client_token
     volumes:
       - ./data:/app/data
       # Host folder that holds the master key (set APP_MASTER_KEY_DIR in .env). Read-only, never baked into the image.
@@ -157,8 +165,32 @@ services:
       # Single-file mount of the collector's service token, so the API can check the internal secrets endpoint.
       # Outside /run/app-keys so it is not nested inside the read-only key folder mount.
       - ${APP_SERVICE_TOKEN_FILE:?set APP_SERVICE_TOKEN_FILE in .env to the host path of the collector token file}:/run/service-tokens/collector_token:ro
+      # Read-only single-file mount of the llm-client service token named in .env (APP_LLM_CLIENT_TOKEN_FILE).
+      - ${APP_LLM_CLIENT_TOKEN_FILE:?set APP_LLM_CLIENT_TOKEN_FILE in .env to the host path of the llm-client service token file}:/run/service-tokens/llm_client_token:ro
     ports:
       - "127.0.0.1:8080:8080"            # loopback only: the UI has no login
+    networks:
+      - default
+      - llm
+    restart: always
+
+  llm-client:            # LLM client service; no host ports, reachable only on the llm network
+    build: {context: ., dockerfile: docker/llm-client/Dockerfile}
+    environment:
+      SECRETS_API_URL: http://ui:8080
+      LLM_CHAT_TOKEN_FILE: /run/service-tokens/llm_chat_token
+      LLM_CLIENT_TOKEN_FILE: /run/service-tokens/llm_client_token
+    volumes:
+      # Read-only single-file mounts of the two service tokens named in .env.
+      - ${APP_LLM_CHAT_TOKEN_FILE:?set APP_LLM_CHAT_TOKEN_FILE in .env to the host path of the LLM chat token file}:/run/service-tokens/llm_chat_token:ro
+      - ${APP_LLM_CLIENT_TOKEN_FILE:?set APP_LLM_CLIENT_TOKEN_FILE in .env to the host path of the llm-client service token file}:/run/service-tokens/llm_client_token:ro
+    networks:
+      - llm
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: always
 
   scanner-mongo:         # this project's MongoDB, data kept in ./data/mongo
@@ -230,5 +262,6 @@ volumes:
   huggingface_cache:
 
 networks:
+  llm: {}
   default:
     name: market-scanner                 # this project's own network; no external network is needed
