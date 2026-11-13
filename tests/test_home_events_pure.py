@@ -267,5 +267,54 @@ class ClassifyResponseTests(unittest.TestCase):
         self.assertEqual(home_events.classify_response(302, "text/plain", b""), "fail")
 
 
+class ApplyDateFloorTests(unittest.TestCase):
+    CUTOFF = datetime(2026, 11, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+    def test_item_strictly_older_than_cutoff_dropped(self):
+        old = {"published_at": self.CUTOFF - timedelta(seconds=1)}
+        new = {"published_at": self.CUTOFF + timedelta(days=1)}
+        kept, dropped = home_events.apply_date_floor([old, new], self.CUTOFF)
+        self.assertEqual(dropped, 1)
+        self.assertEqual(kept, [new])
+
+    def test_item_exactly_on_cutoff_kept(self):
+        item = {"published_at": self.CUTOFF}
+        kept, dropped = home_events.apply_date_floor([item], self.CUTOFF)
+        self.assertEqual(dropped, 0)
+        self.assertEqual(kept, [item])
+
+    def test_naive_datetime_kept_unchanged(self):
+        item = {"published_at": datetime(2000, 1, 1, 0, 0, 0)}
+        kept, dropped = home_events.apply_date_floor([item], self.CUTOFF)
+        self.assertEqual(dropped, 0)
+        self.assertEqual(kept, [item])
+        self.assertIs(kept[0], item)
+
+    def test_item_missing_published_at_kept(self):
+        item = {"symbol": "RELIANCE"}
+        kept, dropped = home_events.apply_date_floor([item], self.CUTOFF)
+        self.assertEqual(dropped, 0)
+        self.assertEqual(kept, [item])
+
+    def test_non_datetime_published_at_kept(self):
+        item = {"published_at": "2000-01-01T00:00:00+00:00"}
+        kept, dropped = home_events.apply_date_floor([item], self.CUTOFF)
+        self.assertEqual(dropped, 0)
+        self.assertEqual(kept, [item])
+
+    def test_empty_list_returns_empty_and_zero(self):
+        self.assertEqual(home_events.apply_date_floor([], self.CUTOFF), ([], 0))
+
+    def test_input_list_not_mutated(self):
+        items = [
+            {"published_at": self.CUTOFF - timedelta(days=1)},
+            {"published_at": self.CUTOFF},
+        ]
+        snapshot = [dict(item) for item in items]
+        home_events.apply_date_floor(items, self.CUTOFF)
+        self.assertEqual(items, snapshot)
+        self.assertEqual(len(items), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

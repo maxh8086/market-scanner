@@ -205,7 +205,7 @@ def _valid_param_keys(source: str) -> set[str]:
         "fundamentals": {"refetch_only_on_new_result", "max_age_days"},
         "home_filings": {
             "gap_min_s", "gap_max_s", "request_timeout_s", "post_timeout_s",
-            "backoff_s", "run_deadline_s", "enabled_feeds",
+            "backoff_s", "run_deadline_s", "enabled_feeds", "ingest_floor_days",
         },
     }
     return valid.get(source, set())

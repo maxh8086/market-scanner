@@ -792,5 +792,109 @@ class RunCycleHardeningTests(unittest.TestCase):
                 self.assertEqual(session.calls, [])
 
 
+class IngestFloorTests(unittest.TestCase):
+    """Ingest age floor (decision D8): items older than ingest_floor_days are dropped before filter_items."""
+
+    CUTOFF = NOW - timedelta(days=730)
+
+    def test_item_exactly_on_cutoff_is_kept(self):
+        parsed = ParseResult(
+            items=[make_item("RELIANCE", self.CUTOFF, "a")], dropped=0,
+        )
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [xml_ok()], feeds=ONE_FEED, parse_fn=ParseStub(result=parsed),
+        )
+        self.assertEqual(result["status"], "ok")
+        rows = posted_rows(post)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(as_datetime(rows[0]["published_at"]), self.CUTOFF)
+        self.assertIn("date_floor=0", result["message"])
+
+    def test_older_item_dropped_and_counted_as_date_floor(self):
+        parsed = ParseResult(
+            items=[
+                make_item("RELIANCE", self.CUTOFF, "a"),
+                make_item("TCS", self.CUTOFF - timedelta(seconds=1), "b"),
+            ],
+            dropped=0,
+        )
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [xml_ok()], feeds=ONE_FEED, parse_fn=ParseStub(result=parsed),
+        )
+        self.assertEqual(result["status"], "ok")
+        rows = posted_rows(post)
+        self.assertEqual([row["published_at"] for row in rows], [self.CUTOFF.isoformat()])
+        self.assertIn("date_floor=1", result["message"])
+        self.assertIn("universe=0", result["message"])
+
+    def test_all_items_below_floor_run_completes_nothing_posted(self):
+        parsed = ParseResult(
+            items=[
+                make_item("RELIANCE", self.CUTOFF - timedelta(days=1), "a"),
+                make_item("TCS", self.CUTOFF - timedelta(days=400), "b"),
+            ],
+            dropped=0,
+        )
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [xml_ok()], feeds=ONE_FEED, parse_fn=ParseStub(result=parsed),
+        )
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(posted_rows(post), [])
+        self.assertEqual(result["new"], 0)
+        self.assertIsNone(result["from"])
+        self.assertIn("date_floor=2", result["message"])
+
+    def test_custom_floor_days_moves_the_cutoff(self):
+        parsed = ParseResult(items=[make_item("RELIANCE", PUB_EARLY, "a")], dropped=0)
+        # The cutoff is NOW - 1 day = 2026-11-10 10:00 UTC. PUB_EARLY (2026-11-10 09:00 UTC) is
+        # one hour before it, so the 1-day floor drops it.
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [xml_ok()], feeds=ONE_FEED, parse_fn=ParseStub(result=parsed),
+            params={"ingest_floor_days": 1},
+        )
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("date_floor=1", result["message"])
+        self.assertEqual(posted_rows(post), [])
+
+    def test_bad_ingest_floor_days_is_config_error(self):
+        cases = (
+            {"ingest_floor_days": 0},
+            {"ingest_floor_days": -5},
+            {"ingest_floor_days": True},
+            {"ingest_floor_days": 10 ** 6},
+            {"ingest_floor_days": 3651},
+            {"ingest_floor_days": 730.0},
+        )
+        for params in cases:
+            with self.subTest(params=params):
+                result, session, sleep, post, cooldown = run_cycle_with([], params=params)
+                self.assertEqual(result["status"], "failed")
+                self.assertEqual(result["message"], "config:ingest_floor_days")
+                self.assertEqual(session.calls, [])
+                self.assertEqual(post.calls, [])
+                self.assertEqual(cooldown.active_calls, [])
+
+    def test_upper_bound_ingest_floor_days_is_accepted(self):
+        result, session, sleep, post, cooldown = run_cycle_with(
+            [xml_ok()], feeds=ONE_FEED, params={"ingest_floor_days": 3650},
+        )
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("date_floor=0", result["message"])
+
+    def test_floored_name_only_item_not_counted_as_isin_conflict(self):
+        # Floored items are removed before count_isin_conflicts runs (it takes `recent`), so the
+        # old disagreeing name-only item counts only as date_floor. The recent one counts as isin_conflict.
+        old = dict(make_item("X", self.CUTOFF - timedelta(days=1), "a"), symbol=None, company="Reliance Limited", isin="INE999Z01099")
+        recent = dict(make_item("X", PUB_EARLY, "b"), symbol=None, company="Reliance Limited", isin="INE999Z01099")
+        parsed = ParseResult(items=[old, recent], dropped=0)
+        by_name = {"RELIANCE LTD": ("RELIANCE", UNIVERSE["RELIANCE"])}
+        result, _session, _sleep, post, _cooldown = run_cycle_with(
+            [xml_ok()], feeds=ONE_FEED, parse_fn=ParseStub(result=parsed), by_name=by_name,
+        )
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(posted_rows(post), [])
+        self.assertIn("isin_conflict=1 date_floor=1", result["message"])
+
+
 if __name__ == "__main__":
     unittest.main()

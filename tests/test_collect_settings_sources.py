@@ -68,7 +68,7 @@ class ValidParamKeysTests(unittest.TestCase):
     def test_home_filings_param_keys_accepted_and_unknown_rejected(self):
         expected = {
             "gap_min_s", "gap_max_s", "request_timeout_s", "post_timeout_s",
-            "backoff_s", "run_deadline_s", "enabled_feeds",
+            "backoff_s", "run_deadline_s", "enabled_feeds", "ingest_floor_days",
         }
         self.assertEqual(settings._valid_param_keys("home_filings"), expected)
         self.assertEqual(settings._valid_param_keys("no_such_source"), set())
