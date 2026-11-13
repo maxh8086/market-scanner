@@ -1,8 +1,7 @@
 """Local LLM extraction over stored filing text.
 
-Runs against any OpenAI-compatible or Ollama HTTP endpoint, so the backend is a
-config change rather than a code change -- llama.cpp's server image, Ollama, or
-anything else that speaks either protocol. Nothing here assumes a GPU.
+Every call goes through llm-client (POST {LOCAL_LLM_URL}/v1/chat), which owns the
+provider, the key and the wire format. Nothing here assumes a GPU.
 
 Why a text model and not a vision/OCR one: measured over 40 real filings, pypdf
 extracted a clean text layer from 40/40. These are digitally-generated PDFs, not
@@ -30,6 +29,7 @@ the previous answer.
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -59,23 +59,21 @@ PROMPT_VERSION = 2
 
 @dataclass
 class LLMConfig:
-    """Backend settings. Defaults point at Ollama's usual local port."""
+    """Backend settings. base_url is the llm-client origin (LOCAL_LLM_URL)."""
 
-    base_url: str = "http://localhost:11434"
-    model: str = "qwen3:8b"
-    api: str = "ollama"        # "ollama" or "openai" (llama.cpp server, vLLM, ...)
+    base_url: str = field(default_factory=lambda: os.environ.get("LOCAL_LLM_URL", "http://llm-client:8000"))
+    model: str = "hf.co/unsloth/Qwen3.5-4B-GGUF:Q6_K"
+    api: str = "ollama"        # kept for callers; llm-client picks the wire format
     timeout: int = 900         # CPU inference on a long filing is slow, not stuck
     temperature: float = 0.0   # extraction, not writing: no sampling
     max_input_chars: int = 12000
     num_ctx: int = 8192
-    provider_id: Optional[str] = None  # llm_provider row the call goes through (M-16)
-    route: Optional[str] = None        # "native" or "compat"
+    provider_id: Optional[str] = "ollama"  # llm_provider row the call goes through (M-16)
+    route: Optional[str] = "native"        # "native" or "compat"
 
     @property
     def endpoint(self) -> str:
-        if self.api == "ollama":
-            return f"{self.base_url.rstrip('/')}/api/chat"
-        return f"{self.base_url.rstrip('/')}/v1/chat/completions"
+        return f"{self.base_url.rstrip('/')}/v1/chat"
 
 
 _ORDER_SCHEMA = """{
@@ -292,9 +290,7 @@ SCHEMAS: dict[str, dict] = {
     }),
 }
 
-# A vLLM server here runs a 4096-token context: the prompt (~0.7k), the answer and the
-# filing text must all fit. The mandated disclosure sits at the top of a filing, so the
-# text is cut from the tail. Ollama runs its own, larger num_ctx and keeps the config cap.
+# Answer-token ceiling for one extraction, sent as max_tokens to llm-client.
 OPENAI_MAX_INPUT_CHARS = 8000
 OPENAI_MAX_TOKENS = 500
 
@@ -350,35 +346,43 @@ def parse_json_response(text: str) -> Optional[dict]:
     return None
 
 
-def _payload(cfg: LLMConfig, prompt: str, kind: Optional[str] = None) -> dict:
-    messages = [{"role": "user", "content": prompt}]
-    if cfg.api == "ollama":
-        return {
-            "model": cfg.model,
-            "messages": messages,
-            "stream": False,
-            "format": "json",  # Ollama constrains decoding to valid JSON
-            "think": False,  # thinking models return empty content unless thinking is off
-            "options": {"temperature": cfg.temperature, "num_ctx": cfg.num_ctx},
-        }
+def _chat_token() -> str:
+    """Bearer token for llm-client, read from the file that LLM_CHAT_TOKEN_FILE names."""
+    path = os.environ.get("LLM_CHAT_TOKEN_FILE", "")
+    if not path:
+        raise RuntimeError("LLM_CHAT_TOKEN_FILE is not set")
+    with open(path, encoding="utf-8") as fh:
+        return fh.read().strip()
+
+
+def _payload(cfg: LLMConfig, messages: list, max_tokens: int,
+             json_schema: Optional[dict] = None) -> dict:
+    """Body for llm-client POST /v1/chat (design section 4.5)."""
     body = {
+        "provider_id": cfg.provider_id or "ollama",
         "model": cfg.model,
+        "route": cfg.route or "native",
         "messages": messages,
-        "temperature": cfg.temperature,
-        "max_tokens": OPENAI_MAX_TOKENS,
-        "response_format": {"type": "json_object"},
+        "max_tokens": max_tokens,
+        "options": {"temperature": cfg.temperature, "num_ctx": cfg.num_ctx},
     }
-    if kind in SCHEMAS:
-        body["response_format"] = {"type": "json_schema", "json_schema": {
-            "name": kind, "schema": SCHEMAS[kind]}}
+    if json_schema is not None:
+        body["json_schema"] = json_schema
     return body
 
 
+def post_chat(cfg: LLMConfig, body: dict):
+    """POST one chat body to llm-client and return the raw response. The caller checks the
+    status: llm-client answers errors (401, 409, 422, 502, 503) with a JSON error body."""
+    import requests
+
+    return requests.post(cfg.endpoint, json=body,
+                         headers={"Authorization": f"Bearer {_chat_token()}"},
+                         timeout=cfg.timeout)
+
+
 def _content(cfg: LLMConfig, body: dict) -> str:
-    if cfg.api == "ollama":
-        return (body.get("message") or {}).get("content", "")
-    choices = body.get("choices") or [{}]
-    return (choices[0].get("message") or {}).get("content", "")
+    return body.get("content", "")
 
 
 def _extract_tokens(cfg: LLMConfig, body: dict) -> tuple[int, int]:
@@ -443,8 +447,6 @@ def extract(cfg: LLMConfig, text: str, kind: str = KIND_ORDER,
     # Keep the front of the text (text[:limit]): the mandated disclosure table is near
     # the top of an order filing, and the tail is boilerplate and signatures.
     limit = cfg.max_input_chars
-    if cfg.api != "ollama":
-        limit = min(limit, OPENAI_MAX_INPUT_CHARS)
 
     # Derive source_key from text hash if not provided, for metrics logging
     if not source_key:
@@ -457,8 +459,8 @@ def extract(cfg: LLMConfig, text: str, kind: str = KIND_ORDER,
     try:
         for attempt in (0, 1):
             prompt = PROMPTS[kind].replace(TEXT_SLOT, text[:limit])
-            resp = requests.post(cfg.endpoint, json=_payload(cfg, prompt, kind),
-                                 timeout=cfg.timeout)
+            resp = post_chat(cfg, _payload(cfg, [{"role": "user", "content": prompt}],
+                                           OPENAI_MAX_TOKENS, SCHEMAS.get(kind)))
             # Text that overflows the server's context is a 400; one retry on half as
             # much text beats losing the document.
             if resp.status_code == 400 and attempt == 0 and "context" in resp.text.lower():

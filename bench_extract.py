@@ -1,7 +1,7 @@
 """Run the fixed extraction acceptance test (scanner/extractcheck.py).
 
-    python bench_extract.py                       # vLLM on localhost:8001
-    python bench_extract.py --url http://localhost:11434 --api ollama --model qwen3:8b
+    python bench_extract.py                       # llm-client at LOCAL_LLM_URL (active provider)
+    python bench_extract.py --model <tag>   # --url and --api are refused (O8 / M-25)
 
 Order filings whose value the regex read from the mandated table are the yardstick:
 the model must reproduce that rupee figure. A few guidance and expansion filings
@@ -31,18 +31,16 @@ def pick(db):
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--url", default="http://127.0.0.1:8001")
-    p.add_argument("--api", default="openai", choices=["openai", "ollama"])
-    p.add_argument("--model", default="qwen3-4b")
+    p.add_argument("--model", default=llm.LLMConfig().model)
     p.add_argument("--workers", type=int, default=4)
     args = p.parse_args(argv)
 
     db = docstore.open_db()
     orders, guidance, expansion = pick(db)
     db.close()
-    cfg = llm.LLMConfig(base_url=args.url, model=args.model, api=args.api, timeout=240)
+    cfg = llm.LLMConfig(model=args.model, timeout=240)
     ok, detail = llm.health(cfg)
-    print(f"{args.url}: {detail}")
+    print(f"{cfg.base_url}: {detail}")
     if not ok:
         return 1
 

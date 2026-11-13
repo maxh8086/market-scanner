@@ -6,7 +6,7 @@
 # The databases (Postgres, MongoDB, Neo4j) are this project's own services (scanner-postgres,
 # scanner-mongo, scanner-neo4j) on the project's `market-scanner` network. The LLM server is
 # NOT started by this project: it is an OpenAI-compatible endpoint given by URL (start.ps1 passes
-# LLM_URL to enrich; conclude reads CONCLUDE_URL). Nothing here depends on another compose project.
+# LOCAL_LLM_URL to enrich and conclude (llm-client). Nothing here depends on another compose project.
 #
 # Components hand off through the bind-mounted data/, output/ and logs/ folders
 # (SQLite caches, TinyDB store, CSV/XLSX outputs).
@@ -123,8 +123,9 @@ services:
       - .env
     environment:
       <<: *scanner-db-env
-      CONCLUDE_URL: http://host.docker.internal:11434  # the host's own Ollama API, not a container
+      LOCAL_LLM_URL: http://llm-client:8000
       RUN_ID: ${RUN_ID:-}
+    networks: [default, llm]
     volumes: *persist
     restart: "no"
 

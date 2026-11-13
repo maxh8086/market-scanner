@@ -181,17 +181,22 @@ class _Resp:
         pass
 
     def json(self):
-        return {"choices": [{"message": {"content": self._c}}]}
+        return {"content": self._c}
 
 
 class _OllamaResp(_Resp):
     """Native Ollama /api/chat reply: the content sits under 'message'."""
 
     def json(self):
-        return {"message": {"content": self._c}}
+        return {"content": self._c}
 
 
 class TestCall(unittest.TestCase):
+    def setUp(self):
+        p = mock.patch("scanner.llm._chat_token", return_value="t")
+        p.start()
+        self.addCleanup(p.stop)
+
     cfg = llm.LLMConfig(base_url="http://vllm:8000", model="phi-4-mini", api="openai")
 
     def test_request_shape_and_result(self):
@@ -202,10 +207,10 @@ class TestCall(unittest.TestCase):
         self.assertTrue(r.ok)
         url = post.call_args.args[0]
         body = post.call_args.kwargs["json"]
-        self.assertEqual(url, "http://vllm:8000/v1/chat/completions")
+        self.assertEqual(url, "http://vllm:8000/v1/chat")
         self.assertEqual(body["model"], "phi-4-mini")
-        self.assertEqual(body["temperature"], 0.0)
-        self.assertEqual(body["response_format"]["type"], "json_schema")
+        self.assertEqual(body["options"]["temperature"], 0.0)
+        self.assertIn("json_schema", body)
         self.assertEqual(body["messages"][0]["role"], "system")
         self.assertIn("price.ltp", body["messages"][1]["content"])
 
@@ -215,7 +220,7 @@ class TestCall(unittest.TestCase):
         packet = conclude.build_packet(ROW)
         with mock.patch("requests.post", return_value=_Resp(answer)) as post:
             conclude.conclude(self.cfg, "ABC", ROW, packet, "2026-09-28")
-        schema = post.call_args.kwargs["json"]["response_format"]["json_schema"]["schema"]
+        schema = post.call_args.kwargs["json"]["json_schema"]
         ev = schema["properties"]["positives"]["items"]["properties"]["evidence"]
         self.assertEqual(ev["items"]["enum"], sorted(packet))
         self.assertEqual(ev["maxItems"], 4)
@@ -290,7 +295,7 @@ class TestCli(unittest.TestCase):
             "stance": "CONSTRUCTIVE", "conclusion": "At a high.",
             "positives": [{"point": "New high", "evidence": ["price.bucket"]}],
             "concerns": [], "data_gaps": []})
-        with mock.patch("requests.post", return_value=_OllamaResp(answer)) as post, \
+        with mock.patch("scanner.llm._chat_token", return_value="t"), mock.patch("requests.post", return_value=_OllamaResp(answer)) as post, \
                 mock.patch("scanner.llm.health", return_value=(True, "ok")):
             code = cli.main(list(argv))
         return code, post.call_count

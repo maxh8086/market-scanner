@@ -51,37 +51,34 @@ class TestParseJSONResponse(unittest.TestCase):
 class TestConfig(unittest.TestCase):
     def test_ollama_endpoint(self):
         cfg = llm.LLMConfig(base_url="http://localhost:11434", api="ollama")
-        self.assertEqual(cfg.endpoint, "http://localhost:11434/api/chat")
+        self.assertEqual(cfg.endpoint, "http://localhost:11434/v1/chat")
 
     def test_openai_endpoint(self):
         cfg = llm.LLMConfig(base_url="http://localhost:8080", api="openai")
         self.assertEqual(cfg.endpoint,
-                         "http://localhost:8080/v1/chat/completions")
+                         "http://localhost:8080/v1/chat")
 
     def test_trailing_slash_does_not_double_up(self):
         cfg = llm.LLMConfig(base_url="http://localhost:11434/", api="ollama")
-        self.assertEqual(cfg.endpoint, "http://localhost:11434/api/chat")
+        self.assertEqual(cfg.endpoint, "http://localhost:11434/v1/chat")
 
     def test_temperature_is_zero_for_extraction(self):
         self.assertEqual(llm.LLMConfig().temperature, 0.0)
 
-    def test_ollama_payload_constrains_to_json(self):
-        cfg = llm.LLMConfig(api="ollama")
-        self.assertEqual(llm._payload(cfg, "p")["format"], "json")
+    def test_payload_carries_the_contract_fields(self):
+        cfg = llm.LLMConfig(model="m", provider_id="ollama", route="native")
+        body = llm._payload(cfg, [{"role": "user", "content": "p"}], 500)
+        self.assertEqual(body["provider_id"], "ollama")
+        self.assertEqual(body["route"], "native")
+        self.assertEqual(body["max_tokens"], 500)
+        self.assertNotIn("json_schema", body)
 
-    def test_openai_payload_constrains_to_json(self):
-        cfg = llm.LLMConfig(api="openai")
-        self.assertEqual(llm._payload(cfg, "p")["response_format"],
-                         {"type": "json_object"})
+    def test_payload_passes_the_schema_through(self):
+        body = llm._payload(llm.LLMConfig(), [], 500, json_schema={"type": "object"})
+        self.assertEqual(body["json_schema"], {"type": "object"})
 
-    def test_content_extraction_per_api(self):
-        ollama = llm.LLMConfig(api="ollama")
-        self.assertEqual(
-            llm._content(ollama, {"message": {"content": "x"}}), "x")
-        openai = llm.LLMConfig(api="openai")
-        self.assertEqual(
-            llm._content(openai, {"choices": [{"message": {"content": "y"}}]}),
-            "y")
+    def test_content_is_read_from_the_llm_client_body(self):
+        self.assertEqual(llm._content(llm.LLMConfig(), {"content": "x"}), "x")
 
     def test_content_extraction_survives_an_empty_body(self):
         self.assertEqual(llm._content(llm.LLMConfig(api="ollama"), {}), "")
