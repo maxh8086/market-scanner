@@ -276,6 +276,7 @@ Quoted answers are in section 5.1.
 - Schema check: strict_check (M-17).
 - max_tokens: 500 for extract (scanner/llm.py line 297; blocker line 33) and 1400 for conclude (scanner/conclude.py line 517). The scanner passes the value in each request.
 - Gate for LC4: confirm the native structured-output field name and the anthropic-version value from the live Anthropic docs; record the source URL and date in this design before LC4 starts. The compat route sends json_schema with strict true (decision c), as response_format {"type":"json_schema","json_schema":{"name":"...","schema":...,"strict":true}}. The blocker says the compat page accepts only json_schema with strict: true (its statement, not re-checked here).
+- LC4 gate result (confirmed 2026-11-13 from the live docs, https://platform.claude.com/docs/en/build-with-claude/structured-outputs and https://platform.claude.com/docs/en/api/versioning): the native structured-output field is output_config.format with type json_schema and the schema under schema (no beta header; stable); the anthropic-version value is 2026-10-21. From that version the temperature, top_p and top_k request parameters are removed and return 400, so the adapter sends none of them.
 
 ### 4.6 Provider and model settings (database only)
 
