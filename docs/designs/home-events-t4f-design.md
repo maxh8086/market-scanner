@@ -351,6 +351,16 @@ Group B:
 - The 2-row gap (ESFL, SUVID-RE) at the next refresh (due 2026-12-12).
 - The database counts in section 3 (not queried in this revision).
 
+### 5.4 Execution status (2026-11-13)
+
+- LC0 done.
+- LC1 and LC2 done in code; runtime checks partial (see ledger).
+- LC3 PR #114, LC5 PR #116, LC6 PR #117 open and held (runtime checks pending).
+- LC4 merged (PR #115).
+- LC7 this change.
+
+Evidence and open items: docs/progress/t4f-execution-ledger.md.
+
 ---
 
 ## 6. Must not change without a separate approval

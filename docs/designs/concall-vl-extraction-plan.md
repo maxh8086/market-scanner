@@ -11,7 +11,7 @@ Output: page-level text with page numbers, stored in MongoDB (decided by the own
 
 Decisions (2026-11-09, owner):
 - Storage: MongoDB.
-- Scanned pages (41662844 pages 2–7): local VL model via Ollama, tag `ts-qwen3-vl-8b-65536:latest` (present in Ollama). Called directly through Ollama `/api/chat`, not through tokenfrugal, because the owner chose this model.
+- Scanned pages (41662844 pages 2–7): local VL model via Ollama, tag `ts-qwen3-vl-8b-65536:latest` (present in Ollama). Called through llm-client (design `docs/designs/home-events-t4f-design.md` D8 and section 4.5), not through tokenfrugal, because the owner chose this model. The llm-client request contract has no image input yet, so page images need a contract extension before this step can use llm-client; until then this step is not built.
 
 Out of scope for this step: the LLM summary itself (the template in `concall-summary-template.md`), annual reports, fundamentals.
 
