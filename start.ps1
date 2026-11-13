@@ -290,6 +290,13 @@ if ($code -ne 0) {
     Write-Host "Events database migrations failed (exit $code) -- a warning; the home events tables may be missing until this is fixed." -ForegroundColor Yellow
 }
 
+# Collector start-up (M5): register the collector sources and run the first-run watcher. After the
+# migrations and before any collector or watchdog start. Warning only, like the steps above.
+$code = Invoke-HostPython @('collect.py', 'init')
+if ($code -ne 0) {
+    Write-Host "collect.py init failed (exit $code) -- a warning; collector sources may not be registered until this is fixed." -ForegroundColor Yellow
+}
+
 # Index constituents: non-critical. A failure leaves the last good CSVs and the last loaded rows in place.
 Write-Stage "Constituents: refresh index CSVs on the host (non-critical)"
 $code = Invoke-HostPython @('scripts\fetch_index_constituents.py')

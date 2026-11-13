@@ -1,3 +1,4 @@
+import { browserSession } from "../src/sessionTestHelper.js";
 import { describe, expect, it } from "vitest";
 import { buildApp, type QueryFn } from "../src/app.js";
 import {
@@ -95,7 +96,7 @@ describe("GET /api/recent-closes", () => {
   it("returns 200 with the closes map", async () => {
     const { query } = fakeQuery([{ symbol: "TCS", date: "2024-01-02", close: "1.9" }]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: "/api/recent-closes?symbols=tcs" });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/recent-closes?symbols=tcs" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ closes: { TCS: [1.9] } });
     await app.close();
@@ -104,7 +105,7 @@ describe("GET /api/recent-closes", () => {
   it("passes the symbol list and limit to the query as values", async () => {
     const { query, calls } = fakeQuery([]);
     const app = buildApp({ query });
-    await app.inject({ method: "GET", url: "/api/recent-closes?symbols=TCS,RELIANCE&limit=20" });
+    await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/recent-closes?symbols=TCS,RELIANCE&limit=20" });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.values).toEqual([["TCS", "RELIANCE"], 20]);
     await app.close();
@@ -113,8 +114,8 @@ describe("GET /api/recent-closes", () => {
   it("returns 400 for a bad symbol or limit without querying", async () => {
     const { query, calls } = fakeQuery([]);
     const app = buildApp({ query });
-    const bad = await app.inject({ method: "GET", url: "/api/recent-closes?symbols=BAD%20SYM" });
-    const badLimit = await app.inject({ method: "GET", url: "/api/recent-closes?symbols=TCS&limit=999" });
+    const bad = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/recent-closes?symbols=BAD%20SYM" });
+    const badLimit = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/recent-closes?symbols=TCS&limit=999" });
     expect(bad.statusCode).toBe(400);
     expect(badLimit.statusCode).toBe(400);
     expect(calls).toHaveLength(0);

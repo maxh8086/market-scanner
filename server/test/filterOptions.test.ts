@@ -1,3 +1,4 @@
+import { browserSession } from "../src/sessionTestHelper.js";
 import { describe, expect, it } from "vitest";
 import { buildApp, type QueryFn } from "../src/app.js";
 import { buildFilterOptionsQuery, shapeFilterOptions } from "../src/filterOptions.js";
@@ -66,7 +67,7 @@ describe("GET /api/runs/:runId/filter-options", () => {
   it("returns 200 with the bucket and stance shape", async () => {
     const { query, calls } = fakeQuery([{ bucket: ["A", "B"], stance: ["BUY"] }]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: `/api/runs/${RUN_ID}/filter-options` });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: `/api/runs/${RUN_ID}/filter-options` });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ bucket: ["A", "B"], stance: ["BUY"] });
     expect(calls.some((c) => c.sql.includes("array_agg(DISTINCT ss.bucket"))).toBe(true);
@@ -76,7 +77,7 @@ describe("GET /api/runs/:runId/filter-options", () => {
   it("returns empty lists for a run with no rows", async () => {
     const { query } = fakeQuery([{ bucket: [], stance: [] }]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: `/api/runs/${RUN_ID}/filter-options` });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: `/api/runs/${RUN_ID}/filter-options` });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ bucket: [], stance: [] });
     await app.close();
@@ -85,7 +86,7 @@ describe("GET /api/runs/:runId/filter-options", () => {
   it("returns empty lists without a 404 for an unknown run id", async () => {
     const { query, calls } = fakeQuery([{ bucket: ["A"], stance: ["BUY"] }]);
     const app = buildApp({ query });
-    const res = await app.inject({
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie },
       method: "GET",
       url: "/api/runs/99999999-9999-9999-9999-999999999999/filter-options",
     });
@@ -98,7 +99,7 @@ describe("GET /api/runs/:runId/filter-options", () => {
   it("returns empty lists for a malformed run id", async () => {
     const { query } = fakeQuery([]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: "/api/runs/not-a-run/filter-options" });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/runs/not-a-run/filter-options" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ bucket: [], stance: [] });
     await app.close();
@@ -107,7 +108,7 @@ describe("GET /api/runs/:runId/filter-options", () => {
   it("does not shadow the latest and results routes", async () => {
     const { query } = fakeQuery([{ bucket: ["A"], stance: [] }]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: `/api/runs/${RUN_ID}/results` });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: `/api/runs/${RUN_ID}/results` });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toHaveProperty("results");
     await app.close();

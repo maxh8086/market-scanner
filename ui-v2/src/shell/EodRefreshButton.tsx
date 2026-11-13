@@ -135,13 +135,25 @@ export function EodRefreshButton() {
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
-    if (queuedAt === null) {
-      // First click of a new wait: remember the finish time to compare against, and size the countdown.
-      baselineRef.current = statusRef.current?.lastRefreshedAt ?? null;
-      setEtaSeconds(estimateSeconds(statusRef.current));
-    }
     setState("sending");
     setErrorMessage("");
+    if (queuedAt === null) {
+      // First click of a new wait: read the finish time now, so an earlier run is not taken for this one.
+      let latest: IndexEodStatus;
+      try {
+        latest = await fetchIndexEodStatus({ signal: controller.signal });
+      } catch {
+        if (controller.signal.aborted) return;
+        setQueuedAt(null);
+        setErrorMessage("Could not read the refresh status. Try again.");
+        setState("error");
+        return;
+      }
+      if (controller.signal.aborted) return;
+      setStatus(latest);
+      baselineRef.current = latest.lastRefreshedAt ?? null;
+      setEtaSeconds(estimateSeconds(latest));
+    }
     try {
       const result = await requestIndexEodRefresh({ signal: controller.signal });
       if (result.kind === "market_open") {
@@ -149,8 +161,9 @@ export function EodRefreshButton() {
         setState("market_open");
         return;
       }
-      setQueuedAt((previous) => previous ?? Date.now());
-      setProgressNow(Date.now());
+      const queuedNow = Date.now();
+      setQueuedAt((previous) => previous ?? queuedNow);
+      setProgressNow(queuedNow);
       setState(result.kind === "queued" ? "queued" : "already_queued");
     } catch (error) {
       if (controller.signal.aborted) return;

@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetCsrfTokenForTests, SESSION_URL } from "../api/session";
 import {
   EodRefreshButton,
   estimateSeconds,
@@ -25,6 +26,9 @@ function stubFetch(
   lastRunSeconds: number | null = null,
 ) {
   const fetchMock = vi.fn(async (url: string) => {
+    if (url === SESSION_URL) {
+      return { status: 200, ok: true, json: async () => ({ csrfToken: "test-csrf" }) };
+    }
     if (url === "/api/collector/index-eod/status") {
       return {
         status: 200,
@@ -41,6 +45,10 @@ function stubFetch(
 function postCalls(fetchMock: ReturnType<typeof vi.fn>) {
   return fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "POST");
 }
+
+beforeEach(() => {
+  resetCsrfTokenForTests();
+});
 
 afterEach(() => {
   cleanup();
@@ -151,7 +159,7 @@ describe("EodRefreshButton", () => {
     expect(await screen.findByText(/^Refresh queued\. Estimated 1:1[34] left\.$/)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/collector/index-eod/refresh",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({ method: "POST", headers: { "X-CSRF-Token": "test-csrf" } }),
     );
   });
 
@@ -185,5 +193,87 @@ describe("EodRefreshButton", () => {
     await waitFor(() =>
       expect(screen.getByText("Refresh failed: Could not queue the refresh.")).toBeInTheDocument(),
     );
+  });
+});
+
+describe("EodRefreshButton refresh baseline", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    session.status = "closed";
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  /** Lets pending promise callbacks and effects run under fake timers. */
+  async function settle() {
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+    }
+  }
+
+  /** Status reads return these values in order; an Error rejects that read. The last value repeats. */
+  function stubStatusReads(replies: Array<string | Error>) {
+    const remaining = [...replies];
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === SESSION_URL) {
+        return { status: 200, ok: true, json: async () => ({ csrfToken: "test-csrf" }) };
+      }
+      if (url === "/api/collector/index-eod/status") {
+        const reply = remaining.length > 1 ? remaining.shift()! : remaining[0];
+        if (reply instanceof Error) throw reply;
+        return {
+          status: 200,
+          ok: true,
+          json: async () => ({ lastRefreshedAt: reply, lastRunSeconds: 14, pickupSeconds: 60 }),
+        };
+      }
+      return { status: 202, ok: true, json: async () => ({ queued: true }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("does not report an earlier run as this one when the mount read failed", async () => {
+    const T0 = "2026-11-09T10:22:00.000Z";
+    const T1 = "2026-11-09T10:40:00.000Z";
+    const fetchMock = stubStatusReads([new Error("mount read failed"), T0, T0, T1]);
+    render(<EodRefreshButton />);
+    await settle();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh EOD prices" }));
+    await settle();
+    expect(screen.getByText(/^Refresh queued\./)).toBeInTheDocument();
+    expect(postCalls(fetchMock)).toHaveLength(1);
+
+    // First poll (5 s after queuing) still reads T0, the finish time seen at click: no update yet.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    await settle();
+    expect(screen.queryByText("Prices updated.")).toBeNull();
+
+    // Second poll reads T1: the run finished.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    await settle();
+    expect(screen.getByText("Prices updated.")).toBeInTheDocument();
+  });
+
+  it("does not send the refresh when the click-time status read fails", async () => {
+    const fetchMock = stubStatusReads(["2026-11-09T10:22:00.000Z", new Error("click read failed")]);
+    render(<EodRefreshButton />);
+    await settle();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh EOD prices" }));
+    await settle();
+
+    expect(screen.getByText("Refresh failed: Could not read the refresh status. Try again.")).toBeInTheDocument();
+    expect(postCalls(fetchMock)).toHaveLength(0);
   });
 });

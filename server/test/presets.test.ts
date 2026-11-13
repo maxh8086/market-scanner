@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildApp, type QueryFn } from "../src/app.js";
+import { browserSession } from "../src/sessionTestHelper.js";
 import {
   buildDeletePresetQuery,
   buildInsertPresetQuery,
@@ -129,7 +130,7 @@ describe("/api/presets routes", () => {
     };
     const { query, calls } = fakeQuery([row]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: "/api/presets" });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/presets" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ presets: [row] });
     expect(calls[0].sql).toContain("FROM scan_presets");
@@ -139,9 +140,11 @@ describe("/api/presets routes", () => {
     const created = { preset_id: PRESET_ID, name: "A", filters: { bucket: "B" } };
     const { query, calls } = fakeQuery([created]);
     const app = buildApp({ query });
+    const { cookie, csrf } = await browserSession(app);
     const res = await app.inject({
       method: "POST",
       url: "/api/presets",
+      headers: { cookie, "x-csrf-token": csrf },
       payload: { name: " A ", filters: { bucket: "B" } },
     });
     expect(res.statusCode).toBe(201);
@@ -152,9 +155,11 @@ describe("/api/presets routes", () => {
   it("POST returns 400 with an error on validation failure and runs no query", async () => {
     const { query, calls } = fakeQuery([]);
     const app = buildApp({ query });
+    const { cookie, csrf } = await browserSession(app);
     const res = await app.inject({
       method: "POST",
       url: "/api/presets",
+      headers: { cookie, "x-csrf-token": csrf },
       payload: { name: "", filters: {} },
     });
     expect(res.statusCode).toBe(400);
@@ -165,7 +170,8 @@ describe("/api/presets routes", () => {
   it("POST returns 400 when the body is missing", async () => {
     const { query, calls } = fakeQuery([]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "POST", url: "/api/presets" });
+    const { cookie, csrf } = await browserSession(app);
+    const res = await app.inject({ method: "POST", url: "/api/presets", headers: { cookie, "x-csrf-token": csrf } });
     expect(res.statusCode).toBe(400);
     expect(calls).toHaveLength(0);
   });
@@ -173,7 +179,8 @@ describe("/api/presets routes", () => {
   it("DELETE returns 204 when a row was removed", async () => {
     const { query, calls } = fakeQuery([{ preset_id: PRESET_ID }]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "DELETE", url: `/api/presets/${PRESET_ID}` });
+    const { cookie, csrf } = await browserSession(app);
+    const res = await app.inject({ method: "DELETE", url: `/api/presets/${PRESET_ID}`, headers: { cookie, "x-csrf-token": csrf } });
     expect(res.statusCode).toBe(204);
     expect(calls[0].values).toEqual([PRESET_ID]);
   });
@@ -181,7 +188,8 @@ describe("/api/presets routes", () => {
   it("DELETE returns 404 when no row matched", async () => {
     const { query } = fakeQuery([]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "DELETE", url: `/api/presets/${PRESET_ID}` });
+    const { cookie, csrf } = await browserSession(app);
+    const res = await app.inject({ method: "DELETE", url: `/api/presets/${PRESET_ID}`, headers: { cookie, "x-csrf-token": csrf } });
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({ error: "Preset not found" });
   });
@@ -189,7 +197,8 @@ describe("/api/presets routes", () => {
   it("DELETE returns 400 for a bad id and runs no query", async () => {
     const { query, calls } = fakeQuery([]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "DELETE", url: "/api/presets/nope" });
+    const { cookie, csrf } = await browserSession(app);
+    const res = await app.inject({ method: "DELETE", url: "/api/presets/nope", headers: { cookie, "x-csrf-token": csrf } });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: "Invalid presetId" });
     expect(calls).toHaveLength(0);

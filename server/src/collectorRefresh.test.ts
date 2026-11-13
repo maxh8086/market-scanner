@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp, type QueryResult } from "./app.js";
+import { browserSession } from "./sessionTestHelper.js";
 import {
   buildIndexEodRefreshInsert,
   buildLastIndexEodRunQuery,
@@ -54,7 +55,12 @@ describe("POST /api/collector/index-eod/refresh", () => {
       return { rows: [] };
     };
     const app = buildApp({ query });
-    const response = await app.inject({ method: "POST", url: "/api/collector/index-eod/refresh" });
+    const { cookie, csrf } = await browserSession(app);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/collector/index-eod/refresh",
+      headers: { cookie, "x-csrf-token": csrf },
+    });
     expect(response.statusCode).toBe(409);
     expect(response.json()).toEqual({
       error: "market_hours",
@@ -72,7 +78,12 @@ describe("POST /api/collector/index-eod/refresh", () => {
       return { rows: [{ id: values[0] }] };
     };
     const app = buildApp({ query });
-    const response = await app.inject({ method: "POST", url: "/api/collector/index-eod/refresh" });
+    const { cookie, csrf } = await browserSession(app);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/collector/index-eod/refresh",
+      headers: { cookie, "x-csrf-token": csrf },
+    });
     expect(response.statusCode).toBe(202);
     expect(response.json()).toEqual({ queued: true });
     expect(calls).toHaveLength(1);
@@ -86,7 +97,12 @@ describe("POST /api/collector/index-eod/refresh", () => {
     vi.setSystemTime(ist(2026, 11, 9, 16, 0));
     const query = async (): Promise<QueryResult> => ({ rows: [] });
     const app = buildApp({ query });
-    const response = await app.inject({ method: "POST", url: "/api/collector/index-eod/refresh" });
+    const { cookie, csrf } = await browserSession(app);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/collector/index-eod/refresh",
+      headers: { cookie, "x-csrf-token": csrf },
+    });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ queued: false, message: "A refresh is already queued." });
     await app.close();
@@ -96,7 +112,12 @@ describe("POST /api/collector/index-eod/refresh", () => {
     vi.setSystemTime(ist(2026, 11, 7, 9, 0));
     const query = async (_sql: string, values: unknown[]): Promise<QueryResult> => ({ rows: [{ id: values[0] }] });
     const app = buildApp({ query });
-    const response = await app.inject({ method: "POST", url: "/api/collector/index-eod/refresh" });
+    const { cookie, csrf } = await browserSession(app);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/collector/index-eod/refresh",
+      headers: { cookie, "x-csrf-token": csrf },
+    });
     expect(response.statusCode).toBe(202);
     await app.close();
   });
@@ -107,7 +128,12 @@ describe("POST /api/collector/index-eod/refresh", () => {
       throw new Error("connection refused");
     };
     const app = buildApp({ query });
-    const response = await app.inject({ method: "POST", url: "/api/collector/index-eod/refresh" });
+    const { cookie, csrf } = await browserSession(app);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/collector/index-eod/refresh",
+      headers: { cookie, "x-csrf-token": csrf },
+    });
     expect(response.statusCode).toBe(500);
     expect(response.json()).toEqual({ error: "Could not queue the refresh." });
     await app.close();
@@ -140,7 +166,7 @@ describe("GET /api/collector/index-eod/status", () => {
     const app = build({
       query: async () => ({ rows: [{ finished_at: new Date("2026-11-09T10:22:00Z"), duration_seconds: "14.19" }] }),
     });
-    const response = await app.inject({ method: "GET", url: "/api/collector/index-eod/status" });
+    const response = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/collector/index-eod/status" });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       lastRefreshedAt: "2026-11-09T10:22:00.000Z",
@@ -153,7 +179,7 @@ describe("GET /api/collector/index-eod/status", () => {
   it("returns null timestamps and duration when no run has finished yet", async () => {
     const { buildApp: build } = await import("./app.js");
     const app = build({ query: async () => ({ rows: [] }) });
-    const response = await app.inject({ method: "GET", url: "/api/collector/index-eod/status" });
+    const response = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/collector/index-eod/status" });
     expect(response.json()).toEqual({ lastRefreshedAt: null, lastRunSeconds: null, pickupSeconds: 60 });
     await app.close();
   });

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetCsrfTokenForTests, SESSION_URL } from "./session";
 import { fetchSectorSummary, SectorSummaryError, type SectorSummaryResponse } from "./sectorSummary";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -9,6 +10,13 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
+/** Answers GET /api/session with a test token and every other URL with the given read. */
+function withSession(read: (url: string, init?: RequestInit) => Promise<Response>) {
+  return vi.fn(async (url: string, init?: RequestInit) =>
+    url === SESSION_URL ? jsonResponse({ csrfToken: "test-csrf" }) : read(url, init),
+  );
+}
+
 const BODY: SectorSummaryResponse = {
   period: "1w",
   sectors: [
@@ -17,22 +25,30 @@ const BODY: SectorSummaryResponse = {
   ],
 };
 
+beforeEach(() => {
+  resetCsrfTokenForTests();
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("fetchSectorSummary", () => {
   it("requests the encoded run path with the period query", async () => {
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => jsonResponse(BODY));
+    const fetchMock = withSession(async () => jsonResponse(BODY));
     vi.stubGlobal("fetch", fetchMock);
 
     await fetchSectorSummary("run/42", "1w");
 
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/runs/run%2F42/sector-summary?period=1w");
+    // Call 0 is the session fetch that apiGet makes first; call 1 is the sector-summary read.
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/runs/run%2F42/sector-summary?period=1w");
   });
 
   it("returns the parsed body on success", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(BODY)));
+    vi.stubGlobal(
+      "fetch",
+      withSession(async () => jsonResponse(BODY)),
+    );
 
     await expect(fetchSectorSummary("run-42", "1w")).resolves.toEqual(BODY);
   });
@@ -40,7 +56,7 @@ describe("fetchSectorSummary", () => {
   it("throws a SectorSummaryError when a sector has an unexpected shape", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => jsonResponse({ period: "1d", sectors: [{ sector: "IT", count: "10" }] })),
+      withSession(async () => jsonResponse({ period: "1d", sectors: [{ sector: "IT", count: "10" }] })),
     );
 
     const error = await fetchSectorSummary("run-42", "1d").catch((caught: unknown) => caught);
@@ -50,7 +66,10 @@ describe("fetchSectorSummary", () => {
   });
 
   it("throws a SectorSummaryError with the status and the server error message on a non-OK response", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ error: "period must be one of 1d, 1w" }, 400)));
+    vi.stubGlobal(
+      "fetch",
+      withSession(async () => jsonResponse({ error: "period must be one of 1d, 1w" }, 400)),
+    );
 
     const error = await fetchSectorSummary("run-42", "1d").catch((caught: unknown) => caught);
 

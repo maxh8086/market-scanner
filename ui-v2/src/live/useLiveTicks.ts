@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getCsrfToken, invalidateCsrfToken } from "../api/session";
 
 /** Same cap as the server's MAX_LIVE_SYMBOLS. Symbols beyond it are not streamed. */
 export const LIVE_SYMBOL_LIMIT = 50;
@@ -14,6 +15,13 @@ const HEARTBEAT_STALE_MS = 35_000;
 
 /** Wait before opening a new stream after a silent one is dropped. */
 const RECONNECT_MS = 3_000;
+
+/**
+ * CLOSED errors in a row, with no event between them, that are retried before the hook gives up.
+ * A closed stream means the server refused it (for example after a restart the session is gone), so
+ * each retry starts a fresh session first.
+ */
+const MAX_CLOSED_RETRIES = 3;
 
 /** EventSource.CLOSED. Written as a literal so the hook does not depend on the global constant. */
 const EVENT_SOURCE_CLOSED = 2;
@@ -141,6 +149,8 @@ export function useLiveTicks(options: UseLiveTicksOptions): LiveTicksState {
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
     let staleTimer: ReturnType<typeof setTimeout> | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let session: Promise<string> | null = null;
+    let closedRetries = 0;
 
     const flush = () => {
       flushTimer = null;
@@ -172,34 +182,78 @@ export function useLiveTicks(options: UseLiveTicksOptions): LiveTicksState {
         staleTimer = null;
         source?.close();
         source = null;
-        setStatus("reconnecting");
-        retryTimer = setTimeout(() => {
-          retryTimer = null;
-          connect();
-        }, RECONNECT_MS);
+        scheduleRetry(true);
       }, HEARTBEAT_STALE_MS);
     };
 
-    function connect() {
+    /** Shows "reconnecting" and opens the stream again after RECONNECT_MS. A refresh drops the cached session first. */
+    function scheduleRetry(refreshSession: boolean) {
+      setStatus("reconnecting");
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        connect(refreshSession);
+      }, RECONNECT_MS);
+    }
+
+    /**
+     * Opens the stream once a session cookie exists. A refresh drops the cached session first, so a
+     * stream the server rejected (for example after a restart) gets a new cookie. A failed session start
+     * is retried like a dropped stream.
+     */
+    function connect(refreshSession: boolean) {
       if (stopped) {
         return;
       }
+      if (refreshSession && session !== null) {
+        invalidateCsrfToken(session);
+      }
+      const attempt = getCsrfToken();
+      session = attempt;
+      void attempt.then(
+        () => {
+          if (stopped) {
+            return;
+          }
+          try {
+            openSource();
+          } catch {
+            if (!stopped) {
+              scheduleRetry(false);
+            }
+          }
+        },
+        () => {
+          if (stopped) {
+            return;
+          }
+          scheduleRetry(true);
+        },
+      );
+    }
+
+    function openSource() {
       const next = new EventSource(url);
+      setStatus("connecting");
       source = next;
       armStale();
 
       next.addEventListener("status", (event) => {
         armStale();
+        closedRetries = 0;
         const body = parseJsonObject((event as MessageEvent).data);
         if (body && typeof body.status === "string") {
           setStatus(mapFeedStatus(body.status));
         }
       });
 
-      next.addEventListener("heartbeat", () => armStale());
+      next.addEventListener("heartbeat", () => {
+        armStale();
+        closedRetries = 0;
+      });
 
       next.addEventListener("tick", (event) => {
         armStale();
+        closedRetries = 0;
         const tick = parseTick((event as MessageEvent).data);
         if (!tick) {
           return;
@@ -210,20 +264,30 @@ export function useLiveTicks(options: UseLiveTicksOptions): LiveTicksState {
         }
       });
 
-      // EventSource retries on its own. A closed source means the server refused the stream (for
-      // example no instruments), so retrying would only repeat the failure.
+      // EventSource retries on its own only while it is not closed. A closed source was refused by the
+      // server (for example an expired session), so the hook opens a new one with a fresh session. Each closed
+      // source is retried up to MAX_CLOSED_RETRIES times with no event in between; the close after those
+      // retries gives up as unavailable.
       next.onerror = () => {
+        if (stopped) {
+          return;
+        }
         if (next.readyState === EVENT_SOURCE_CLOSED) {
           clearStale();
           source = null;
-          setStatus("unavailable");
+          closedRetries += 1;
+          if (closedRetries > MAX_CLOSED_RETRIES) {
+            setStatus("unavailable");
+            return;
+          }
+          scheduleRetry(true);
           return;
         }
         setStatus("reconnecting");
       };
     }
 
-    connect();
+    connect(false);
 
     return () => {
       stopped = true;

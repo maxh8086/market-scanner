@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildResultsQueryString,
   fetchResults,
   ResultsError,
   type ResultsPage,
 } from "./results";
+import { resetCsrfTokenForTests, SESSION_URL } from "./session";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
@@ -14,7 +15,18 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
+/** Answers GET /api/session with a test token and every other URL with the given read. */
+function withSession(read: (url: string, init?: RequestInit) => Promise<Response>) {
+  return vi.fn(async (url: string, init?: RequestInit) =>
+    url === SESSION_URL ? jsonResponse({ csrfToken: "test-csrf" }) : read(url, init),
+  );
+}
+
 const PAGE: ResultsPage = { results: [], total: 0, page: 1, perPage: 50 };
+
+beforeEach(() => {
+  resetCsrfTokenForTests();
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -64,28 +76,32 @@ describe("fetchResults", () => {
       page: 1,
       perPage: 50,
     };
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(body));
+    const fetchMock = withSession(async () => jsonResponse(body));
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await fetchResults("2026-11-09", { page: 1, perPage: 50, sort: "ltp", order: "desc" });
 
-    expect(fetchMock.mock.calls[0][0]).toBe(
+    // Call 0 is the session fetch that apiGet makes first; call 1 is the results read.
+    expect(fetchMock.mock.calls[1][0]).toBe(
       "/api/runs/2026-11-09/results?page=1&perPage=50&sort=ltp&order=desc",
     );
     expect(result).toEqual(body);
   });
 
   it("omits the query string when no params are given", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(PAGE));
+    const fetchMock = withSession(async () => jsonResponse(PAGE));
     vi.stubGlobal("fetch", fetchMock);
 
     await fetchResults("abc");
 
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/runs/abc/results");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/runs/abc/results");
   });
 
   it("throws a ResultsError with the server message on a 404", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ error: "Run not found" }, 404)));
+    vi.stubGlobal(
+      "fetch",
+      withSession(async () => jsonResponse({ error: "Run not found" }, 404)),
+    );
 
     const error = await fetchResults("missing").catch((e: unknown) => e);
 
@@ -102,7 +118,10 @@ describe("fetchResults", () => {
         throw new SyntaxError("bad json");
       },
     } as unknown as Response;
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+    vi.stubGlobal(
+      "fetch",
+      withSession(async () => response),
+    );
 
     const error = (await fetchResults("abc").catch((e: unknown) => e)) as ResultsError;
 
@@ -111,7 +130,12 @@ describe("fetchResults", () => {
   });
 
   it("throws a ResultsError with a null status on a network failure", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    vi.stubGlobal(
+      "fetch",
+      withSession(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
 
     const error = (await fetchResults("abc").catch((e: unknown) => e)) as ResultsError;
 
@@ -122,13 +146,21 @@ describe("fetchResults", () => {
 
   it("rethrows an abort without wrapping it", async () => {
     const abort = new DOMException("aborted", "AbortError");
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(abort));
+    vi.stubGlobal(
+      "fetch",
+      withSession(async () => {
+        throw abort;
+      }),
+    );
 
     await expect(fetchResults("abc")).rejects.toBe(abort);
   });
 
   it("rejects a 200 response with an unexpected body", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ nope: true })));
+    vi.stubGlobal(
+      "fetch",
+      withSession(async () => jsonResponse({ nope: true })),
+    );
 
     await expect(fetchResults("abc")).rejects.toBeInstanceOf(ResultsError);
   });

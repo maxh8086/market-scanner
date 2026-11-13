@@ -119,7 +119,26 @@ describe("POST /internal/events/batch", () => {
     });
 
     expect(response.statusCode).toBe(413);
-    expect(checkToken).not.toHaveBeenCalled();
+    expect(checkToken).toHaveBeenCalledWith("Bearer test-token", "home_events_ingest");
+    expect(tx.spy).not.toHaveBeenCalled();
+  });
+
+  it("oversize_without_valid_token_is_401_not_413", async () => {
+    const checkToken = vi.fn<Deps["checkToken"]>(() => 401);
+    const tx = fakeEventsTx(vi.fn<Query>(async () => ({ rowCount: 1 })));
+    const app = await buildTestApp({ checkToken, eventsTx: tx.deps });
+
+    const rows = Array.from({ length: MAX_BATCH_ROWS + 1 }, (_, index) => validRow(index));
+    expect(rows).toHaveLength(501);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/events/batch",
+      payload: { rows },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ error: "unauthorized" });
     expect(tx.spy).not.toHaveBeenCalled();
   });
 });

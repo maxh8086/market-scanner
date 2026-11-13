@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { resetCsrfTokenForTests } from "./api/session";
 
 // The stock tab mounts a chart. jsdom has no canvas, so the chart library is replaced.
 vi.mock("lightweight-charts", () => ({
@@ -74,6 +75,9 @@ function routeFetch(latest: Response | Error, filterOptions: Response | Error = 
     if (url === "/api/presets") {
       return jsonResponse({ presets: [] });
     }
+    if (url === "/api/session") {
+      return jsonResponse({ csrfToken: "test-csrf" });
+    }
     if (url.startsWith("/api/stocks/RELIANCE/candles")) {
       return jsonResponse(CANDLES);
     }
@@ -85,6 +89,8 @@ function routeFetch(latest: Response | Error, filterOptions: Response | Error = 
 }
 
 beforeEach(() => {
+  // A session cached by an earlier test (the loading test never resolves) would leak into the next one.
+  resetCsrfTokenForTests();
   // jsdom has no layout. Give elements a height so the row virtualizer renders rows.
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
     x: 0,

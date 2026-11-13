@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Preset } from "../api/presets";
+import { resetCsrfTokenForTests, SESSION_URL } from "../api/session";
 import { PresetsMenu } from "./PresetsMenu";
 
 const STORED_FILTERS = { bucket: "A", ltpMin: 100 };
@@ -24,7 +25,11 @@ function jsonResponse(body: unknown, status = 200): Response {
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-  fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+  resetCsrfTokenForTests();
+  fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === SESSION_URL) {
+      return jsonResponse({ csrfToken: "test-csrf" });
+    }
     if (init?.method === "POST") {
       const body = JSON.parse(String(init.body)) as { name: string; filters: unknown };
       return jsonResponse({ ...SAVED, preset_id: "2", name: body.name, filters: body.filters }, 201);
@@ -45,7 +50,9 @@ function postCalls() {
 describe("PresetsMenu", () => {
   it("stops saving at the preset limit and sends no request", async () => {
     const six = Array.from({ length: 6 }, (_, index) => ({ ...SAVED, preset_id: `p${index}`, name: `P${index}` }));
-    fetchMock.mockImplementation(async () => jsonResponse({ presets: six }));
+    fetchMock.mockImplementation(async (url: string) =>
+      url === SESSION_URL ? jsonResponse({ csrfToken: "test-csrf" }) : jsonResponse({ presets: six }),
+    );
     render(<PresetsMenu filters={{}} onApply={vi.fn()} />);
     await screen.findByRole("button", { name: "P0" });
 
@@ -77,6 +84,7 @@ describe("PresetsMenu", () => {
 
     await waitFor(() => expect(postCalls()).toHaveLength(1));
     const [, init] = postCalls()[0] as [string, RequestInit];
+    expect(init.headers).toMatchObject({ "X-CSRF-Token": "test-csrf" });
     expect(JSON.parse(String(init.body))).toEqual({ name: "Morning list", filters: { bucket: "B" } });
     expect(await screen.findByRole("button", { name: "Morning list" })).toBeInTheDocument();
   });
