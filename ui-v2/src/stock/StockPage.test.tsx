@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetCsrfTokenForTests, SESSION_URL } from "../api/session";
 import { StockPage } from "./StockPage";
 
 const chart = {
@@ -32,7 +33,13 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
+/** Answers GET /api/session with a test token and sends every other URL to the read handler. */
+function sessionAwareFetch(read: (url: string) => Response | Promise<Response>) {
+  return vi.fn(async (url: string) => (url === SESSION_URL ? jsonResponse({ csrfToken: "test-csrf" }) : read(url)));
+}
+
 beforeEach(() => {
+  resetCsrfTokenForTests();
   Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, value: 800 });
 });
 
@@ -43,7 +50,7 @@ afterEach(() => {
 
 describe("StockPage", () => {
   it("renders the symbol, company, latest close and change arrow from the candles", async () => {
-    const fetchMock = vi.fn(async (_url: string) => jsonResponse(CANDLES));
+    const fetchMock = sessionAwareFetch(async () => jsonResponse(CANDLES));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<StockPage symbol="RELIANCE" company="Reliance Industries" />);
@@ -52,11 +59,12 @@ describe("StockPage", () => {
     expect(screen.getByText("Reliance Industries")).toBeInTheDocument();
     expect(await screen.findByText("₹104.00")).toBeInTheDocument();
     expect(screen.getByText("▲ +1.96%")).toBeInTheDocument();
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/stocks/RELIANCE/candles?limit=500");
+    // Call 0 is the session fetch that apiGet makes first; call 1 is the candles read.
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/stocks/RELIANCE/candles?limit=500");
   });
 
   it("creates the chart with a candlestick series and feeds it the candles", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(CANDLES)));
+    vi.stubGlobal("fetch", sessionAwareFetch(async () => jsonResponse(CANDLES)));
 
     render(<StockPage symbol="RELIANCE" company="Reliance Industries" />);
 
@@ -69,7 +77,7 @@ describe("StockPage", () => {
   });
 
   it("shows the error message when the candles request fails", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ error: "Candles are unavailable." }, 500)));
+    vi.stubGlobal("fetch", sessionAwareFetch(async () => jsonResponse({ error: "Candles are unavailable." }, 500)));
 
     render(<StockPage symbol="RELIANCE" company="Reliance Industries" />);
 
@@ -78,7 +86,7 @@ describe("StockPage", () => {
   });
 
   it("renders the placeholder sections as not available", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(CANDLES)));
+    vi.stubGlobal("fetch", sessionAwareFetch(async () => jsonResponse(CANDLES)));
 
     render(<StockPage symbol="RELIANCE" company="Reliance Industries" />);
 

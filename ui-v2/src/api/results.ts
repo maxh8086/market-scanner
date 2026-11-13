@@ -1,5 +1,7 @@
 /** Client for GET /api/runs/:runId/results. Shape mirrors server/src/app.ts. */
 
+import { apiGet } from "./session";
+
 export interface Row {
   symbol: string;
   company: string | null;
@@ -107,7 +109,7 @@ export async function fetchResults(
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await apiGet(url, {
       headers: { Accept: "application/json" },
       signal: options.signal,
     });

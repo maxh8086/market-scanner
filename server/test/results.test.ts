@@ -1,3 +1,4 @@
+import { browserSession } from "../src/sessionTestHelper.js";
 import { describe, expect, it } from "vitest";
 import { buildApp, type QueryFn } from "../src/app.js";
 import { buildCountQuery, buildResultsQuery, type ResultsParams } from "../src/results.js";
@@ -118,7 +119,7 @@ describe("GET /api/runs/:runId/results", () => {
   it("returns 200 with results, total, page and perPage", async () => {
     const { query, calls } = fakeQuery();
     const app = buildApp({ query });
-    const res = await app.inject({
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie },
       method: "GET",
       url: `/api/runs/${RUN_ID}/results?page=1&perPage=20&sort=ltp&order=desc`,
     });
@@ -139,7 +140,7 @@ describe("GET /api/runs/:runId/results", () => {
   it("resolves a run date to its run id", async () => {
     const { query } = fakeQuery();
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: "/api/runs/2026-01-02/results" });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/runs/2026-01-02/results" });
     expect(res.statusCode).toBe(200);
     await app.close();
   });
@@ -147,14 +148,14 @@ describe("GET /api/runs/:runId/results", () => {
   it("returns 404 for an unknown run", async () => {
     const { query } = fakeQuery();
     const app = buildApp({ query });
-    const unknown = await app.inject({
+    const unknown = await app.inject({ headers: { cookie: (await browserSession(app)).cookie },
       method: "GET",
       url: "/api/runs/99999999-9999-9999-9999-999999999999/results",
     });
     expect(unknown.statusCode).toBe(404);
     expect(unknown.json()).toEqual({ error: "Run not found" });
 
-    const badId = await app.inject({ method: "GET", url: "/api/runs/not-a-run/results" });
+    const badId = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/runs/not-a-run/results" });
     expect(badId.statusCode).toBe(404);
     await app.close();
   });
@@ -162,7 +163,7 @@ describe("GET /api/runs/:runId/results", () => {
   it("returns 400 when perPage is above 100", async () => {
     const { query } = fakeQuery();
     const app = buildApp({ query });
-    const res = await app.inject({
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie },
       method: "GET",
       url: `/api/runs/${RUN_ID}/results?perPage=500`,
     });
@@ -173,7 +174,7 @@ describe("GET /api/runs/:runId/results", () => {
   it("returns 400 for an impossible ath date", async () => {
     const { query } = fakeQuery();
     const app = buildApp({ query });
-    const res = await app.inject({
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie },
       method: "GET",
       url: `/api/runs/${RUN_ID}/results?athFrom=2026-02-30`,
     });
@@ -184,6 +185,7 @@ describe("GET /api/runs/:runId/results", () => {
   it("serves the health check", async () => {
     const app = buildApp({ query: fakeQuery().query });
     const res = await app.inject({ method: "GET", url: "/api/health" });
+    expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });
     await app.close();
   });

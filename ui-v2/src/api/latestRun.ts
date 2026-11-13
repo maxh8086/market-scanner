@@ -1,5 +1,7 @@
 /** Client for GET /api/runs/latest. Shape mirrors the server route that returns the current run. */
 
+import { apiGet } from "./session";
+
 export interface LatestRun {
   runId: string;
   runDate: string;
@@ -47,7 +49,7 @@ function isLatestRun(body: unknown): body is LatestRun {
 export async function fetchLatestRun(options: FetchLatestRunOptions = {}): Promise<LatestRun> {
   let response: Response;
   try {
-    response = await fetch("/api/runs/latest", {
+    response = await apiGet("/api/runs/latest", {
       headers: { Accept: "application/json" },
       signal: options.signal,
     });

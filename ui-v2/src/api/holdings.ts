@@ -1,5 +1,7 @@
 /** Client for GET /api/holdings (Zerodha Kite). Shape mirrors server/src/holdings/kiteHoldings.ts. */
 
+import { apiGet } from "./session";
+
 export interface Holding {
   symbol: string;
   isin: string | null;
@@ -44,7 +46,7 @@ function isHoldingsBody(body: unknown): body is { holdings: Holding[] } {
 export async function fetchHoldings(options: { signal?: AbortSignal } = {}): Promise<Holding[]> {
   let response: Response;
   try {
-    response = await fetch("/api/holdings", {
+    response = await apiGet("/api/holdings", {
       headers: { Accept: "application/json" },
       signal: options.signal,
     });

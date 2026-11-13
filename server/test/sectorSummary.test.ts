@@ -1,3 +1,4 @@
+import { browserSession } from "../src/sessionTestHelper.js";
 import { describe, expect, it } from "vitest";
 import { buildApp, type QueryFn } from "../src/app.js";
 import {
@@ -123,7 +124,7 @@ describe("GET /api/runs/:runId/sector-summary", () => {
   it("returns 400 for an invalid period without running any query", async () => {
     const { query, calls } = fakeQuery([]);
     const app = buildApp({ query });
-    const res = await app.inject({
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie },
       method: "GET",
       url: `/api/runs/${RUN_ID}/sector-summary?period=2y`,
     });
@@ -138,7 +139,7 @@ describe("GET /api/runs/:runId/sector-summary", () => {
       { sector: "Banks", count: "3", avg_change_pct: "1.5", advancers: "2", decliners: "1" },
     ]);
     const app = buildApp({ query });
-    const res = await app.inject({
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie },
       method: "GET",
       url: `/api/runs/${RUN_ID}/sector-summary?period=1w`,
     });
@@ -155,7 +156,7 @@ describe("GET /api/runs/:runId/sector-summary", () => {
   it("defaults to 1d when the period is omitted", async () => {
     const { query } = fakeQuery([]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: `/api/runs/${RUN_ID}/sector-summary` });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: `/api/runs/${RUN_ID}/sector-summary` });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ period: "1d", sectors: [] });
     await app.close();
@@ -166,7 +167,7 @@ describe("GET /api/runs/:runId/sector-summary", () => {
       { sector: "Banks", count: 1, avg_change_pct: 1, advancers: 1, decliners: 0 },
     ]);
     const app = buildApp({ query });
-    const res = await app.inject({
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie },
       method: "GET",
       url: "/api/runs/99999999-9999-9999-9999-999999999999/sector-summary?period=3m",
     });

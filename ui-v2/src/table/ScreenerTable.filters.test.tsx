@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getCsrfToken, resetCsrfTokenForTests } from "../api/session";
 import { ScreenerTable } from "./ScreenerTable";
 
 const RUN_ID = "2026-11-09";
@@ -18,9 +19,16 @@ function lastUrl(fetchMock: ReturnType<typeof vi.fn>): string {
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
-beforeEach(() => {
-  fetchMock = vi.fn().mockResolvedValue(jsonResponse({ results: [], total: 0, page: 1, perPage: 50 }));
+beforeEach(async () => {
+  // Start the session before each test, so lastUrl only sees the table's own requests.
+  resetCsrfTokenForTests();
+  fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(jsonResponse({ csrfToken: "test-csrf" }))
+    .mockResolvedValue(jsonResponse({ results: [], total: 0, page: 1, perPage: 50 }));
   vi.stubGlobal("fetch", fetchMock);
+  await getCsrfToken();
+  fetchMock.mockClear();
 });
 
 afterEach(() => {

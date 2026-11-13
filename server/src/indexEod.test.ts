@@ -1,3 +1,4 @@
+import { browserSession } from "./sessionTestHelper.js";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
 import { buildIndexEodQuery, INDEX_EOD_SQL, shapeIndexEod } from "./indexEod.js";
@@ -46,7 +47,7 @@ describe("GET /api/index-eod", () => {
       rows: [{ symbol: "IDX:NIFTY 50", date: "2026-11-06", open: "25010", high: "25150", low: "24990", close: "25100", rn: "1" }],
     });
     const app = buildApp({ query });
-    const response = await app.inject({ method: "GET", url: "/api/index-eod" });
+    const response = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/index-eod" });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       indices: [{ name: "NIFTY 50", date: "2026-11-06", open: 25010, high: 25150, low: 24990, close: 25100, prevClose: null }],

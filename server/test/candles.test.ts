@@ -1,3 +1,4 @@
+import { browserSession } from "../src/sessionTestHelper.js";
 import { describe, expect, it } from "vitest";
 import { buildApp, type QueryFn } from "../src/app.js";
 import {
@@ -154,7 +155,7 @@ describe("GET /api/stocks/:symbol/candles", () => {
       { symbol: "TCS", date: "2024-01-02", open: "1.5", high: "2", low: "1", close: "1.9", volume: "10" },
     ]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: "/api/stocks/tcs/candles" });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/stocks/tcs/candles" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       symbol: "TCS",
@@ -166,7 +167,7 @@ describe("GET /api/stocks/:symbol/candles", () => {
   it("passes the symbol and limit to the query as values", async () => {
     const { query, calls } = fakeQuery([]);
     const app = buildApp({ query });
-    await app.inject({ method: "GET", url: "/api/stocks/TCS/candles?limit=20" });
+    await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/stocks/TCS/candles?limit=20" });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.values).toEqual(["TCS", 20]);
     expect(calls[0]?.sql).not.toContain("TCS");
@@ -176,7 +177,7 @@ describe("GET /api/stocks/:symbol/candles", () => {
   it("returns 400 for a bad symbol without querying", async () => {
     const { query, calls } = fakeQuery([]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: "/api/stocks/BAD%24SYM/candles" });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/stocks/BAD%24SYM/candles" });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: "Invalid symbol" });
     expect(calls).toHaveLength(0);
@@ -186,17 +187,17 @@ describe("GET /api/stocks/:symbol/candles", () => {
   it("returns 400 for a bad date, from after to, and a bad limit", async () => {
     const { query } = fakeQuery([]);
     const app = buildApp({ query });
-    const badDate = await app.inject({ method: "GET", url: "/api/stocks/TCS/candles?from=2024-13-01" });
+    const badDate = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/stocks/TCS/candles?from=2024-13-01" });
     expect(badDate.statusCode).toBe(400);
     expect(badDate.json()).toHaveProperty("error");
 
-    const reversed = await app.inject({
+    const reversed = await app.inject({ headers: { cookie: (await browserSession(app)).cookie },
       method: "GET",
       url: "/api/stocks/TCS/candles?from=2024-06-01&to=2024-05-01",
     });
     expect(reversed.statusCode).toBe(400);
 
-    const badLimit = await app.inject({ method: "GET", url: "/api/stocks/TCS/candles?limit=1501" });
+    const badLimit = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/stocks/TCS/candles?limit=1501" });
     expect(badLimit.statusCode).toBe(400);
     expect(badLimit.json()).toHaveProperty("error");
     await app.close();
@@ -205,7 +206,7 @@ describe("GET /api/stocks/:symbol/candles", () => {
   it("returns 200 with an empty candles array for an unknown symbol", async () => {
     const { query } = fakeQuery([]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: "/api/stocks/UNKNOWN/candles" });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/stocks/UNKNOWN/candles" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ symbol: "UNKNOWN", candles: [] });
     await app.close();

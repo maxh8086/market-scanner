@@ -5,6 +5,9 @@ import pg from "pg";
 import { buildApp } from "./app.js";
 import { loadPoolConfig } from "./config.js";
 import { readSecret } from "./secrets.js";
+import { loadServiceTokens } from "./serviceTokens.js";
+import { checkIngestToken } from "./homeEventsAuth.js";
+import { makeEventsTx } from "./eventsTx.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // Repo-root .env. Existing process env vars win over file values.
@@ -22,6 +25,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 
 const pool = new Pool(loadPoolConfig());
+const serviceTokens = loadServiceTokens(process.env.SERVICE_TOKEN_DIR ?? "/run/service-tokens", ["home_events_ingest"]);
 
 const app = buildApp({
   query: (sql, values) => pool.query(sql, values),
@@ -30,6 +34,8 @@ const app = buildApp({
   kite: {
     credentials: () => ({ apiKey: readSecret("KITE_API_KEY"), accessToken: readSecret("KITE_ACCESS_TOKEN") }),
   },
+  checkToken: (authorization, role) => checkIngestToken(authorization, role, serviceTokens),
+  eventsTx: makeEventsTx(pool),
 });
 
 app.addHook("onClose", async () => {

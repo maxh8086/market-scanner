@@ -1,5 +1,7 @@
 /** Client for GET /api/runs/:runId/filter-options. Shape mirrors the server route that lists filter values. */
 
+import { apiGet } from "./session";
+
 export interface FilterOptions {
   bucket: string[];
   stance: string[];
@@ -56,7 +58,7 @@ export async function fetchFilterOptions(
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await apiGet(url, {
       headers: { Accept: "application/json" },
       signal: options.signal,
     });
