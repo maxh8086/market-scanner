@@ -95,8 +95,8 @@ Graph (graph_sync.py, Neo4j reads and writes) and collector Mongo writes also go
 
 - POST /internal/events/batch is defined at server/src/homeEventsRoute.ts:24. It is not mounted in the shipped server. server/src/index.ts:26-33 passes only query, logger, live and kite to buildApp. app.ts:301-302 registers the route only when checkToken and eventsTx are both passed.
 - v2 passes checkToken and eventsTx from index.ts, with the token map from R4 files.
-- Order of checks today: a batch with more rows than MAX_BATCH_ROWS returns 413 before auth (homeEventsRoute.ts:28-29, auth at :32). The file's header comment (homeEventsRoute.ts:7) states that this order is deliberate. The test at server/src/homeEventsRoute.test.ts:107-122 asserts that checkToken is not called in that case (test name not read in this pass).
-- RECOMMENDED: auth first, then the row limit. This reverses a documented decision and changes that test. Open question 10.
+- Order of checks today: auth runs first. The bearer check at homeEventsRoute.ts:25-31 returns 401 or 403, then a batch with more rows than MAX_BATCH_ROWS returns 413 at :36-37. The file's header comment (homeEventsRoute.ts:8) states this order. The test at server/src/homeEventsRoute.test.ts:106-124 (oversize_413) asserts that checkToken is called and that the events transaction is not run; the test at :126 (oversize_without_valid_token_is_401_not_413) covers the 401 path.
+- Auth-first order is the current behaviour, so the route and its tests need no change for it. Open question 10 records the decision to keep this order.
 - Body-size limit: Fastify default bodyLimit with installed Fastify 5.12.7. The ordering of the body limit versus the 413 check is unverified (Section 10).
 
 ### R9 Cooldown cap conflict (RECOMMENDED: 1 hour for class "other"; needs approval)

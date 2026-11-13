@@ -184,6 +184,12 @@ class HomeEventsParserTest(unittest.TestCase):
         # giving 17 distinct keys (spec 4.0, 4.2).
         self.assertEqual(len(keys), 17)
 
+    def _assert_o1_shape(self, items):
+        for item in items:
+            self.assertRegex(item["source_url"], r"^https?://")
+            self.assertLessEqual(len(item["headline"]), 500)
+            self.assertTrue(item["headline"], "headline must be non-empty")
+
     def test_fixture_Sast_Regulation31(self):
         body = SAST_REG31_FIXTURE.read_bytes()
         result = parse("nse:Sast_Regulation31", body)
@@ -223,6 +229,7 @@ class HomeEventsParserTest(unittest.TestCase):
         }
         # 20 items with no repeated dedupe key in the fixture bytes (one-off xml.etree run, spec 4.2).
         self.assertEqual(len(keys), 20)
+        self._assert_o1_shape(result.items)
 
     def test_fixture_Corporate_action(self):
         body = CORPORATE_ACTION_FIXTURE.read_bytes()
