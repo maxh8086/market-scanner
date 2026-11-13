@@ -87,7 +87,7 @@ Graph (graph_sync.py, Neo4j reads and writes) and collector Mongo writes also go
 ### R7 Migrations run only in a one-shot admin job (RECOMMENDED)
 
 - Only a one-shot admin job runs DDL, and it uses the Fastify image. No other container runs migrations.
-- Migration 048 privilege fix (InsufficientPrivilege, docs/designs/collector-split-slices.md:320) stays an admin step outside migrations. The table is owned by market_scanner_admin, and the runner connects as market_scanner_app (same line).
+- Migration 048 privilege fix (InsufficientPrivilege, docs/designs/collector-split-slices.md:320) stays an admin step outside migrations. The table is owned by market_scanner_admin, and the runner connects as market_scanner_app (same line). (Stale: 048 is applied, verified 2026-11-13; no 048 owner step remains.)
 - record_run.py:28 imports the db module (from scanner.pg import db). record_run.py:92-93 imports and runs the migrate module (from scanner.pg import migrate; migrate.apply()). Both must move. (Correction: the brief said both lines import migrate. Line 28 imports db.)
 - Today the migrate stage is in start.ps1 (docs/designs/home-events-filings-spec.md:410 names start.ps1 lines 283 and 288).
 
@@ -316,9 +316,9 @@ Each step lists the goal, files, acceptance, and what must not change.
    - Acceptance: server test command; server/src/homeEventsRoute.test.ts adjusted to the decided order.
    - Must not change: the ingest body validation (homeEventsBatch.ts).
 
-8. Migrations moved to the admin job (R7); migration 048 privilege fix as an owner step.
+8. Migrations moved to the admin job (R7); migration 048 privilege fix as an owner step. (Stale: 048 is applied, verified 2026-11-13; no 048 owner step remains.)
    - Files: admin job definition (Fastify image); start.ps1 migrate stage (lines 283 and 288 per filings spec :410).
-   - Acceptance: Python test command; the owner runs the 048 grant step and records the result in the slices ledger (slices:320).
+   - Acceptance: Python test command; the owner runs the 048 grant step and records the result in the slices ledger (slices:320). (Stale: 048 is applied, verified 2026-11-13; no 048 owner step remains.)
    - Must not change: migration files on disk and their numbers (Section 11).
 
 9. Compose cleanup (Section 5) and a check that only Fastify holds DB login values.
@@ -392,7 +392,7 @@ These stay separate from routing and are tracked on their own:
 - 054 dev-ledger digest check. Source: planning brief; the migration file is db/migrations/054_llm_provider_store.sql (present on disk).
 - LC0 gate. The t4f design lists LC1 at home-events-t4f-design.md:391 and LC3 at :393 as dependent on LC0.
 - LC3 to LC7. LC4 is gated on a live Anthropic docs check (planning brief; t4f task list at home-events-t4f-design.md:391-393 is the source for LC1 and LC3).
-- 048 privilege fix (InsufficientPrivilege, collector-split-slices.md:320). Owner step.
+- 048 privilege fix (InsufficientPrivilege, collector-split-slices.md:320). Owner step. (Stale: 048 is applied, verified 2026-11-13; no 048 owner step remains.)
 - MT5 company_reference grant. Owner and date unknown (home-events-t4f-design.md:384).
 
 ---
