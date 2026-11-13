@@ -37,6 +37,10 @@ def _collect_each(symbols, fetch) -> tuple[int, int, str]:
 class Source(ABC):
     """Abstract base for a collectable data source."""
 
+    # True for sources that write through the API events endpoints. execute_source checks the
+    # API health endpoint before such a source runs (spec 4.5). No source sets this yet.
+    events: bool = False
+
     def __init__(self, name: str):
         self.name = name
 
