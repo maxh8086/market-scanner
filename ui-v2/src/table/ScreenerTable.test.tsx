@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Row } from "../api/results";
+import { getCsrfToken, resetCsrfTokenForTests } from "../api/session";
 import { ScreenerTable } from "./ScreenerTable";
 
 const RUN_ID = "2026-11-09";
@@ -67,9 +68,16 @@ function rowFor(symbol: string): HTMLElement {
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
-beforeEach(() => {
-  fetchMock = vi.fn().mockResolvedValue(jsonResponse(pageBody(ROWS)));
+beforeEach(async () => {
+  // Start the session before each test, so the read counts and URLs below only see the table's own requests.
+  resetCsrfTokenForTests();
+  fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(jsonResponse({ csrfToken: "test-csrf" }))
+    .mockResolvedValue(jsonResponse(pageBody(ROWS)));
   vi.stubGlobal("fetch", fetchMock);
+  await getCsrfToken();
+  fetchMock.mockClear();
   // jsdom has no layout. Give elements a height so the row virtualizer renders rows.
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
     x: 0,

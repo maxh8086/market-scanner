@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useLiveTicks, type LiveTick } from "../live/useLiveTicks";
 import { getMarketSession } from "../lib/marketSession";
+import { apiGet } from "../api/session";
 import { ColumnResizeHandle, useColumnWidths } from "../table/columnWidths";
 import {
   addCustomSymbol,
@@ -281,7 +282,7 @@ export function WatchlistPanel() {
       const current = new AbortController();
       controller = current;
       try {
-        const response = await fetch(INDEX_EOD_URL, { signal: current.signal });
+        const response = await apiGet(INDEX_EOD_URL, { signal: current.signal });
         if (!response.ok) throw new Error(`index EOD ${response.status}`);
         const next = eodTicksFromResponse(await response.json());
         if (!current.signal.aborted) setEodTicks(next);

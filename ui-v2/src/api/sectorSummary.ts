@@ -1,5 +1,7 @@
 /** Client for GET /api/runs/:runId/sector-summary. Shape mirrors the server sector summary endpoint. */
 
+import { apiGet } from "./session";
+
 export const SECTOR_PERIODS = ["1d", "1w", "1m", "3m", "6m", "12m"] as const;
 
 export type SectorPeriod = (typeof SECTOR_PERIODS)[number];
@@ -81,7 +83,7 @@ export async function fetchSectorSummary(
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await apiGet(url, {
       headers: { Accept: "application/json" },
       signal: options.signal,
     });

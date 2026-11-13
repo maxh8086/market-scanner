@@ -1,5 +1,7 @@
 /** Client for GET /api/stocks/:symbol/candles. Shape mirrors the server candles endpoint. */
 
+import { apiGet } from "./session";
+
 export interface Candle {
   date: string;
   open: number | null;
@@ -97,7 +99,7 @@ export async function fetchCandles(symbol: string, options: FetchCandlesOptions 
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await apiGet(url, {
       headers: { Accept: "application/json" },
       signal,
     });

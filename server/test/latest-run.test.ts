@@ -1,3 +1,4 @@
+import { browserSession } from "../src/sessionTestHelper.js";
 import { describe, expect, it } from "vitest";
 import { buildApp, type QueryFn } from "../src/app.js";
 import { buildLatestRunQuery, formatRunDate } from "../src/results.js";
@@ -46,7 +47,7 @@ describe("GET /api/runs/latest", () => {
   it("returns 200 with runId and runDate for a current run", async () => {
     const { query, calls } = fakeQuery([{ run_id: RUN_ID, run_date: new Date(2026, 0, 2) }]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: "/api/runs/latest" });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/runs/latest" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ runId: RUN_ID, runDate: "2026-01-02" });
     expect(calls).toHaveLength(1);
@@ -57,14 +58,14 @@ describe("GET /api/runs/latest", () => {
   it("accepts run_date as a string", async () => {
     const { query } = fakeQuery([{ run_id: RUN_ID, run_date: "2026-01-02" }]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: "/api/runs/latest" });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/runs/latest" });
     expect(res.json()).toEqual({ runId: RUN_ID, runDate: "2026-01-02" });
   });
 
   it("returns 404 when no current run exists", async () => {
     const { query } = fakeQuery([]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: "/api/runs/latest" });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/runs/latest" });
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({ error: "No current run" });
   });

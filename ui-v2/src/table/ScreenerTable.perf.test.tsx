@@ -2,6 +2,7 @@ import { Profiler, type ProfilerOnRenderCallback } from "react";
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Row } from "../api/results";
+import { resetCsrfTokenForTests, SESSION_URL } from "../api/session";
 import { ScreenerTable } from "./ScreenerTable";
 
 const RUN_ID = "2026-11-09";
@@ -74,11 +75,15 @@ const ROWS = makeRows(ROW_COUNT);
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-  fetchMock = vi.fn(async (url: string) =>
-    url.includes("/recent-closes")
+  resetCsrfTokenForTests();
+  fetchMock = vi.fn(async (url: string) => {
+    if (url === SESSION_URL) {
+      return jsonResponse({ csrfToken: "test-csrf" });
+    }
+    return url.includes("/recent-closes")
       ? jsonResponse({ closes: {} })
-      : jsonResponse({ results: ROWS, total: ROWS.length, page: 1, perPage: ROWS.length }),
-  );
+      : jsonResponse({ results: ROWS, total: ROWS.length, page: 1, perPage: ROWS.length });
+  });
   vi.stubGlobal("fetch", fetchMock);
   vi.stubGlobal("EventSource", FakeEventSource);
   // jsdom has no layout. Same mocks as ScreenerTable.test.tsx so the virtualizer renders a window.

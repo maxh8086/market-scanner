@@ -8,6 +8,8 @@ export const RECENT_CLOSES_BATCH_SIZE = 100;
 /** Closes per symbol. Matches the server default. */
 export const RECENT_CLOSES_LIMIT = 30;
 
+import { apiGet } from "../api/session";
+
 export type RecentCloses = Record<string, number[]>;
 
 /** Failure from the closes API: a network error, a non-OK status or a bad body. */
@@ -45,7 +47,7 @@ async function fetchBatch(symbols: readonly string[], options: FetchRecentCloses
 
   let response: Response;
   try {
-    response = await fetch(`/api/recent-closes?${params.toString()}`, {
+    response = await apiGet(`/api/recent-closes?${params.toString()}`, {
       signal: options.signal,
       headers: { Accept: "application/json" },
     });

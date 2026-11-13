@@ -1,3 +1,4 @@
+import { browserSession } from "../sessionTestHelper.js";
 import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../app.js";
 import { fetchKiteHoldings, parseKiteHoldings, type KiteFetch } from "./kiteHoldings.js";
@@ -91,7 +92,7 @@ describe("GET /api/holdings", () => {
       query,
       kite: { apiKey: "key1", accessToken: "secret-token", fetch: async () => jsonResponse(200, sampleBody) },
     });
-    const response = await app.inject({ method: "GET", url: "/api/holdings" });
+    const response = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/holdings" });
 
     expect(response.statusCode).toBe(200);
     expect(response.json().holdings[0].symbol).toBe("ACE");
@@ -102,7 +103,7 @@ describe("GET /api/holdings", () => {
 
   it("returns 503 when Kite is not configured", async () => {
     const app = buildApp({ query });
-    const response = await app.inject({ method: "GET", url: "/api/holdings" });
+    const response = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/holdings" });
     expect(response.statusCode).toBe(503);
     await app.close();
   });

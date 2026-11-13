@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CandlesError, fetchCandles, type CandlesResponse } from "./candles";
+import { resetCsrfTokenForTests, SESSION_URL } from "./session";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
@@ -7,6 +8,13 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     json: async () => body,
   } as unknown as Response;
+}
+
+/** Answers GET /api/session with a test token and every other URL with the given read. */
+function withSession(read: (url: string, init?: RequestInit) => Promise<Response>) {
+  return vi.fn(async (url: string, init?: RequestInit) =>
+    url === SESSION_URL ? jsonResponse({ csrfToken: "test-csrf" }) : read(url, init),
+  );
 }
 
 const BODY: CandlesResponse = {
@@ -17,13 +25,17 @@ const BODY: CandlesResponse = {
   ],
 };
 
+beforeEach(() => {
+  resetCsrfTokenForTests();
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("fetchCandles", () => {
   it("requests the encoded symbol path with the query params that are set", async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(BODY));
+    const fetchMock = withSession(async () => jsonResponse(BODY));
     vi.stubGlobal("fetch", fetchMock);
 
     await fetchCandles("M&M", { from: "2026-01-01", limit: 500 });
@@ -35,16 +47,20 @@ describe("fetchCandles", () => {
   });
 
   it("omits the query string when no params are given", async () => {
-    const fetchMock = vi.fn(async (_url: string) => jsonResponse(BODY));
+    const fetchMock = withSession(async () => jsonResponse(BODY));
     vi.stubGlobal("fetch", fetchMock);
 
     await fetchCandles("RELIANCE");
 
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/stocks/RELIANCE/candles");
+    // Call 0 is the session fetch that apiGet makes first; call 1 is the candles read.
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/stocks/RELIANCE/candles");
   });
 
   it("returns the parsed body on success", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(BODY)));
+    vi.stubGlobal(
+      "fetch",
+      withSession(async () => jsonResponse(BODY)),
+    );
 
     await expect(fetchCandles("RELIANCE", { limit: 500 })).resolves.toEqual(BODY);
   });
@@ -52,7 +68,7 @@ describe("fetchCandles", () => {
   it("throws a CandlesError when the body has an unexpected shape", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => jsonResponse({ symbol: "RELIANCE", candles: [{ date: 20261109, open: 1 }] })),
+      withSession(async () => jsonResponse({ symbol: "RELIANCE", candles: [{ date: 20261109, open: 1 }] })),
     );
 
     const error = await fetchCandles("RELIANCE").catch((caught: unknown) => caught);
@@ -62,7 +78,10 @@ describe("fetchCandles", () => {
   });
 
   it("throws a CandlesError with the status and the server error message on a non-OK response", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ error: "Unknown symbol" }, 404)));
+    vi.stubGlobal(
+      "fetch",
+      withSession(async () => jsonResponse({ error: "Unknown symbol" }, 404)),
+    );
 
     const error = await fetchCandles("NOPE").catch((caught: unknown) => caught);
 

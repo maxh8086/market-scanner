@@ -1,6 +1,7 @@
 /** Client for /api/presets. Shape mirrors the server presets endpoints. */
 
 import type { FilterState } from "../filters/filterState";
+import { apiGet, CSRF_HEADER, getCsrfToken, invalidateCsrfToken } from "./session";
 
 export interface Preset {
   preset_id: string;
@@ -29,32 +30,81 @@ function isAbortError(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { name?: unknown }).name === "AbortError";
 }
 
-async function readErrorMessage(response: Response): Promise<string> {
+interface FailureBody {
+  /** The server's error field, or a generic message when the body has none. */
+  message: string;
+  /** The server's error field alone, or undefined when the body has none. */
+  code: string | undefined;
+}
+
+async function readFailure(response: Response): Promise<FailureBody> {
   try {
     const body = (await response.json()) as { error?: unknown };
     if (typeof body.error === "string" && body.error.length > 0) {
-      return body.error;
+      return { message: body.error, code: body.error };
     }
   } catch {
     // Body is not JSON; fall through to the generic message.
   }
-  return `Request failed with status ${response.status}.`;
+  return { message: `Request failed with status ${response.status}.`, code: undefined };
 }
 
-async function send(url: string, init: RequestInit): Promise<Response> {
-  let response: Response;
+/** Error codes the CSRF gate returns when a write needs a fresh session or token. */
+const GATE_RETRY_CODES = new Set(["session_required", "csrf_required"]);
+
+/**
+ * Sends one request. A write awaits the CSRF token promise it was given, so a retry can pass a fresh one.
+ * A failure to start the session is reported as a network error.
+ */
+async function dispatch(url: string, init: RequestInit, tokenPromise: Promise<string> | null): Promise<Response> {
+  let request: RequestInit = init;
+  if (tokenPromise !== null) {
+    let csrfToken: string;
+    try {
+      csrfToken = await tokenPromise;
+    } catch {
+      throw new PresetsError("Could not reach the presets service.", null);
+    }
+    request = {
+      ...init,
+      headers: { ...(init.headers as Record<string, string> | undefined), [CSRF_HEADER]: csrfToken },
+    };
+  }
   try {
-    response = await fetch(url, init);
+    // A GET (no token) goes through apiGet for the session cookie and one retry; writes keep the plain fetch.
+    return tokenPromise === null ? await apiGet(url, init) : await fetch(url, request);
   } catch (error) {
     if (isAbortError(error)) {
       throw error;
     }
     throw new PresetsError("Could not reach the presets service.", null);
   }
-  if (!response.ok) {
-    throw new PresetsError(await readErrorMessage(response), response.status);
+}
+
+async function send(url: string, init: RequestInit): Promise<Response> {
+  const isWrite = (init.method ?? "GET") !== "GET";
+  let tokenPromise: Promise<string> | null = isWrite ? getCsrfToken() : null;
+  let response = await dispatch(url, init, tokenPromise);
+  if (response.ok) {
+    return response;
   }
-  return response;
+  let failure = await readFailure(response);
+  // A gate rejection means the cached session or token is stale. A write retries exactly once.
+  if (
+    tokenPromise !== null &&
+    (response.status === 401 || response.status === 403) &&
+    failure.code !== undefined &&
+    GATE_RETRY_CODES.has(failure.code)
+  ) {
+    invalidateCsrfToken(tokenPromise);
+    tokenPromise = getCsrfToken();
+    response = await dispatch(url, init, tokenPromise);
+    if (response.ok) {
+      return response;
+    }
+    failure = await readFailure(response);
+  }
+  throw new PresetsError(failure.message, response.status);
 }
 
 function isPreset(value: unknown): value is Preset {

@@ -4,8 +4,8 @@ import { buildInsert, MAX_BATCH_ROWS, validateBatch } from "./homeEventsBatch.js
 /**
  * POST /internal/events/batch: ingest of home_events rows from the scanner's home_filings collector
  * (spec 4.6). The order inside the handler is fixed:
- *   1. An oversize batch is refused with 413 before auth, so checkToken is not called for it.
- *   2. The bearer token is checked for the home_events_ingest role (401 or 403 on failure).
+ *   1. The bearer token is checked for the home_events_ingest role (401 or 403 on failure).
+ *   2. An oversize batch is refused with 413, after auth.
  *   3. Invalid rows are counted and skipped; they do not fail the batch.
  *   4. The valid rows go in one parameterised INSERT inside eventsTx. ON CONFLICT DO NOTHING means
  *      rows already stored count as duplicates.
@@ -22,19 +22,19 @@ export interface HomeEventsRouteDeps {
 
 export function registerHomeEventsRoutes(app: FastifyInstance, deps: HomeEventsRouteDeps): void {
   app.post<{ Body: unknown }>("/internal/events/batch", async (request, reply) => {
-    const body = request.body;
-    const declaredRows =
-      typeof body === "object" && body !== null ? (body as { rows?: unknown }).rows : undefined;
-    if (Array.isArray(declaredRows) && declaredRows.length > MAX_BATCH_ROWS) {
-      return reply.code(413).send({ error: "batch_too_large" });
-    }
-
     const auth = deps.checkToken(request.headers.authorization, "home_events_ingest");
     if (auth === 401) {
       return reply.code(401).send({ error: "unauthorized" });
     }
     if (auth === 403) {
       return reply.code(403).send({ error: "forbidden" });
+    }
+
+    const body = request.body;
+    const declaredRows =
+      typeof body === "object" && body !== null ? (body as { rows?: unknown }).rows : undefined;
+    if (Array.isArray(declaredRows) && declaredRows.length > MAX_BATCH_ROWS) {
+      return reply.code(413).send({ error: "batch_too_large" });
     }
 
     const { rows, invalid } = validateBatch(body);

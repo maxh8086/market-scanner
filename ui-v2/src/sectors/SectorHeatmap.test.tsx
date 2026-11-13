@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetCsrfTokenForTests, SESSION_URL } from "../api/session";
 import { SectorHeatmap } from "./SectorHeatmap";
 
 const BODY = {
@@ -18,9 +19,23 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
+/** Answers GET /api/session with a test token and sends every other URL to the handler. */
+function sessionAwareFetch(handler: (url: string) => Response | Promise<Response>) {
+  return vi.fn(async (url: string) => {
+    if (url === SESSION_URL) {
+      return jsonResponse({ csrfToken: "test-csrf" });
+    }
+    return handler(url);
+  });
+}
+
 async function tiles(): Promise<HTMLElement> {
   return screen.findByRole("list", { name: "Sector tiles" });
 }
+
+beforeEach(() => {
+  resetCsrfTokenForTests();
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -28,7 +43,7 @@ afterEach(() => {
 
 describe("SectorHeatmap", () => {
   it("renders a tile per sector with a signed arrow percentage and the stock count", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(BODY)));
+    vi.stubGlobal("fetch", sessionAwareFetch(async () => jsonResponse(BODY)));
 
     render(<SectorHeatmap runId="run-42" />);
 
@@ -44,7 +59,7 @@ describe("SectorHeatmap", () => {
   it("uses the singular for a one-stock sector", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
+      sessionAwareFetch(async () =>
         jsonResponse({
           period: "1d",
           sectors: [{ sector: "Utilities", count: 1, avgChangePct: 6.57, advancers: 1, decliners: 0 }],
@@ -66,7 +81,7 @@ describe("SectorHeatmap", () => {
       { sector: "Realty", count: 5, avgChangePct: -1.5, advancers: 1, decliners: 4 },
       { sector: "Banks", count: 9, avgChangePct: -2.4, advancers: 2, decliners: 7 },
     ];
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ period: "1d", sectors })));
+    vi.stubGlobal("fetch", sessionAwareFetch(async () => jsonResponse({ period: "1d", sectors })));
 
     render(<SectorHeatmap runId="run-42" />);
 
@@ -82,7 +97,7 @@ describe("SectorHeatmap", () => {
   });
 
   it("renders a table row per sector, ranked by change with the best first", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(BODY)));
+    vi.stubGlobal("fetch", sessionAwareFetch(async () => jsonResponse(BODY)));
 
     render(<SectorHeatmap runId="run-42" />);
 
@@ -94,7 +109,7 @@ describe("SectorHeatmap", () => {
   });
 
   it("re-sorts the table by stocks when that header is clicked", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(BODY)));
+    vi.stubGlobal("fetch", sessionAwareFetch(async () => jsonResponse(BODY)));
 
     render(<SectorHeatmap runId="run-42" />);
 
@@ -109,7 +124,7 @@ describe("SectorHeatmap", () => {
   });
 
   it("marks 1D as the active period by default", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(BODY)));
+    vi.stubGlobal("fetch", sessionAwareFetch(async () => jsonResponse(BODY)));
 
     render(<SectorHeatmap runId="run-42" />);
 
@@ -119,7 +134,7 @@ describe("SectorHeatmap", () => {
   });
 
   it("refetches with the new period when a period button is clicked", async () => {
-    const fetchMock = vi.fn(async (_url: string) => jsonResponse(BODY));
+    const fetchMock = sessionAwareFetch(async () => jsonResponse(BODY));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<SectorHeatmap runId="run-42" />);
@@ -134,7 +149,7 @@ describe("SectorHeatmap", () => {
   });
 
   it("shows the server error message", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ error: "Run not available" }, 500)));
+    vi.stubGlobal("fetch", sessionAwareFetch(async () => jsonResponse({ error: "Run not available" }, 500)));
 
     render(<SectorHeatmap runId="run-42" />);
 
@@ -142,7 +157,7 @@ describe("SectorHeatmap", () => {
   });
 
   it("shows the empty state for an empty sector list", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ period: "1d", sectors: [] })));
+    vi.stubGlobal("fetch", sessionAwareFetch(async () => jsonResponse({ period: "1d", sectors: [] })));
 
     render(<SectorHeatmap runId="run-42" />);
 

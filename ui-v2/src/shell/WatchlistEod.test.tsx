@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetCsrfTokenForTests, SESSION_URL } from "../api/session";
 import { useLiveTicks } from "../live/useLiveTicks";
 import { eodTicksFromResponse, WatchlistPanel } from "./WatchlistPanel";
 
@@ -25,8 +26,11 @@ const EOD_BODY = {
   indices: [{ name: "NIFTY 50", date: "2026-11-06", close: 25100.5, prevClose: 25000 }],
 };
 
+/** Answers GET /api/session with a test token and sends every other URL to impl. */
 function stubFetch(impl: () => Promise<unknown>) {
-  const fetchMock = vi.fn(impl);
+  const fetchMock = vi.fn(async (url: string) =>
+    url === SESSION_URL ? { ok: true, json: async () => ({ csrfToken: "test-csrf" }) } : impl(),
+  );
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }
@@ -41,6 +45,7 @@ function rowFor(name: string): HTMLElement {
 }
 
 beforeEach(() => {
+  resetCsrfTokenForTests();
   session.status = "closed";
   vi.mocked(useLiveTicks).mockClear();
 });

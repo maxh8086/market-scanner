@@ -36,6 +36,7 @@ import {
 } from "./presets.js";
 import { buildIndexEodQuery, shapeIndexEod } from "./indexEod.js";
 import { registerCollectorRefreshRoute } from "./collectorRefresh.js";
+import { createSessionStore, registerCsrfGate, registerSessionRoutes, type SessionStore } from "./session.js";
 import { registerHomeEventsRoutes, type HomeEventsRouteDeps } from "./homeEventsRoute.js";
 import {
   buildIsinLookupQuery,
@@ -87,6 +88,8 @@ export interface AppDeps {
   /** Home events ingest (POST /internal/events/batch). The route is registered only when both are set. */
   checkToken?: HomeEventsRouteDeps["checkToken"];
   eventsTx?: HomeEventsRouteDeps["eventsTx"];
+  /** Session store for the browser write gate. A fresh in-memory store is created when omitted. */
+  sessions?: SessionStore;
 }
 
 const defaultCreateFeed: CreateFeedFn = (options) =>
@@ -126,6 +129,9 @@ const resultsQuerySchema = {
 
 export function buildApp(deps: AppDeps): FastifyInstance {
   const app = Fastify({ logger: deps.logger ?? false });
+  const sessions = deps.sessions ?? createSessionStore();
+  registerSessionRoutes(app, sessions);
+  registerCsrfGate(app, sessions);
 
   app.get("/api/health", async () => ({ ok: true }));
 

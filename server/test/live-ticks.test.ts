@@ -1,3 +1,4 @@
+import { browserSession } from "../src/sessionTestHelper.js";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { buildApp, type CreateFeedFn, type QueryFn } from "../src/app.js";
@@ -94,7 +95,7 @@ describe("live helpers", () => {
 describe("GET /api/live/ticks validation", () => {
   it("returns 400 when symbols are missing", async () => {
     const app = buildApp({ query: queuedQuery([]).query });
-    const res = await app.inject({ method: "GET", url: `/api/live/ticks?runId=${RUN_ID}` });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: `/api/live/ticks?runId=${RUN_ID}` });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: "symbols is required" });
   });
@@ -102,7 +103,7 @@ describe("GET /api/live/ticks validation", () => {
   it("returns 404 for an unknown run without querying instruments", async () => {
     const { query, calls } = queuedQuery([[]]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: "/api/live/ticks?runId=not-a-run&symbols=TCS" });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/live/ticks?runId=not-a-run&symbols=TCS" });
     expect(res.statusCode).toBe(404);
     expect(calls).toHaveLength(0);
   });
@@ -110,7 +111,7 @@ describe("GET /api/live/ticks validation", () => {
   it("returns 404 when none of the symbols resolve to an ISIN in the run", async () => {
     const { query } = queuedQuery([[{ run_id: RUN_ID }], []]);
     const app = buildApp({ query });
-    const res = await app.inject({ method: "GET", url: `/api/live/ticks?runId=${RUN_ID}&symbols=ZZZZ` });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: `/api/live/ticks?runId=${RUN_ID}&symbols=ZZZZ` });
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({ error: "No instruments found for symbols" });
   });
@@ -128,7 +129,10 @@ describe("GET /api/live/indices stream", () => {
     const { port } = app.server.address() as AddressInfo;
 
     const controller = new AbortController();
-    const res = await fetch(`http://127.0.0.1:${port}/api/live/indices`, { signal: controller.signal });
+    const res = await fetch(`http://127.0.0.1:${port}/api/live/indices`, {
+      signal: controller.signal,
+      headers: { cookie: (await browserSession(app)).cookie },
+    });
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let text = "";
@@ -159,7 +163,7 @@ describe("GET /api/live/indices stream", () => {
     const controller = new AbortController();
     const res = await fetch(
       `http://127.0.0.1:${port}/api/live/indices?symbols=${encodeURIComponent("Nifty Bank,GIFT NIFTY,nifty 50")}`,
-      { signal: controller.signal },
+      { signal: controller.signal, headers: { cookie: (await browserSession(app)).cookie } },
     );
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
@@ -179,7 +183,7 @@ describe("GET /api/live/indices stream", () => {
 
   it("returns 400 when no requested name has a live index key", async () => {
     const app = buildApp({ query: queuedQuery([]).query });
-    const res = await app.inject({ method: "GET", url: `/api/live/indices?symbols=${encodeURIComponent("GIFT NIFTY,NOT AN INDEX")}` });
+    const res = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: `/api/live/indices?symbols=${encodeURIComponent("GIFT NIFTY,NOT AN INDEX")}` });
     expect(res.statusCode).toBe(400);
     await app.close();
   });
@@ -200,6 +204,7 @@ describe("GET /api/live/ticks stream", () => {
     const controller = new AbortController();
     const res = await fetch(`http://127.0.0.1:${port}/api/live/ticks?runId=${RUN_ID}&symbols=tcs`, {
       signal: controller.signal,
+      headers: { cookie: (await browserSession(app)).cookie },
     });
     expect(res.headers.get("content-type")).toContain("text/event-stream");
 
