@@ -74,9 +74,32 @@ def _jsonl_path(run_id: uuid.UUID) -> Path:
     return _metrics_dir(run_id) / f"{run_id}.jsonl"
 
 
+def base_host(url: Optional[str]) -> Optional[str]:
+    """Host only, for llm_calls.base_host: no scheme, port, path or query (M-16)."""
+    if not url:
+        return None
+    from urllib.parse import urlsplit
+    try:
+        return urlsplit(str(url)).hostname or None
+    except ValueError:
+        return None
+
+
+def warn_if_run_id_unset() -> bool:
+    """Warn when RUN_ID is unset, because record_call then writes no llm_calls row (M-16).
+
+    Called at run start. Returns True when RUN_ID is set.
+    """
+    if os.environ.get("RUN_ID"):
+        return True
+    logger.warning("RUN_ID is not set: LLM calls in this run will not be recorded in llm_calls")
+    return False
+
+
 def record_call(stage: str, source_key: str, symbol: Optional[str],
                 model: str, input_tokens: int, output_tokens: int,
-                seconds: float, ok: bool) -> None:
+                seconds: float, ok: bool, *, provider_id: Optional[str] = None,
+                route: Optional[str] = None, base_host: Optional[str] = None) -> None:
     """Record one LLM call. No-op unless RUN_ID env var is set.
 
     Writes to Postgres llm_calls with ON CONFLICT DO NOTHING (retries are
@@ -113,11 +136,14 @@ def record_call(stage: str, source_key: str, symbol: Optional[str],
                 cur.execute("""
                     INSERT INTO llm_calls
                     (call_id, run_id, symbol, stage, source_key, model,
-                     input_tokens, output_tokens, seconds, ok, called_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, to_timestamp(%s))
+                     input_tokens, output_tokens, seconds, ok, called_at,
+                     provider_id, route, base_host)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, to_timestamp(%s),
+                            %s, %s, %s)
                     ON CONFLICT (run_id, stage, source_key) DO NOTHING
                 """, (str(call_id), str(run_id), symbol, stage, source_key, model,
-                      input_tokens, output_tokens, seconds, ok, call_at))
+                      input_tokens, output_tokens, seconds, ok, call_at,
+                      provider_id, route, base_host))
             conn.commit()
             return
     except Exception as e:
@@ -143,6 +169,9 @@ def record_call(stage: str, source_key: str, symbol: Optional[str],
             "seconds": seconds,
             "ok": ok,
             "called_at": call_at,
+            "provider_id": provider_id,
+            "route": route,
+            "base_host": base_host,
         }
         path = _jsonl_path(run_id)
         with open(path, "a") as f:
@@ -178,14 +207,17 @@ def flush_pending(run_id: uuid.UUID) -> None:
                         cur.execute("""
                             INSERT INTO llm_calls
                             (call_id, run_id, symbol, stage, source_key, model,
-                             input_tokens, output_tokens, seconds, ok, called_at)
+                             input_tokens, output_tokens, seconds, ok, called_at,
+                             provider_id, route, base_host)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                                    to_timestamp(%s))
+                                    to_timestamp(%s), %s, %s, %s)
                             ON CONFLICT (run_id, stage, source_key) DO NOTHING
                         """, (row["call_id"], row["run_id"], row.get("symbol"),
                               row["stage"], row["source_key"], row["model"],
                               row["input_tokens"], row["output_tokens"],
-                              row["seconds"], row["ok"], row["called_at"]))
+                              row["seconds"], row["ok"], row["called_at"],
+                              row.get("provider_id"), row.get("route"),
+                              row.get("base_host")))
                     loaded += 1
                 except Exception as e:
                     logger.debug(f"Error loading JSONL row: {e}")

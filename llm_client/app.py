@@ -8,6 +8,7 @@ ollama and anthropic_native return 501.
 
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
@@ -171,12 +172,69 @@ def _run_chat(ui, transport, req: ChatRequest):
     raise ClientError("adapter_not_built")
 
 
+_LAST_SUCCESS_AT: str | None = None
+
+
+def _healthz_body(ui) -> dict[str, Any]:
+    """The M-18 fields. Host only: no origin, path, query or key value is ever returned."""
+    body: dict[str, Any] = {
+        "status": "ok",
+        "provider_id": None,
+        "class": None,
+        "route": None,
+        "base_host": None,
+        "model_set": None,
+        "key_resolved": None,
+        "secrets_reachable": None,
+        "last_success_at": _LAST_SUCCESS_AT,
+    }
+    try:
+        provider_id = ui.get_active_provider_id()
+        provider = ui.get_provider(provider_id) if provider_id else None
+    except Exception:  # noqa: BLE001 -- a registry fault shows as unknown fields, not a 500
+        log.info("healthz: provider lookup failed")
+        return body
+    body["provider_id"] = provider_id
+    if provider is None:
+        return body
+
+    cls = provider.get("class")
+    parts = _origin_parts(provider.get("origin"))
+    body["class"] = cls
+    body["route"] = ROUTE_FOR_CLASS.get(cls)
+    body["base_host"] = parts[1] if parts else None
+
+    model_getter = getattr(ui, "get_active_model", None)
+    if callable(model_getter):
+        try:
+            body["model_set"] = bool(str(model_getter() or "").strip())
+        except Exception:  # noqa: BLE001
+            body["model_set"] = None
+
+    if cls in KEYED_CLASSES:
+        key_ref = provider.get("key_ref")
+        if key_ref != KEY_REF_PREFIX + str(provider_id):
+            body["key_resolved"] = False
+        else:
+            try:
+                key = ui.get_key(key_ref)
+            except Exception:  # noqa: BLE001
+                body["secrets_reachable"] = False
+                body["key_resolved"] = False
+            else:
+                body["secrets_reachable"] = True
+                body["key_resolved"] = key is not None and _key_record_ok(key)
+    return body
+
+
 def _chat_sync(ui, transport, req: ChatRequest):
+    global _LAST_SUCCESS_AT
     try:
         result = _run_chat(ui, transport, req)
     except ClientError as exc:
         log.info(redact(f"chat provider_id={req.provider_id} refused={exc.code}"))
         raise
+    _LAST_SUCCESS_AT = datetime.now(timezone.utc).isoformat()
     log.info(redact(f"chat provider_id={req.provider_id} ok"))
     return result
 
@@ -199,7 +257,7 @@ def create_app(chat_token: str, ui, transport=None) -> FastAPI:
 
     @app.get("/healthz")
     def healthz():
-        return {"status": "ok"}
+        return _healthz_body(ui)
 
     @app.post("/v1/chat")
     async def chat(request: Request):

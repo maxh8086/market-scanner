@@ -73,6 +73,8 @@ def main(argv=None) -> int:
     ap.add_argument("--fail", action="store_true",
                     help="mark the 'running' row for --run-id as failed (pipeline aborted), then exit")
     ap.add_argument("--trigger", default="manual", choices=["manual", "schedule"])
+    ap.add_argument("--reason", help="with --fail: why the run failed, stored in runs.notes "
+                                     "(for example model_not_set)")
     args = ap.parse_args(argv)
 
     # Parse date
@@ -96,12 +98,15 @@ def main(argv=None) -> int:
         return 1
 
     if args.begin:
+        from scanner import metrics
+        metrics.warn_if_run_id_unset()
         runs.begin_run(args.run_id, run_date, args.trigger)
         print(f"Run {args.run_id[:8]}... started for {run_date}")
         return 0
 
     if args.fail:
-        runs.finish_run(args.run_id, "failed")
+        fields = {"notes": args.reason} if args.reason else {}
+        runs.finish_run(args.run_id, "failed", **fields)
         print(f"Run {args.run_id[:8]}... marked failed")
         return 0
 

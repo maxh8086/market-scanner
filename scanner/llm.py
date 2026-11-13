@@ -68,6 +68,8 @@ class LLMConfig:
     temperature: float = 0.0   # extraction, not writing: no sampling
     max_input_chars: int = 12000
     num_ctx: int = 8192
+    provider_id: Optional[str] = None  # llm_provider row the call goes through (M-16)
+    route: Optional[str] = None        # "native" or "compat"
 
     @property
     def endpoint(self) -> str:
@@ -399,28 +401,25 @@ def _extract_tokens(cfg: LLMConfig, body: dict) -> tuple[int, int]:
 
 
 def health(cfg: LLMConfig, timeout: int = 5) -> tuple[bool, str]:
-    """Is the backend reachable? Checked once before a long batch, so a wrong
-    port fails in a second instead of after the first 15-minute timeout."""
+    """Is llm-client reachable? One GET /healthz, checked once before a long batch, so a
+    wrong URL fails in a second instead of after the first 15-minute timeout. The provider,
+    model and key fields are reported by /healthz itself (M-18), not probed here."""
     import requests
 
-    url = (f"{cfg.base_url.rstrip('/')}/api/tags" if cfg.api == "ollama"
-           else f"{cfg.base_url.rstrip('/')}/v1/models")
+    url = f"{cfg.base_url.rstrip('/')}/healthz"
     try:
         resp = requests.get(url, timeout=timeout)
         resp.raise_for_status()
     except Exception as e:  # noqa: BLE001
         return False, f"{type(e).__name__}: {e}"
-    names = ""
-    try:
-        body = resp.json()
-        items = body.get("models") or body.get("data") or []
-        names = ", ".join(
-            str(m.get("name") or m.get("id", "")) for m in items[:20])
-    except Exception:  # noqa: BLE001
-        pass
-    if names and cfg.model.split(":")[0] not in names:
-        return True, f"reachable, but '{cfg.model}' not in: {names}"
-    return True, names or "reachable"
+    return True, "reachable"
+
+
+def _call_meta(cfg: LLMConfig) -> dict:
+    """Provider columns for llm_calls (M-16): provider id, route, and the host only."""
+    from . import metrics
+    return {"provider_id": cfg.provider_id, "route": cfg.route,
+            "base_host": metrics.base_host(cfg.base_url)}
 
 
 def extract(cfg: LLMConfig, text: str, kind: str = KIND_ORDER,
@@ -473,7 +472,8 @@ def extract(cfg: LLMConfig, text: str, kind: str = KIND_ORDER,
         elapsed = round(time.time() - started, 1)
         # Record the failed call
         from . import metrics
-        metrics.record_call("extract", source_key, symbol, cfg.model, 0, 0, elapsed, False)
+        metrics.record_call("extract", source_key, symbol, cfg.model, 0, 0, elapsed, False,
+                            **_call_meta(cfg))
         return LLMResult(error=f"{type(e).__name__}: {e}",
                          seconds=elapsed,
                          model=cfg.model)
@@ -495,7 +495,7 @@ def extract(cfg: LLMConfig, text: str, kind: str = KIND_ORDER,
     # Record the call
     from . import metrics
     metrics.record_call("extract", source_key, symbol, cfg.model, input_tokens,
-                       output_tokens, elapsed, ok)
+                       output_tokens, elapsed, ok, **_call_meta(cfg))
 
     return result
 
