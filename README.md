@@ -116,7 +116,7 @@ the host is `start.ps1` (and `stop.ps1`). The project is self-contained: its own
 `scanner-postgres`, `scanner-mongo` and `scanner-neo4j` (data kept in `./data`), on a network
 named `market-scanner`. Credentials come from this project's `.env` at runtime and are never
 baked into an image. The LLM server (an OpenAI-compatible endpoint, e.g. vLLM) is **not** started
-by this project; point `start.ps1` at it with `LLM_URL` (default `http://host.docker.internal:8000`).
+by this project; point `start.ps1` at it with `LOCAL_LLM_URL` (default `http://llm-client:8000`).
 One command runs the whole pipeline, no switches:
 
 ```powershell
@@ -133,7 +133,7 @@ services) before the scan. `stop.ps1 -Prune` also removes this project's images;
 | Stage | Container | What it does |
 |---|---|---|
 | scan | `scanner` | Upstox prices/history, ATH buckets |
-| enrich | `enrich` + LLM server at `LLM_URL` | NSE filings, fundamentals, AI extraction of order/capacity/guidance figures |
+| enrich | `enrich` + llm-client at `LOCAL_LLM_URL` | NSE filings, fundamentals, AI extraction of order/capacity/guidance figures |
 | forecast | `enrich-timesfm` | TimesFM revenue/volatility forecasts (CPU) |
 | graph | `scanner-neo4j` + `graph` | loads filings, extractions, fundamentals; reads back customer facts |
 | conclude | `conclude` + LLM server | one short, checked conclusion per stock |

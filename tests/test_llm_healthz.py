@@ -105,8 +105,7 @@ class TestOneCloudCallOneRecord(unittest.TestCase):
         cfg = llm.LLMConfig(base_url="https://api.openai.com", model="gpt-test", api="openai")
         post_resp = mock.MagicMock(status_code=200, text="")
         post_resp.json.return_value = {
-            "choices": [{"message": {"content": '{"order_amount": 1, "order_unit": "crore"}'}}],
-            "usage": {"prompt_tokens": 12, "completion_tokens": 4},
+            "content": '{"order_amount": 1, "order_unit": "crore"}',
         }
         cursor = mock.MagicMock()
         cursor.__enter__.return_value = cursor
@@ -114,6 +113,7 @@ class TestOneCloudCallOneRecord(unittest.TestCase):
         conn.cursor.return_value = cursor
 
         with mock.patch.dict(os.environ, {"RUN_ID": run_id}), \
+                mock.patch("scanner.llm._chat_token", return_value="test-token"), \
                 mock.patch("requests.post", return_value=post_resp) as post, \
                 mock.patch("scanner.metrics._get_connection", return_value=conn):
             result = llm.extract(cfg, "Broad consideration: Rs. 1 crore",

@@ -56,17 +56,18 @@ class TestSchemasAndPayload(unittest.TestCase):
             for field in llm.SCHEMAS[kind]["properties"]:
                 self.assertIn(field, prompt, f"{kind}.{field}")
 
-    def test_openai_payload_enforces_the_schema(self):
-        cfg = llm.LLMConfig(api="openai", model="m")
-        body = llm._payload(cfg, "p", llm.KIND_ORDER)
-        self.assertEqual(body["response_format"]["type"], "json_schema")
+    def test_payload_enforces_the_schema(self):
+        cfg = llm.LLMConfig(model="m")
+        body = llm._payload(cfg, [{"role": "user", "content": "p"}], llm.OPENAI_MAX_TOKENS,
+                            json_schema=llm.SCHEMAS[llm.KIND_ORDER])
         self.assertEqual(body["max_tokens"], llm.OPENAI_MAX_TOKENS)
+        self.assertEqual(body["json_schema"], llm.SCHEMAS[llm.KIND_ORDER])
 
     def test_context_overflow_retries_with_half_the_text(self):
         cfg = llm.LLMConfig(api="openai", model="m")
         seen = []
 
-        def post(url, json, timeout):
+        def post(url, json, timeout, headers=None):
             seen.append(len(json["messages"][0]["content"]))
             r = mock.Mock()
             if len(seen) == 1:
@@ -74,10 +75,10 @@ class TestSchemasAndPayload(unittest.TestCase):
             else:
                 r.status_code, r.text = 200, ""
                 r.raise_for_status = lambda: None
-                r.json = lambda: {"choices": [{"message": {"content": '{"a": 1}'}}]}
+                r.json = lambda: {"content": '{"a": 1}'}
             return r
 
-        with mock.patch("requests.post", post):
+        with mock.patch("requests.post", post), mock.patch("scanner.llm._chat_token", return_value="t"):
             res = llm.extract(cfg, "x" * 20000, llm.KIND_GUIDANCE)
         self.assertTrue(res.ok)
         self.assertLess(seen[1], seen[0])

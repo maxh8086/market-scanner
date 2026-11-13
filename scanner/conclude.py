@@ -472,26 +472,7 @@ def validate(symbol: str, data: dict, packet: Mapping[str, Any]) -> Conclusion:
 def _request_body(cfg: llm.LLMConfig, user: str, max_tokens: int, keys=None) -> dict:
     messages = [{"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user}]
-    if cfg.api == "ollama":
-        # Native /api/chat: stream must be off or resp.json() fails, thinking must be
-        # off or content comes back empty, and Ollama takes the schema as `format`.
-        return {
-            "model": cfg.model,
-            "messages": messages,
-            "stream": False,
-            "think": False,
-            "format": response_schema(keys),
-            "options": {"temperature": cfg.temperature, "num_ctx": cfg.num_ctx},
-        }
-    return {
-        "model": cfg.model,
-        "messages": [{"role": "system", "content": SYSTEM_PROMPT},
-                     {"role": "user", "content": user}],
-        "temperature": cfg.temperature,
-        "max_tokens": max_tokens,
-        "response_format": {"type": "json_schema", "json_schema": {
-            "name": "stock_conclusion", "schema": response_schema(keys)}},
-    }
+    return llm._payload(cfg, messages, max_tokens, json_schema=response_schema(keys))
 
 
 def _truncated(text: str) -> bool:
@@ -538,8 +519,6 @@ def _keep(first: Conclusion, second: Conclusion) -> Conclusion:
 def _attempt(cfg: llm.LLMConfig, symbol: str, meta: Mapping[str, Any],
              packet: Mapping[str, Any], as_of: str, max_tokens: int,
              note: str = "") -> Conclusion:
-    import requests
-
     digest = packet_hash(packet)
     if not packet:
         return Conclusion(symbol, error="empty packet", packet_hash=digest)
@@ -555,8 +534,7 @@ def _attempt(cfg: llm.LLMConfig, symbol: str, meta: Mapping[str, Any],
     started = time.time()
     response_body = {}
     try:
-        resp = requests.post(cfg.endpoint, json=_request_body(cfg, user, max_tokens, packet),
-                             timeout=cfg.timeout)
+        resp = llm.post_chat(cfg, _request_body(cfg, user, max_tokens, packet))
         resp.raise_for_status()
         response_body = resp.json()
         raw = llm._content(cfg, response_body)

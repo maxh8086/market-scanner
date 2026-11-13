@@ -399,8 +399,8 @@ def stage_llm(db, cfg: llm.LLMConfig, limit: int | None = None,
     if not reachable:
         _die(f"LLM backend unreachable at {cfg.base_url} ({detail}).\n"
              f"  Start your OpenAI-compatible LLM server, then pass its URL:\n"
-             f"    --llm-url <server URL> --llm-model qwen3-4b --llm-api openai\n"
-             f"  (start.ps1 passes LLM_URL for you). Any OpenAI-compatible or Ollama server works.")
+             f"    --llm-url <llm-client URL> --llm-model <tag>\n"
+             f"  (start.ps1 passes LOCAL_LLM_URL for you). Calls go through llm-client.")
     print(f"\n=== LLM: {cfg.model} at {cfg.base_url} ({detail}) ===")
 
     docs = [d for d in docstore.all_filings(db) if d.get("raw_text")]
@@ -1066,7 +1066,7 @@ def main() -> None:
                    help="re-extract documents that already have an extraction")
     p.add_argument("--llm-workers", type=int, default=1,
                    help="concurrent extraction requests (vLLM batches them; use 4 there)")
-    p.add_argument("--llm-url", default=llm.LLMConfig.base_url)
+    p.add_argument("--llm-url", default=llm.LLMConfig().base_url)
     p.add_argument("--llm-model", default=llm.LLMConfig.model)
     p.add_argument("--llm-api", default=llm.LLMConfig.api,
                    choices=["ollama", "openai"])

@@ -3,11 +3,10 @@
     python conclude.py                       # every stock in the newest ath_enriched_*.csv
     python conclude.py --symbols INFY,TCS    # just these
     python conclude.py --limit 10            # trial run
-    python conclude.py --url http://127.0.0.1:8000   # or set CONCLUDE_URL (compose does)
+    python conclude.py --url http://127.0.0.1:8000   # or set LOCAL_LLM_URL
 
 Reads the enriched CSV and the document store (data/documents.json), builds a
-fact sheet per stock, and asks an OpenAI-compatible server (any LLM server run
-outside this project, e.g. vLLM serving Qwen/Qwen3-4B-Instruct-2507) to summarise
+fact sheet per stock, and asks llm-client (LOCAL_LLM_URL) to summarise
 it. Answers are checked
 against the fact sheet (see scanner/conclude.py) and stored in the document
 store; results are also written to output/ath_conclusions_<date>.csv.
@@ -81,8 +80,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--symbols", help="comma-separated symbols only")
     p.add_argument("--limit", type=int, help="cap number of stocks (trial runs)")
     p.add_argument("--force", action="store_true", help="re-conclude even if unchanged")
-    p.add_argument("--url", default=os.environ.get("CONCLUDE_URL", "http://localhost:11434"),
-                   help="model server base URL (default: $CONCLUDE_URL or localhost:11434)")
+    p.add_argument("--url", default=os.environ.get("LOCAL_LLM_URL", "http://llm-client:8000"),
+                   help="llm-client base URL (default: $LOCAL_LLM_URL)")
     p.add_argument("--model", default=conclude.DEFAULT_MODEL, help="served model name")
     p.add_argument("--workers", type=int, default=4, help="concurrent requests")
     p.add_argument("--timeout", type=int, default=300)
@@ -100,12 +99,12 @@ def main(argv: list[str] | None = None) -> int:
         print("Nothing to conclude (no matching symbols).")
         return 0
 
-    cfg = llm.LLMConfig(base_url=args.url, model=args.model, api="ollama",
+    cfg = llm.LLMConfig(base_url=args.url, model=args.model,
                         timeout=args.timeout)
     reachable, detail = llm.health(cfg)
     print(f"Model server {args.url}: {detail}")
     if not reachable:
-        print("Start the Ollama server (ollama serve) at that URL (or pass --url / set CONCLUDE_URL).")
+        print("Start llm-client at that URL (or pass --url / set LOCAL_LLM_URL).")
         return 1
 
     db = docstore.open_db()
