@@ -220,7 +220,7 @@ Verified 2026-11-12 by Grep and targeted Read in this revision. Re-check at appr
 2. Look up the normalised name in the nse_csv index (fill_from_name).
 3. One (symbol, ISIN) pair: fill symbol and ISIN.
 4. Zero or several pairs: leave the symbol empty; filter_items rejects the item as "universe".
-5. A name match whose ISIN disagrees with the item's ISIN is rejected and counted as isin_conflict (count_isin_conflicts, home_events.py line 171). Run message format: rejected parse=<n> universe=<n> isin_conflict=<n>.
+5. A name match whose ISIN disagrees with the item's ISIN is rejected and counted as isin_conflict (count_isin_conflicts, home_events.py line 171). Run message format: rejected parse=<n> universe=<n> isin_conflict=<n> date_floor=<n>.
 
 Measured results are in section 3 (reported figures, not re-run here).
 

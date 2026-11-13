@@ -168,6 +168,24 @@ def filter_items(
     return kept, counts
 
 
+def apply_date_floor(items: list[dict], cutoff: datetime) -> tuple[list[dict], int]:
+    """Drop items whose published_at is before `cutoff` (decision D8). Pure.
+
+    Returns (kept, dropped). An item exactly on the cutoff is kept. An item whose
+    published_at is not a timezone-aware datetime is kept unchanged, so its
+    handling stays as it was before the floor existed.
+    """
+    kept: list[dict] = []
+    dropped = 0
+    for item in items:
+        published = item.get("published_at")
+        if isinstance(published, datetime) and published.tzinfo is not None and published < cutoff:
+            dropped += 1
+            continue
+        kept.append(item)
+    return kept, dropped
+
+
 def count_isin_conflicts(items: list[dict], by_name: dict[str, tuple[str, str]]) -> int:
     """Count name-only items whose name resolves but whose own ISIN disagrees. Pure.
 
@@ -330,6 +348,9 @@ RUN_DEFAULTS: dict[str, float] = {
 }
 EXCHANGE = "nse"
 ROTATION_S = 300  # the start feed moves every 5 minutes (spec 5.1 step 3)
+# Ingest age floor (decision D8): items older than this many days are dropped before filter_items.
+INGEST_FLOOR_DEFAULT_DAYS = 730
+INGEST_FLOOR_MAX_DAYS = 3650
 
 
 class _ConfigError(Exception):
@@ -361,6 +382,15 @@ def _run_config(params: dict, feeds: tuple[Feed, ...]) -> tuple[dict, tuple[Feed
         cfg[key] = value
     if cfg["gap_min_s"] > cfg["gap_max_s"]:
         raise _ConfigError("gap_min_s")
+
+    floor_days = params.get("ingest_floor_days", INGEST_FLOOR_DEFAULT_DAYS)
+    if (
+        isinstance(floor_days, bool)
+        or not isinstance(floor_days, int)
+        or not 1 <= floor_days <= INGEST_FLOOR_MAX_DAYS
+    ):
+        raise _ConfigError("ingest_floor_days")
+    cfg["ingest_floor_days"] = floor_days
 
     known = {feed.feed_code for feed in feeds}
     wanted = params.get("enabled_feeds")
@@ -447,8 +477,12 @@ def run_cycle(
         clock() + per_feed_budget
     except OverflowError:
         return _run_result("failed", message="config:gap_max_s")
+    try:
+        cutoff = clock() - timedelta(days=cfg["ingest_floor_days"])
+    except OverflowError:
+        return _run_result("failed", message="config:ingest_floor_days")
 
-    fetched = new = invalid = dropped = universe_rejected = isin_conflicts = feeds_ok = 0
+    fetched = new = invalid = dropped = universe_rejected = isin_conflicts = date_floored = feeds_ok = 0
     transient: list[str] = []
     fatal: list[str] = []
     kept_times: list[datetime] = []
@@ -490,9 +524,11 @@ def run_cycle(
         feeds_ok += 1
         fetched += len(outcome.items)
         dropped += outcome.dropped
+        recent, floored = apply_date_floor(outcome.items, cutoff)
+        date_floored += floored
         if by_name is not None:
-            isin_conflicts += count_isin_conflicts(outcome.items, by_name)
-        items = outcome.items if by_name is None else fill_from_name(outcome.items, by_name)
+            isin_conflicts += count_isin_conflicts(recent, by_name)
+        items = recent if by_name is None else fill_from_name(recent, by_name)
         kept, counts = filter_items(items, universe)
         universe_rejected += counts["universe"]
         rows = [to_event_row(feed, item) for item in kept]
@@ -544,7 +580,10 @@ def run_cycle(
             parts.append(f"deadline: {deadline_left} feeds not fetched")
     if mid_run_cooldown:
         parts.append("exchange_cooldown")
-    parts.append(f"rejected parse={dropped} universe={universe_rejected} isin_conflict={isin_conflicts}")
+    parts.append(
+        f"rejected parse={dropped} universe={universe_rejected} isin_conflict={isin_conflicts} "
+        f"date_floor={date_floored}"
+    )
     parts.append(f"invalid={invalid}")
     status = "failed" if fatal or feeds_ok == 0 else "ok"
     return _run_result(
