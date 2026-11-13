@@ -55,7 +55,13 @@ class LlmClientAuthTests(unittest.TestCase):
     def test_healthz_has_no_urls_or_keys(self):
         resp = self.client.get("/healthz")
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json(), {"status": "ok"})
+        self.assertEqual(resp.json().get("status"), "ok")
+        text = resp.text
+        self.assertNotIn("http://", text)
+        self.assertNotIn("https://", text)
+        self.assertNotIn(TEST_CHAT_TOKEN, text)
+        self.assertNotIn("sk-", text)
+        self.assertNotIn("Bearer", text)
 
 
 if __name__ == "__main__":
