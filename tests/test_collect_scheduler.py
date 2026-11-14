@@ -1,6 +1,8 @@
 """Tests for collector scheduler logic: due sources, requests, running checks."""
+import json
 import unittest
 from datetime import datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 import uuid
 
@@ -162,6 +164,35 @@ class IsRunningTests(unittest.TestCase):
         mock_conn.execute.return_value.fetchone.return_value = {"id": "some_id"}
         running = scheduler.is_running(mock_conn, "candles_eod", timeout_seconds=3600)
         self.assertTrue(running)
+
+
+VECTORS_PATH = Path(__file__).resolve().parent / "data" / "collector_due_vectors.json"
+
+
+class SharedDueVectorsTests(unittest.TestCase):
+    """Run the shared due vectors (engines containing 'py') through due_sources()."""
+
+    @classmethod
+    def setUpClass(cls):
+        with VECTORS_PATH.open(encoding="utf-8") as fh:
+            cls.doc = json.load(fh)
+
+    def test_py_cases_match_expected_due(self):
+        py_cases = [c for c in self.doc["cases"] if "py" in c["engines"]]
+        self.assertTrue(py_cases, "no py cases in the shared vectors file")
+        for case in py_cases:
+            with self.subTest(case=case["name"]):
+                # py cases use only mode scheduled, no attempt, no cooldown, no request.
+                self.assertEqual(case["mode"], "scheduled")
+                self.assertIsNone(case["last_attempt"])
+                self.assertIsNone(case["cooldown_until"])
+                self.assertFalse(case["open_request"])
+
+                now = datetime.fromisoformat(case["now"])
+                last_ok = datetime.fromisoformat(case["last_ok"]) if case["last_ok"] else None
+                settings = {"case_src": {"mode": case["mode"], "cron": case["cron"]}}
+                due = scheduler.due_sources(now, settings, {"case_src": last_ok}, tz="Asia/Kolkata")
+                self.assertEqual(due == ["case_src"], case["expected_due"])
 
 
 if __name__ == "__main__":
