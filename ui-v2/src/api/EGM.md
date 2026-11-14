@@ -13,6 +13,8 @@ and its types are kept in step with the matching server module.
 - `events.ts`: `fetchEvents`, `buildEventsQueryString`, `EventsQuery`,
   `EventsResponse`, `EventItem`, `EventsTier`, `EventsError`. Route:
   `GET /api/events` (filings feed; the server default window is 7 days).
+- `collectorStatus.ts`: `fetchCollectorStatus`, `CollectorStatus`,
+  `CollectorStatusError`. Route: `GET /api/collector/status` (collector pause flag for the banner).
 - `filterOptions.ts`: `fetchFilterOptions`, `FilterOptions`,
   `FilterOptionsError`. Route: `GET /api/runs/:runId/filter-options`.
 - `broker.ts`: `fetchBrokerStatus`, `requestLoginUrl`, `syncPortfolio`,

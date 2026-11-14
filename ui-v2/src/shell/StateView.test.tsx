@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { StateView, type StateKind } from "./StateView";
 
 describe("StateView", () => {
-  it.each<StateKind>(["idle", "loading", "empty", "error", "market_closed", "pre_open", "stale"])(
+  it.each<StateKind>(["idle", "loading", "empty", "error", "market_closed", "pre_open", "stale", "collector_paused"])(
     "renders the %s kind with its data-state",
     (kind) => {
       const { container, unmount } = render(<StateView kind={kind} message="Message text" />);

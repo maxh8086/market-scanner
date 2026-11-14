@@ -6,7 +6,8 @@ export type StateKind =
   | "market_closed"
   | "pre_open"
   | "stale"
-  | "reconnecting";
+  | "reconnecting"
+  | "collector_paused";
 
 export interface StateViewAction {
   label: string;
@@ -25,6 +26,7 @@ const CAUTION_KINDS: ReadonlySet<StateKind> = new Set<StateKind>([
   "pre_open",
   "stale",
   "reconnecting",
+  "collector_paused",
 ]);
 const SKELETON_ROWS = 3;
 
