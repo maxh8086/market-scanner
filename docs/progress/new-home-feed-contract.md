@@ -1,6 +1,6 @@
 # NEW-HOME-FEED contract addendum (draft, unreviewed)
 
-Status: draft for your approval. No EGM review lenses were run, so treat the design as unreviewed. Nothing is dispatched until you approve. It closes the "contract addendum" gap in `docs/designs/t4f-mvp-plan.md` (row NEW-HOME-FEED, D1). `docs/designs/` is not edited.
+Status: approved 2026-11-14 (Q1 hold shortlist, Q2 7 days, Q3 both groups). The EGM review lenses were not run, so the design is unreviewed.
 
 Sources read: `ui-redesign-spec.md` 5.1, 7.1 to 7.2 (`home-event-sources.md` lines 160 to 176 for the cap), `home-events-filings-spec.md` 4.6, `db/events_migrations/001` and `002`, `server/src/results.ts`, `ui-v2/src/api/results.ts`.
 
@@ -102,5 +102,5 @@ Not verifiable without you: the route against a real events database (needs 003 
 ## 7. Questions for you
 
 - **Q1 shortlist: decided 2026-11-14.** Hold the shortlist until the factor fields can be read (see 2.4).
-- **Q2 default window.** 7 days, or another length (filings arrive weekdays only)?
+- **Q2 default window: decided 2026-11-14.** 7 days.
 - **Q3 groups: decided 2026-11-14.** Show both groups on Home.
