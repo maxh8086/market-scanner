@@ -98,9 +98,10 @@ Stored encrypted in `app_secret` as an app-level key, set by the admin (decision
 - Each service gets its own token file. The file is readable by that service's user only.
 - Status: approved. Built: S5 (PR #73, merge 8b26503).
 
-## Decision 16: Kite access token is runtime-only (decided 2026-11-10)
-- `kite_access_token` is not stored in `app_secret`, not imported from `data/secrets.env`, and not shared with any service. It is issued by Kite at the daily login (`scanner/auth.py`, cached in the git-ignored `.kite_token`).
-- Done: the `KITE_ACCESS_TOKEN` mapping in `scanner/secrets_cli.py` (ENV_TO_APP) and the `KITE_ACCESS_TOKEN` line in `env.template` have been removed. The token is read from `.kite_token` (the daily login cache written by `python -m scanner.auth`).
+## Decision 16: Kite access token is never served to a service (decided 2026-11-10)
+- `kite_access_token` is issued by Kite at the daily login (`scanner/auth.py`, cached in the git-ignored `.kite_token`). It is the runtime source for Kite calls.
+- The token can be stored: `scanner/secrets_cli.py` (ENV_TO_APP) still maps `KITE_ACCESS_TOKEN`, `env.template` still has a `KITE_ACCESS_TOKEN=` line, and `import-env` stores it (tests/test_secrets_cli.py).
+- It is never served to any service: the ui secrets endpoint allowlist (`ui/app/internal_secrets.py`) returns 403 for `kite_access_token` to every service (collector, server, llm_client). The daily login cache `.kite_token` remains its runtime source.
 - `KITE_API_KEY` and `KITE_API_SECRET` remain stored app secrets.
 
 ## Ingest token roles and the collector service token (proposed 2026-11-10)

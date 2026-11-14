@@ -36,6 +36,8 @@ export function createSecretsClient(opts: SecretsClientOptions): SecretsClient {
   const cache = new Map<string, CacheEntry>();
   const inflight = new Map<string, Promise<string | undefined>>();
 
+  // Failures (missing token, transport error, non-200 such as 404 "not stored", bad body) are cached as
+  // undefined for failTtlMs (10 s) and warned about the same way, so a missing secret is not re-fetched on every call.
   function remember(name: string, value: string | undefined, ttl: number): void {
     cache.set(name, { value, expiresAt: now() + ttl });
   }

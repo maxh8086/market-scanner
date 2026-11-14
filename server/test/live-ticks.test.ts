@@ -343,3 +343,94 @@ describe("GET /api/live/ticks stream", () => {
     await app.close();
   });
 });
+
+describe("client leaves during the live token fetch", () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
+
+  function countingFeed() {
+    const created: Array<string | undefined> = [];
+    const createFeed: CreateFeedFn = ({ accessToken }) => {
+      created.push(accessToken);
+      const feed: LiveFeed = { start: () => {}, stop: () => {}, status: () => "connecting" };
+      return feed;
+    };
+    return { createFeed, created };
+  }
+
+  it("does not create a feed on /api/live/indices when the browser aborts before the token resolves", async () => {
+    const token = deferred<string>();
+    let tokenRequests = 0;
+    const feed = countingFeed();
+    const app = buildApp({
+      query: queuedQuery([]).query,
+      live: {
+        getAccessToken: () => {
+          tokenRequests++;
+          return token.promise;
+        },
+        createFeed: feed.createFeed,
+      },
+    });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = app.server.address() as AddressInfo;
+    const cookie = (await browserSession(app)).cookie;
+
+    const controller = new AbortController();
+    const request = fetch(`http://127.0.0.1:${port}/api/live/indices`, {
+      signal: controller.signal,
+      headers: { cookie },
+    }).catch(() => undefined);
+    await waitUntil(() => tokenRequests === 1);
+    controller.abort();
+    await request;
+    await pause(50);
+    token.resolve("resolved-token");
+    await pause(50);
+
+    expect(feed.created).toHaveLength(0);
+    await app.close();
+  });
+
+  it("does not create a feed on /api/live/ticks when the browser aborts before the token resolves", async () => {
+    const { query } = queuedQuery([[{ run_id: RUN_ID }], [{ symbol: "TCS", isin: "INE467B01029" }]]);
+    const token = deferred<string>();
+    let tokenRequests = 0;
+    const feed = countingFeed();
+    const app = buildApp({
+      query,
+      live: {
+        getAccessToken: () => {
+          tokenRequests++;
+          return token.promise;
+        },
+        createFeed: feed.createFeed,
+      },
+    });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = app.server.address() as AddressInfo;
+    const cookie = (await browserSession(app)).cookie;
+
+    const controller = new AbortController();
+    const request = fetch(`http://127.0.0.1:${port}/api/live/ticks?runId=${RUN_ID}&symbols=tcs`, {
+      signal: controller.signal,
+      headers: { cookie },
+    }).catch(() => undefined);
+    await waitUntil(() => tokenRequests === 1);
+    controller.abort();
+    await request;
+    await pause(50);
+    token.resolve("resolved-token");
+    await pause(50);
+
+    expect(feed.created).toHaveLength(0);
+    await app.close();
+  });
+});

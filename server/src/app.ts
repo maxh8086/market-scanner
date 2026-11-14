@@ -341,6 +341,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const symbolByKey = new Map(names.map((name) => [INDEX_INSTRUMENT_KEYS[name] as string, name]));
     const createFeed = deps.live?.createFeed ?? defaultCreateFeed;
     const accessToken = await resolveLiveToken(deps.live);
+    if (clientGone(reply)) return reply;
     streamLiveFeed(reply, (listeners) =>
       createFeed({
         accessToken,
@@ -395,6 +396,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
       const createFeed = deps.live?.createFeed ?? defaultCreateFeed;
       const accessToken = await resolveLiveToken(deps.live);
+      if (clientGone(reply)) return reply;
       streamLiveFeed(reply, (listeners) =>
         createFeed({
           accessToken,
@@ -427,6 +429,11 @@ async function resolveLiveToken(live: LiveDeps | undefined): Promise<string | un
     }
   }
   return live?.accessToken;
+}
+
+/** True when the browser left while an async step ran, so no stream should start. */
+function clientGone(reply: FastifyReply): boolean {
+  return reply.raw.destroyed || (reply.raw.socket?.destroyed ?? false);
 }
 
 interface SseListeners {

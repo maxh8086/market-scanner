@@ -196,7 +196,7 @@ class InternalSecretsEndpoint(unittest.TestCase):
         self.assertTrue(200 <= resp.status_code < 300,
                         f"expected 2xx for llm_key_openai with collector file missing, got {resp.status_code}")
 
-    # server service token (S6-b). Allowed names: upstox_analytics_token and kite_api_key only.
+    # server service token (S3b).Allowed names: upstox_analytics_token and kite_api_key only.
     SERVER_TOKEN = "tok-server-789"
     SERVER_TOKEN_ENV = "SERVER_TOKEN_FILE"
 
@@ -294,6 +294,48 @@ class InternalSecretsEndpoint(unittest.TestCase):
         joined = "\n".join(handler.lines)
         self.assertNotIn("VALUE-XYZ", joined)
         self.assertNotIn(self.SERVER_TOKEN, joined)
+
+    def _capture_debug_logs(self):
+        handler = _CollectHandler()
+        root = logging.getLogger()
+        old_level = root.level
+        root.addHandler(handler)
+        root.setLevel(logging.DEBUG)
+        self.addCleanup(root.removeHandler, handler)
+        self.addCleanup(root.setLevel, old_level)
+        return handler
+
+    def _assert_no_token_in_logs(self, handler, *secrets_to_hide):
+        joined = "\n".join(handler.lines)
+        # The status line must have been captured, so the absence checks below are meaningful.
+        self.assertIn("status 40", joined)
+        for secret in secrets_to_hide:
+            self.assertNotIn(secret, joined)
+            self.assertNotIn(f"Bearer {secret}", joined)
+        self.assertNotIn("VALUE-XYZ", joined)
+
+    def test_bearer_token_never_reaches_logs_on_401(self):
+        self._use_server_token()
+        wrong = "tok-wrong-secret-999"
+        handler = self._capture_debug_logs()
+
+        self.assertEqual(self._get("upstox_analytics_token", token=wrong).status_code, 401)
+        self.assertEqual(self._get("upstox_analytics_token", token=None).status_code, 401)
+        self.get_value.assert_not_called()
+
+        self._assert_no_token_in_logs(handler, wrong, self.TOKEN, self.SERVER_TOKEN)
+
+    def test_bearer_token_never_reaches_logs_on_403(self):
+        server_token = self._use_server_token()
+        handler = self._capture_debug_logs()
+
+        # Server identity asking for a name outside its allowlist.
+        self.assertEqual(self._get("kite_access_token", token=server_token).status_code, 403)
+        # Collector identity asking for a kite name.
+        self.assertEqual(self._get("kite_api_key", token=self.TOKEN).status_code, 403)
+        self.get_value.assert_not_called()
+
+        self._assert_no_token_in_logs(handler, server_token, self.TOKEN)
 
 
 # ---------------------------------------------------------------------------

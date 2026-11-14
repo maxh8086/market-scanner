@@ -1,4 +1,4 @@
-"""Internal endpoints for other services on the project network (secrets S5, LC2, S6).
+"""Internal endpoints for other services on the project network (secrets S5, LC2, S3b).
 
 GET /internal/secrets/{name} returns one app secret to a service that holds its own
 bearer token. GET /internal/llm/providers/{provider_id} returns one llm_provider row to
@@ -16,8 +16,8 @@ the llm-client service (never key material). Rules, in order:
      upstox_analytics_token and kite_api_key; llm_client may read names that
      match ^llm_key_[a-z][a-z0-9_]{0,40}$. Any other name -> 403.
    - llm providers: llm_client only. Any other service -> 403.
-   kite_access_token is runtime-only and never served to any service (Decision 16 in
-   docs/designs/secrets-and-roles.md). kite_api_secret is never served either.
+   kite_access_token may be stored, but the allowlist never serves it to any service
+   (Decision 16 in docs/designs/secrets-and-roles.md). kite_api_secret is never served either.
 4. Secrets are decrypted here, with the master key, and returned with Cache-Control:
    no-store. Secret not stored -> 404. Provider row not found -> 404.
 
