@@ -118,9 +118,10 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
  * Exact paths a safe-method request may reach without a session. /api/session is listed because
  * it issues the session cookie and so cannot require one. /api/health is listed because the
  * Docker healthcheck and the watchdog poll it without a browser session. It returns only the
- * static body {ok: true}. Nothing else is exempt.
+ * static body {ok: true}. /api/broker/kite/callback is the broker's top-level redirect, which may not
+ * carry the session cookie; it is protected by the single-use login state instead. Nothing else is exempt.
  */
-const SESSION_EXEMPT_SAFE_PATHS = new Set(["/api/session", "/api/health"]);
+const SESSION_EXEMPT_SAFE_PATHS = new Set(["/api/session", "/api/health", "/api/broker/kite/callback"]);
 
 /** Matches an absolute-form request target such as "http://host:port" at the start of a URL. */
 const ABSOLUTE_FORM_PREFIX = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/?#]*/;

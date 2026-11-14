@@ -171,4 +171,53 @@ describe("createSecretsClient", () => {
       expect(message).not.toContain(VALUE);
     }
   });
+
+  it("invalidate drops a cached success so the next get refetches", async () => {
+    const { client, fetchFn } = make(succeed);
+
+    expect(await client.get("upstox_analytics_token")).toBe(VALUE);
+    client.invalidate("upstox_analytics_token");
+    expect(await client.get("upstox_analytics_token")).toBe(VALUE);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidate drops a cached failure so the next get retries at once", async () => {
+    const { client, fetchFn } = make(succeed);
+    fetchFn.mockResolvedValueOnce(new Response("", { status: 503 }));
+
+    expect(await client.get("upstox_analytics_token")).toBeUndefined();
+    client.invalidate("upstox_analytics_token");
+    expect(await client.get("upstox_analytics_token")).toBe(VALUE);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidate leaves other names cached", async () => {
+    const { client, fetchFn } = make(async (url) => okResponse({ name: "n", value: url.includes("a") ? "A" : "B" }));
+
+    await client.get("a");
+    await client.get("b");
+    client.invalidate("a");
+    await client.get("b");
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("a request in flight during invalidate does not repopulate the cache with its stale result", async () => {
+    let resolveFirst: ((response: Response) => void) | undefined;
+    const { client, fetchFn } = make(() => {
+      if (fetchFn.mock.calls.length === 1) {
+        return new Promise<Response>((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      return Promise.resolve(okResponse({ name: "n", value: "fresh" }));
+    });
+
+    const stale = client.get("n");
+    client.invalidate("n");
+    resolveFirst?.(okResponse({ name: "n", value: "stale" }));
+    await stale;
+
+    expect(await client.get("n")).toBe("fresh");
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
 });

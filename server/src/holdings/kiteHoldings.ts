@@ -7,6 +7,8 @@ export const KITE_HOLDINGS_URL = "https://api.kite.trade/portfolio/holdings";
 
 export interface Holding {
   symbol: string;
+  /** Kite exchange code (for example NSE or BSE). Empty when Kite omits it. Part of the stored key. */
+  exchange: string;
   isin: string | null;
   quantity: number;
   averagePrice: number;
@@ -50,6 +52,7 @@ export function parseKiteHoldings(body: unknown): Holding[] | null {
     if (!symbol || quantity === null) continue;
     holdings.push({
       symbol,
+      exchange: typeof row.exchange === "string" ? row.exchange : "",
       isin: typeof row.isin === "string" && row.isin.length > 0 ? row.isin : null,
       quantity,
       averagePrice: num(row.average_price) ?? 0,
@@ -80,7 +83,7 @@ export async function fetchKiteHoldings(options: KiteHoldingsOptions): Promise<K
   }
 
   if (response.status === 403) {
-    return { ok: false, status: 401, error: "Kite session expired. Update KITE_ACCESS_TOKEN." };
+    return { ok: false, status: 401, error: "Kite session expired. Log in again." };
   }
   if (!response.ok) {
     return { ok: false, status: 502, error: `Kite returned status ${response.status}.` };

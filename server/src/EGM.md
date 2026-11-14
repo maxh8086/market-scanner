@@ -7,13 +7,23 @@ runs them against the injected `query` function. This keeps SQL and validation
 testable without a database.
 
 ## Interface
-- `app.ts`: `buildApp`, and the `AppDeps`, `KiteDeps`, `LiveDeps`, `QueryFn`
-  types.
+- `app.ts`: `buildApp`, and the `AppDeps`, `BrokerAppDeps`, `LiveDeps`,
+  `QueryFn` types. Broker routes register only when both `broker` and
+  `portfolioTx` are passed.
 - `index.ts`: process entry point. Not an importable module.
 - `config.ts`: `loadPoolConfig`.
-- `secretsClient.ts`: `createSecretsClient`. `index.ts` uses it to fetch app
-  secrets from the ui internal secrets endpoint. `secrets.ts` (`readSecret`) is
-  no longer used by `index.ts`.
+- `secretsClient.ts`: `createSecretsClient` (`get`, `invalidate`). `index.ts`
+  uses it to fetch app secrets from the ui internal secrets endpoint.
+  `secrets.ts` (`readSecret`) is no longer used by `index.ts`. `invalidate`
+  drops a cached value; a fetch that was in flight during the invalidate does
+  not write its stale result back.
+- `uiClient.ts`: `createUiClient`. Bearer-authorised calls to the ui internal
+  broker API. Transport failures come back as status 0.
+- `portfolioTx.ts`: `makePortfolioTx`, `PortfolioTx`. One pooled-client
+  transaction for the snapshot writes, same shape as `eventsTx`.
+- `broker/`: broker login routes (`brokerRoutes.ts`), credential names
+  (`names.ts`, `credentials.ts`) and stored portfolio snapshots
+  (`portfolioStore.ts`). It has no EGM.md of its own; this file covers it.
 - `candles.ts`: `validateCandlesRequest`, `buildCandlesQuery`, `shapeCandles`.
 - `collectorRefresh.ts`: `registerCollectorRefreshRoute`,
   `isBeforeCloseOnTradingDayIst`, `buildIndexEodRefreshInsert`,
@@ -29,7 +39,8 @@ testable without a database.
   `buildRunLookupQuery`, `buildLatestRunQuery`, `formatRunDate`.
 - `sectorSummary.ts`: `validateSectorPeriod`, `buildSectorSummaryQuery`,
   `shapeSectorSummary`.
-- Subdirectories: [holdings](./holdings/EGM.md), [live](./live/EGM.md).
+- Subdirectories: [holdings](./holdings/EGM.md), [live](./live/EGM.md),
+  `broker/` (no EGM.md of its own; see Interface).
 - Test files (`*.test.ts`) sit beside their modules and are not part of the
   interface.
 
@@ -48,6 +59,13 @@ testable without a database.
   insert).
 - App secrets are fetched over HTTP from the ui internal secrets endpoint by
   `secretsClient.ts` (`index.ts` wiring), not read from a file.
+- Broker login goes through the ui internal broker API (`uiClient.ts`): login
+  URL, code exchange and status. The browser never receives a broker token or
+  API key, and a Kite callback redirects back to the UI without them.
+- Holdings: `GET /api/holdings` reads the stored snapshot only. Only
+  `POST /api/holdings/sync` calls Kite, and it writes Postgres
+  (`portfolio_sync` and `portfolio_holding`) in one transaction through
+  `portfolioTx.ts`. A failed sync writes nothing.
 - Live-feed socket and server-sent events (see [live](./live/EGM.md)).
 
 ## Verification

@@ -14,7 +14,9 @@ the shared loading and error view.
 - `watchlistStore.ts`: `loadCustomWatchlist`, `saveCustomWatchlist`,
   `addCustomSymbol`, `normalizeSymbol`, `segmentIndices`, `INDEX_SEGMENTS`,
   `DEFAULT_INDICES`, `ALL_INDICES`.
-- `HoldingsPanel.tsx`: `HoldingsPanel`, `toHoldingRow`, `totalHoldings`.
+- `HoldingsPanel.tsx`: `HoldingsPanel`, `toHoldingRow`, `totalHoldings`,
+  `formatLocalTime`, `loginNoticeFromSearch`, `LOGIN_REQUIRED_NOTICE`,
+  `NO_STORED_PORTFOLIO`.
 - `CommandPalette.tsx`: `CommandPalette`, `openCommandPalette`,
   `OPEN_COMMAND_PALETTE_EVENT`.
 - `EodRefreshButton.tsx`: `EodRefreshButton`, `formatCountdown`,
@@ -32,6 +34,13 @@ the shared loading and error view.
 - The server decides whether an EOD refresh is allowed (see
   `server/src/collectorRefresh.ts`). The button shows a countdown while a
   refresh is queued.
+- The holdings panel shows the stored snapshot only. Its Kite controls show
+  "Log in to Kite" when not connected and "Sync portfolio" when connected. A
+  sync refused with 401 flips the panel to not connected. The panel holds no
+  broker token.
+- The login notice is read once from `?broker=&login=` on mount, then those
+  two parameters are removed with `history.replaceState`. The notice sits in
+  an `aria-live` region.
 
 ## Side Effects
 - `localStorage` for the custom watchlist (`watchlistStore.ts`), the panel
@@ -40,7 +49,9 @@ the shared loading and error view.
 - Window event dispatch and listeners (command palette), and window resize
   listeners (`ResizablePanels.tsx`).
 - HTTP calls for the EOD refresh (`api/collectorRefresh.ts`) and the holdings
-  panel (`api/holdings.ts`).
+  panel (`api/holdings.ts`, `api/broker.ts`: status, login URL, sync).
+- Login redirects the whole page to the broker's login URL
+  (`redirectToBrokerLogin`).
 
 ## Verification
 - Run: `npm test` in `ui-v2/` (covers the `*.test.tsx` files in this folder).

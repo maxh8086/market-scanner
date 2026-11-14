@@ -5,9 +5,11 @@ import pg from "pg";
 import { buildApp } from "./app.js";
 import { loadPoolConfig } from "./config.js";
 import { createSecretsClient } from "./secretsClient.js";
+import { createUiClient } from "./uiClient.js";
 import { loadServiceTokens } from "./serviceTokens.js";
 import { checkIngestToken } from "./homeEventsAuth.js";
 import { makeEventsTx } from "./eventsTx.js";
+import { makePortfolioTx } from "./portfolioTx.js";
 import { loadServerHost } from "./serverHost.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -28,27 +30,28 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 const pool = new Pool(loadPoolConfig());
 const serviceTokens = loadServiceTokens(process.env.SERVICE_TOKEN_DIR ?? "/run/service-tokens", ["home_events_ingest"]);
 
-// App secrets come from the ui's internal secrets API, authorised by a bearer token read from a file on
-// every fetch. The server holds no master key and never reads data/secrets.env.
+// App secrets and broker login calls go to the ui's internal API, authorised by a bearer token read from a file
+// on every fetch. The server holds no master key and never reads data/secrets.env.
+const secretsTokenFile = process.env.SECRETS_TOKEN_FILE ?? "/run/app-keys/server_secrets_token";
+const secretsApiUrl = process.env.SECRETS_API_URL ?? "http://ui:8080";
 const secrets = createSecretsClient({
-  tokenFile: process.env.SECRETS_TOKEN_FILE ?? "/run/app-keys/server_secrets_token",
-  baseUrl: process.env.SECRETS_API_URL ?? "http://ui:8080",
+  tokenFile: secretsTokenFile,
+  baseUrl: secretsApiUrl,
   warn: (m) => console.warn(m),
 });
+const uiClient = createUiClient({ tokenFile: secretsTokenFile, baseUrl: secretsApiUrl });
 
 const app = buildApp({
   query: (sql, values) => pool.query(sql, values),
   logger: true,
   live: { getAccessToken: () => secrets.get("upstox_analytics_token") },
-  kite: {
-    credentials: async () => ({
-      apiKey: await secrets.get("kite_api_key"),
-      // The Kite access token is runtime-only (docs/designs/secrets-and-roles.md Decision 16): it is never
-      // fetched from the ui or shared with any service. The compose service does not set it, so holdings
-      // report unconfigured in the container.
-      accessToken: process.env.KITE_ACCESS_TOKEN?.trim() || undefined,
-    }),
+  // Broker login: the browser is sent back here after the Kite login (see broker/brokerRoutes.ts).
+  broker: {
+    secrets,
+    uiClient,
+    returnUrl: process.env.BROKER_RETURN_URL?.trim() || "http://127.0.0.1:5173/",
   },
+  portfolioTx: makePortfolioTx(pool),
   checkToken: (authorization, role) => checkIngestToken(authorization, role, serviceTokens),
   eventsTx: makeEventsTx(pool),
 });

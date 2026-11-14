@@ -1,6 +1,6 @@
 # Broker login and token sync from the UI (Kite first, then Upstox)
 
-Status: DRAFT v3, unreviewed (no review subagents were run). Open questions answered by the user 2026-11-14 (including per-profile and per-broker connections); needs user approval of this version before any task is dispatched.
+Status: v3.1, approved by the user 2026-11-14; implementation in feat/broker-login-impl (stacked on PR 126). Open questions answered by the user 2026-11-14 (including per-profile and per-broker connections).
 Depends on: PR 126 (S3b, the `server` identity on the ui secrets endpoint). Cut the implementation branch after that merges, or stack on it.
 Supersedes: Decision 16 in `docs/designs/secrets-and-roles.md` (see Decision 17 below).
 
@@ -106,3 +106,17 @@ Recommendation:
 
 1. Does the Upstox OAuth token need Static IP for Portfolio, and does the console accept `127.0.0.1` as a redirect URI? Both answered only by trying a login against the real console (phase 2, first task).
 2. Is a Kite Connect personal app limited to the owner's account? Check Zerodha's current terms before promising multi-user Kite.
+
+## Implementation notes (v3.1)
+
+These corrections were found while implementing. Where they differ from the sections above, these notes win.
+
+- Secret names use underscores, not dots, because `app_secret.name` must match `^[a-z][a-z0-9_]{1,63}$`. Names: `broker_<profile>_<broker>_access_token`, `_api_key`, `_api_secret`. `<profile>` has no underscores. Regex: `^broker_([a-z][a-z0-9]{0,15})_(kite|upstox)_(access_token|api_key|api_secret)$`.
+- Token expiry is computed from `app_secret.updated_at`: Kite at the next 06:00 Asia/Kolkata. `expires_on` is set to the expiry date. No `app_secret` schema change, so no expiry column is added.
+- Migration 058 (`db/migrations/058_portfolio_snapshots.sql`) adds `day_change` and `day_change_pct` to `portfolio_holding`. The key is `(sync_id, symbol, exchange)`, with `exchange` NOT NULL DEFAULT ''. The server merges rows with the same symbol and exchange before the insert (quantity and pnl summed, average price quantity-weighted), so a duplicate in the broker response cannot fail the whole sync.
+- The callback `GET /api/broker/kite/callback` is exempt from the session gate by exact path only, like `/api/health`. It is protected by the single-use `state`. Look-alike paths stay gated.
+- `BROKER_RETURN_URL` (default `http://127.0.0.1:5173/`) is where the callback sends the browser. It adds `?broker=kite&login=ok` or `?login=failed`.
+- Cookie note: open the app at `127.0.0.1`, not `localhost`, so the session cookie is on the same host as the callback.
+- Kite `state` travels in `redirect_params`, so Kite returns it on the callback.
+- The ui keeps the pending `state` values in one in-process store, so the ui must run a single uvicorn worker.
+- A non-default profile needs a `user_profile` row before its portfolio can be stored (foreign key in `portfolio_sync`). Only `default` is seeded.

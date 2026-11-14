@@ -204,6 +204,15 @@ class ComposeServerServiceTests(unittest.TestCase):
             "server SECRETS_API_URL must be http://ui:8080",
         )
 
+    def test_server_broker_return_url_environment(self):
+        self.assertIn("server", self.services, "server service missing")
+        environment = self.services["server"].get("environment") or {}
+        self.assertIn(
+            "BROKER_RETURN_URL",
+            environment,
+            "server environment must define BROKER_RETURN_URL (where the Kite callback redirects the browser)",
+        )
+
     def test_server_database_login_environment(self):
         self.assertIn("server", self.services, "server service missing")
         environment = self.services["server"].get("environment") or {}

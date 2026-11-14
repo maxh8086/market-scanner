@@ -12,8 +12,14 @@ and its types are kept in step with the matching server module.
   `POST /api/collector/index-eod/refresh` and its status route.
 - `filterOptions.ts`: `fetchFilterOptions`, `FilterOptions`,
   `FilterOptionsError`. Route: `GET /api/runs/:runId/filter-options`.
-- `holdings.ts`: `fetchHoldings`, `Holding`, `HoldingsError`. Route:
-  `GET /api/holdings`.
+- `broker.ts`: `fetchBrokerStatus`, `requestLoginUrl`, `syncPortfolio`,
+  `redirectToBrokerLogin`, `BrokerName`, `BrokerStatus`, `SyncResult`,
+  `BrokerError`, `LOGIN_REQUIRED_MESSAGE`. Routes:
+  `GET /api/broker/:broker/status`, `POST /api/broker/:broker/login-url`,
+  `POST /api/holdings/sync`.
+- `holdings.ts`: `fetchHoldings`, `Holding`, `HoldingsSnapshot`,
+  `HoldingsError`. Route: `GET /api/holdings` (the stored snapshot, no live
+  broker call).
 - `latestRun.ts`: `fetchLatestRun`, `LatestRun`, `LatestRunError`. Route:
   `GET /api/runs/latest`.
 - `presets.ts`: `listPresets`, `createPreset`, `deletePreset`, `Preset`,
@@ -35,8 +41,13 @@ and its types are kept in step with the matching server module.
   update the matching client file.
 
 ## Side Effects
-- One HTTP request per call. `requestIndexEodRefresh` and `createPreset` /
-  `deletePreset` change server state.
+- One HTTP request per call. `requestIndexEodRefresh`, `createPreset` /
+  `deletePreset`, `requestLoginUrl` and `syncPortfolio` change server state.
+  `redirectToBrokerLogin` leaves the page.
+- Broker writes send the CSRF token and retry once after a session gate
+  rejection, like the presets client.
+- The browser never receives a broker token. The broker client only sees
+  status, expiry, the login URL and sync counts.
 
 ## Verification
 - Run: `npm test` in `ui-v2/` (covers the `*.test.ts` files in this folder).

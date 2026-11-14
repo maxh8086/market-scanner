@@ -48,7 +48,8 @@ import {
   parseLiveSymbols,
 } from "./live/liveRoute.js";
 import { createLiveFeed, type FeedListeners, type FeedMode, type FeedStatus, type LiveFeed } from "./live/upstoxFeed.js";
-import { fetchKiteHoldings, type KiteFetch } from "./holdings/kiteHoldings.js";
+import { registerBrokerRoutes, type BrokerAppDeps } from "./broker/brokerRoutes.js";
+import type { PortfolioTx } from "./portfolioTx.js";
 
 export interface QueryResult {
   rows: Array<Record<string, unknown>>;
@@ -72,21 +73,13 @@ export interface LiveDeps {
   createFeed?: CreateFeedFn;
 }
 
-export interface KiteDeps {
-  /** Kite API key and the current day's access token. Both stay on the server. */
-  apiKey?: string;
-  accessToken?: string;
-  /** Preferred over apiKey/accessToken: called on every holdings request. */
-  credentials?: () => { apiKey?: string; accessToken?: string } | Promise<{ apiKey?: string; accessToken?: string }>;
-  /** Test seam. Production uses the global fetch. */
-  fetch?: KiteFetch;
-}
-
 export interface AppDeps {
   query: QueryFn;
   logger?: boolean;
   live?: LiveDeps;
-  kite?: KiteDeps;
+  /** Broker login and holdings routes. Off unless both broker and portfolioTx are set. */
+  broker?: BrokerAppDeps;
+  portfolioTx?: PortfolioTx;
   /** Home events ingest (POST /internal/events/batch). The route is registered only when both are set. */
   checkToken?: HomeEventsRouteDeps["checkToken"];
   eventsTx?: HomeEventsRouteDeps["eventsTx"];
@@ -310,21 +303,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     registerHomeEventsRoutes(app, { checkToken: deps.checkToken, eventsTx: deps.eventsTx });
   }
 
-  // Zerodha Kite holdings for the holdings table. Live prices are NOT taken from here (they come from Upstox).
-  // The Kite token is read on the server and never sent to the browser.
-  app.get("/api/holdings", async (_request, reply) => {
-    // Credentials are read per request, so a token saved in the UI works without a server restart.
-    const creds = (await deps.kite?.credentials?.()) ?? { apiKey: deps.kite?.apiKey, accessToken: deps.kite?.accessToken };
-    const result = await fetchKiteHoldings({
-      apiKey: creds.apiKey,
-      accessToken: creds.accessToken,
-      fetch: deps.kite?.fetch ?? ((url, init) => fetch(url, init)),
-    });
-    if (!result.ok) {
-      return reply.code(result.status).send({ error: result.error });
-    }
-    return { holdings: result.holdings };
-  });
+  // Broker login (ui-mediated) and stored holdings: GET /api/holdings reads the last ok snapshot, and
+  // POST /api/holdings/sync is the only route that calls Kite. Live prices are NOT taken from here (Upstox).
+  if (deps.broker && deps.portfolioTx) {
+    registerBrokerRoutes(app, { ...deps.broker, query: deps.query, portfolioTx: deps.portfolioTx });
+  }
 
   // Server-sent index quotes: LTP, previous close, and the day's open, high and low (full feed mode).
   // `symbols` (comma-separated watchlist names) limits the subscription to the rows on screen; without
