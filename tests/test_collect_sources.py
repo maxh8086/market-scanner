@@ -4,10 +4,14 @@ from datetime import datetime, date, timedelta
 from unittest.mock import patch, MagicMock
 
 import os
+import tempfile
+
 import pandas as pd
 import pytz
+import requests
 
-from scanner.collect.sources import CandlesEOD, Announcements, SOURCES
+from scanner.collect.sources import CandlesEOD, Announcements, HomeFilings, SOURCES
+from scanner.pg import db
 
 
 ONE_SYMBOL = pd.DataFrame({"Symbol": ["AAA"], "ISIN Code": ["INE000000001"]})
@@ -169,9 +173,9 @@ class SourcesRegistryTests(unittest.TestCase):
     """Test that all expected sources are registered."""
 
     def test_all_sources_present(self):
-        """The SOURCES dict should have all 5 feed sources, index_eod, the ath_scan source and company_reference."""
+        """The SOURCES dict should have the 5 feed sources, index_eod, ath_scan, company_reference and home_filings."""
         expected = {"candles_eod", "index_eod", "announcements", "corporate_actions", "filings", "fundamentals",
-                    "ath_scan", "company_reference"}
+                    "ath_scan", "company_reference", "home_filings"}
         self.assertEqual(set(SOURCES.keys()), expected)
 
     def test_sources_are_source_instances(self):
@@ -179,6 +183,176 @@ class SourcesRegistryTests(unittest.TestCase):
         from scanner.collect.sources import Source
         for name, source in SOURCES.items():
             self.assertIsInstance(source, Source)
+
+
+_FEED_COUNT = 8  # enabled NSE feeds by default (FEEDS with default_enabled True)
+
+
+class HomeFilingsTests(unittest.TestCase):
+    """HomeFilings (F-T4d): plan is offline; run wires run_cycle to the DB, token and API."""
+
+    def setUp(self):
+        self.source = HomeFilings()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.token_path = os.path.join(self.tmp.name, "token")
+        with open(self.token_path, "w", encoding="utf-8") as fh:
+            fh.write("tok-123\n")
+        env = patch.dict(os.environ, {"HOME_EVENTS_INGEST_TOKEN_FILE": self.token_path})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def _index(self):
+        return MagicMock(universe={"AAA": "INE000000001"}, by_name={"AAA CO": ("AAA", "INE000000001")})
+
+    def _run_cycle_ok(self, **overrides):
+        result = {"status": "ok", "fetched": 3, "new": 2,
+                  "from": "2026-11-13T10:00:00+05:30", "to": "2026-11-14T09:00:00+00:00", "message": ""}
+        result.update(overrides)
+        return MagicMock(return_value=result)
+
+    def test_events_flag_and_name(self):
+        self.assertTrue(self.source.events)
+        self.assertEqual(self.source.name, "home_filings")
+
+    def test_plan_makes_no_call_and_full_shape(self):
+        """plan touches no DB, no network and no run_cycle; it reports the enabled feed count."""
+        with patch.object(db, "connect", side_effect=AssertionError("db touched")), \
+                patch("requests.Session", side_effect=AssertionError("session made")), \
+                patch("scanner.home_events.run_cycle", side_effect=AssertionError("run_cycle called")):
+            result = self.source.plan({})
+        self.assertEqual(set(result.keys()), {"fetched", "new", "from", "to", "message"})
+        self.assertEqual(result["fetched"], 0)
+        self.assertEqual(result["new"], 0)
+        self.assertIsNone(result["from"])
+        self.assertIsNone(result["to"])
+        self.assertEqual(result["message"], f"dry-run: would fetch {_FEED_COUNT} NSE feeds")
+
+    def test_plan_counts_enabled_feeds_param(self):
+        result = self.source.plan({"enabled_feeds": ["nse:Financial_Results", "nse:Sast_Regulation29"]})
+        self.assertEqual(result["message"], "dry-run: would fetch 2 NSE feeds")
+
+    def test_plan_bad_param_returns_config_key(self):
+        result = self.source.plan({"post_timeout_s": 0})
+        self.assertEqual(result["message"], "config:post_timeout_s")
+        self.assertEqual(result["fetched"], 0)
+
+    def test_run_dry_run_equals_plan(self):
+        with patch("scanner.home_events.run_cycle", side_effect=AssertionError("run_cycle called")):
+            self.assertEqual(self.source.run({}, dry_run=True), self.source.plan({}))
+
+    def test_run_wiring(self):
+        """run passes the index, FEEDS, a PgCooldown and a browser-like session; post reaches post_events."""
+        from scanner import home_events
+        from scanner.collect.cooldown import PgCooldown
+
+        fake_cycle = self._run_cycle_ok()
+        with patch.object(db, "connect", return_value=_CtxConn()), \
+                patch("scanner.company_reference.load_index_for_source", return_value=self._index()) as load, \
+                patch("scanner.home_events.run_cycle", fake_cycle), \
+                patch("scanner.home_events.post_events", return_value={"inserted": 1}) as post_events, \
+                patch("collect.api_base_url", return_value="http://api.test"), \
+                patch.object(requests.Session, "request") as request:
+            result = self.source.run({}, now=datetime(2026, 11, 14, 4, 0))
+            fake_cycle.call_args.kwargs["post"]([{"dedupe_key": "k"}])
+        self.assertEqual(load.call_args[0][1], "nse_csv")
+        kwargs = fake_cycle.call_args.kwargs
+        self.assertEqual(kwargs["universe"], {"AAA": "INE000000001"})
+        self.assertEqual(kwargs["by_name"], {"AAA CO": ("AAA", "INE000000001")})
+        self.assertIs(kwargs["feeds"], home_events.FEEDS)
+        self.assertIs(kwargs["parse_fn"], home_events.parse)
+        self.assertIsInstance(kwargs["cooldown"], PgCooldown)
+        self.assertIsInstance(kwargs["session"], requests.Session)
+        self.assertIn("Chrome/", kwargs["session"].headers["User-Agent"])
+        self.assertEqual(kwargs["session"].headers["Accept-Language"], "en-US,en;q=0.9")
+        request.assert_not_called()
+        self.assertEqual(fake_cycle.call_args.args[1], pytz.UTC.localize(datetime(2026, 11, 14, 4, 0)))
+
+        post_events.assert_called_once()
+        self.assertEqual(post_events.call_args.kwargs["base_url"], "http://api.test")
+        self.assertEqual(post_events.call_args.kwargs["token"], "tok-123")
+        self.assertEqual(post_events.call_args.kwargs["timeout_s"], 15)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["fetched"], 3)
+        self.assertEqual(result["new"], 2)
+        self.assertEqual(result["from"], date(2026, 11, 13))
+        self.assertEqual(result["to"], date(2026, 11, 14))
+        self.assertEqual(result["message"], "")
+
+    def test_naive_now_is_treated_as_utc(self):
+        fake_cycle = self._run_cycle_ok()
+        with patch.object(db, "connect", return_value=_CtxConn()), \
+                patch("scanner.company_reference.load_index_for_source", return_value=self._index()), \
+                patch("scanner.home_events.run_cycle", fake_cycle), \
+                patch("collect.api_base_url", return_value="http://api.test"):
+            self.source.run({}, now=datetime(2026, 11, 14, 4, 0))
+        passed = fake_cycle.call_args.args[1]
+        self.assertEqual(passed.tzinfo, pytz.UTC)
+        self.assertEqual(passed.hour, 4)
+
+    def test_null_window_stays_none(self):
+        fake_cycle = self._run_cycle_ok(**{"from": None, "to": None})
+        with patch.object(db, "connect", return_value=_CtxConn()), \
+                patch("scanner.company_reference.load_index_for_source", return_value=self._index()), \
+                patch("scanner.home_events.run_cycle", fake_cycle), \
+                patch("collect.api_base_url", return_value="http://api.test"):
+            result = self.source.run({}, now=datetime(2026, 11, 14, 4, 0))
+        self.assertIsNone(result["from"])
+        self.assertIsNone(result["to"])
+
+    def test_run_cycle_skipped_status_is_returned(self):
+        fake_cycle = self._run_cycle_ok(status="skipped", fetched=0, new=0, message="exchange_cooldown",
+                                        **{"from": None, "to": None})
+        with patch.object(db, "connect", return_value=_CtxConn()), \
+                patch("scanner.company_reference.load_index_for_source", return_value=self._index()), \
+                patch("scanner.home_events.run_cycle", fake_cycle), \
+                patch("collect.api_base_url", return_value="http://api.test"):
+            result = self.source.run({}, now=datetime(2026, 11, 14, 4, 0))
+        self.assertEqual(result["status"], "skipped")
+        self.assertEqual(result["message"], "exchange_cooldown")
+
+    def test_missing_token_file_fails_without_leaking(self):
+        missing = os.path.join(self.tmp.name, "no-such-token")
+        with patch.dict(os.environ, {"HOME_EVENTS_INGEST_TOKEN_FILE": missing}), \
+                patch("scanner.home_events.run_cycle", side_effect=AssertionError("run_cycle called")):
+            result = self.source.run({}, now=datetime(2026, 11, 14, 4, 0))
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["message"], "token_unavailable")
+        self.assertNotIn(missing, result["message"])
+        self.assertNotIn("tok-123", result["message"])
+
+    def test_empty_token_file_fails(self):
+        with open(self.token_path, "w", encoding="utf-8") as fh:
+            fh.write("  \n")
+        with patch("scanner.home_events.run_cycle", side_effect=AssertionError("run_cycle called")):
+            result = self.source.run({}, now=datetime(2026, 11, 14, 4, 0))
+        self.assertEqual(result["message"], "token_unavailable")
+
+    def test_db_error_gives_index_unavailable(self):
+        with patch.object(db, "connect", side_effect=ConnectionError("postgres down")), \
+                patch("scanner.home_events.run_cycle", side_effect=AssertionError("run_cycle called")):
+            result = self.source.run({}, now=datetime(2026, 11, 14, 4, 0))
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["message"], "index_unavailable: ConnectionError")
+
+    def test_run_cycle_exception_gives_failed_with_class_name(self):
+        with patch.object(db, "connect", return_value=_CtxConn()), \
+                patch("scanner.company_reference.load_index_for_source", return_value=self._index()), \
+                patch("scanner.home_events.run_cycle", side_effect=RuntimeError("boom")), \
+                patch("collect.api_base_url", return_value="http://api.test"):
+            result = self.source.run({}, now=datetime(2026, 11, 14, 4, 0))
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("RuntimeError", result["message"])
+        self.assertIsNone(result["from"])
+
+
+class _CtxConn:
+    def __enter__(self):
+        return object()
+
+    def __exit__(self, *exc):
+        return False
 
 
 if __name__ == "__main__":

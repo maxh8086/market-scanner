@@ -126,7 +126,11 @@ def _record_skip(name: str, trigger: str, reason: str, request_id=None) -> dict:
 
 def _run_locked(source, name: str, trigger: str, dry_run: bool, now: datetime,
                 api_check, request_id=None) -> dict:
-    """Body of execute_source once the lock is held."""
+    """Body of execute_source once the lock is held.
+
+    A source whose result has its own `status` ("failed" or "skipped", as run_cycle returns)
+    is recorded with that status instead of "ok". Sources without the key are unchanged.
+    """
     if getattr(source, "events", False):
         # Events sources write through the API, so a down API means no run (spec 4.5).
         if not (api_check or api_is_up)():
@@ -148,6 +152,10 @@ def _run_locked(source, name: str, trigger: str, dry_run: bool, now: datetime,
 
     reason = None
     message = result.get("message", "") or ""
+    if not dry_run and status == "ok" and result.get("status") in ("failed", "skipped"):
+        status = result["status"]
+        if status == "skipped":
+            reason = message or None
     if dry_run and status == "ok":
         # A plan is not a run. Recording it as ok would hide missed slots from catch-up.
         status, reason = "skipped", "dry_run"

@@ -217,6 +217,52 @@ class EventsSourceTests(_CollectorTestCase):
         check.assert_not_called()
 
 
+class _StatusSource(_FakeSource):
+    """A source whose result carries its own status, as HomeFilings.run returns."""
+
+    def __init__(self, status, message):
+        super().__init__("status_src")
+        self._status = status
+        self._message = message
+
+    def run(self, params, now=None, dry_run=False):
+        self.run_calls += 1
+        return {"status": self._status, "fetched": 0, "new": 0, "from": None, "to": None,
+                "message": self._message}
+
+
+class SourceStatusTests(_CollectorTestCase):
+    """_run_locked records a source's own failed/skipped status instead of ok."""
+
+    def _run_status_source(self, status, message):
+        source = _StatusSource(status, message)
+        patched = mock.patch.dict(sources_module.SOURCES, {"status_src": source})
+        patched.start()
+        self.addCleanup(patched.stop)
+        return collect.execute_source("status_src", "manual")
+
+    def test_failed_status_is_recorded_as_failed(self):
+        outcome = self._run_status_source("failed", "invalid:3")
+        self.assertEqual(outcome["status"], "failed")
+        self.assertIsNone(outcome["reason"])
+        self.assertEqual(len(self.store.rows), 1)
+        self.assertEqual(self.store.rows[0]["status"], "failed")
+        self.assertEqual(self.store.rows[0]["message"], "invalid:3")
+
+    def test_skipped_status_is_recorded_with_message_as_reason(self):
+        outcome = self._run_status_source("skipped", "exchange_cooldown")
+        self.assertEqual(outcome["status"], "skipped")
+        self.assertEqual(outcome["reason"], "exchange_cooldown")
+        self.assertEqual(self.store.rows[0]["status"], "skipped")
+        self.assertEqual(self.store.rows[0]["message"], "exchange_cooldown")
+
+    def test_source_without_status_key_stays_ok(self):
+        outcome = collect.execute_source("fake_src", "manual")
+        self.assertEqual(outcome["status"], "ok")
+        self.assertIsNone(outcome["reason"])
+        self.assertEqual(self.store.rows[0]["status"], "ok")
+
+
 class ApiHealthTests(unittest.TestCase):
     def test_api_is_up_true_on_200(self):
         with mock.patch.object(collect.requests, "get", return_value=mock.Mock(status_code=200)) as get:
