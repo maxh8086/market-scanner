@@ -25,7 +25,9 @@ Tables and views created or altered (grouped by feature):
   (013, 014, 039, 041).
 - Presets: `scan_presets` (040).
 - Secrets and alerts: `app_secret` (045), `token_alert_sent` (046).
-- Grants to application roles: 023, 026, 042, 043.
+- Broker login and portfolio: `user_profile` (seeded `default`), `portfolio_sync`,
+  `portfolio_holding` (058). No secrets are stored in them.
+- Grants to application roles: 023, 026, 042, 043, 057, 058.
 - Child contract: [down](./down/EGM.md) (reverse scripts for 045 and 046).
 
 ## Invariants

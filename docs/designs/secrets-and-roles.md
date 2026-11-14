@@ -98,11 +98,21 @@ Stored encrypted in `app_secret` as an app-level key, set by the admin (decision
 - Each service gets its own token file. The file is readable by that service's user only.
 - Status: approved. Built: S5 (PR #73, merge 8b26503).
 
-## Decision 16: Kite access token is never served to a service (decided 2026-11-10)
+## Decision 16: Kite access token is never served to a service (decided 2026-11-10; partly superseded by Decision 17)
+
+Decision 17 replaces this decision for broker access tokens (`broker_<profile>_kite_access_token`). The global `kite_access_token` rule below still stands.
 - `kite_access_token` is issued by Kite at the daily login (`scanner/auth.py`, cached in the git-ignored `.kite_token`). It is the runtime source for Kite calls.
 - The token can be stored: `scanner/secrets_cli.py` (ENV_TO_APP) still maps `KITE_ACCESS_TOKEN`, `env.template` still has a `KITE_ACCESS_TOKEN=` line, and `import-env` stores it (tests/test_secrets_cli.py).
 - It is never served to any service: the ui secrets endpoint allowlist (`ui/app/internal_secrets.py`) returns 403 for `kite_access_token` to every service (collector, server, llm_client). The daily login cache `.kite_token` remains its runtime source.
 - `KITE_API_KEY` and `KITE_API_SECRET` remain stored app secrets.
+
+## Decision 17: broker access tokens are served to `server` while unexpired (approved by the user, 2026-11-14; replaces Decision 16 for broker access tokens)
+- Each broker connection is keyed by profile and broker. Names use underscores, because `app_secret.name` cannot contain dots: `broker_<profile>_<broker>_access_token`, `broker_<profile>_<broker>_api_key`, `broker_<profile>_<broker>_api_secret`. Regex: `^broker_([a-z][a-z0-9]{0,15})_(kite|upstox)_(access_token|api_key|api_secret)$`. Phase 1 uses `kite`; `upstox` comes later.
+- The `default` profile falls back to the global `kite_api_key` / `kite_api_secret` when its per-profile key is not stored.
+- Expiry is computed, not stored: a Kite token expires at the next 06:00 Asia/Kolkata after its `app_secret.updated_at` (Upstox, later: 03:30). An expired token is treated as not stored: the ui answers 404 without decrypting it. No `app_secret` schema change.
+- `server` may read `broker_*_access_token` and `broker_*_api_key`. `broker_*_api_secret` is never served to any service. `collector` and `llm_client` get 403 for every `broker_*` name.
+- The global `kite_access_token` is still never served to any service. Its runtime source remains the `.kite_token` cache.
+- Tokens are never logged, never put in a URL, never returned to the browser. The browser learns only "connected until <time>" or "not connected".
 
 ## Ingest token roles and the collector service token (proposed 2026-11-10)
 

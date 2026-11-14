@@ -540,4 +540,40 @@ describe("session required on safe methods under /api/", () => {
     expect(res.json()).toEqual({ ok: true });
     await app.close();
   });
+
+  it("exempts GET /api/broker/kite/callback with no cookie (reaches the route, not the gate)", async () => {
+    const app = buildApp({ query: fakeQuery().query });
+    const res = await app.inject({ method: "GET", url: "/api/broker/kite/callback?status=cancelled" });
+    expect(res.statusCode).not.toBe(401);
+    await app.close();
+  });
+
+  it("does not exempt POST /api/broker/kite/callback: 401 session_required with no cookie", async () => {
+    const { query, calls } = fakeQuery();
+    const app = buildApp({ query });
+    const res = await app.inject({ method: "POST", url: "/api/broker/kite/callback", payload: {} });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: "session_required" });
+    expect(calls).toHaveLength(0);
+    await app.close();
+  });
+
+  it("does not exempt /api/broker/kite/callback/ (trailing slash): 401 session_required with no cookie", async () => {
+    const { query, calls } = fakeQuery();
+    const app = buildApp({ query });
+    const res = await app.inject({ method: "GET", url: "/api/broker/kite/callback/" });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: "session_required" });
+    expect(calls).toHaveLength(0);
+    await app.close();
+  });
+
+  it("does not exempt GET /api/holdings/sync with no cookie (only the callback is exempt under /api/broker)", async () => {
+    const { query, calls } = fakeQuery();
+    const app = buildApp({ query });
+    const res = await app.inject({ method: "GET", url: "/api/holdings/sync" });
+    expect(res.statusCode).toBe(401);
+    expect(calls).toHaveLength(0);
+    await app.close();
+  });
 });

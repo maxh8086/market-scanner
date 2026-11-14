@@ -118,7 +118,8 @@ describe("App Home screen", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("status")).toHaveAttribute("data-state", "loading");
+    // The holdings panel also shows a loading status, so look for the loading state among all of them.
+    expect(screen.getAllByRole("status").map((element) => element.getAttribute("data-state"))).toContain("loading");
   });
 
   it("mounts the scan table for the latest run and shows its date", async () => {

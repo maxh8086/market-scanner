@@ -18,6 +18,11 @@ export type SecretsClientOptions = {
 
 export interface SecretsClient {
   get(name: string): Promise<string | undefined>;
+  /**
+   * Drops the cached success, the cached failure and any in-flight request for one name. A request that was
+   * already in flight does not cache its result, so the next get() fetches again.
+   */
+  invalidate(name: string): void;
 }
 
 const REQUEST_TIMEOUT_MS = 5_000;
@@ -35,10 +40,14 @@ export function createSecretsClient(opts: SecretsClientOptions): SecretsClient {
 
   const cache = new Map<string, CacheEntry>();
   const inflight = new Map<string, Promise<string | undefined>>();
+  // Bumped by invalidate(). A fetch started under an older epoch must not write the cache.
+  const epochs = new Map<string, number>();
+  const epochOf = (name: string): number => epochs.get(name) ?? 0;
 
   // Failures (missing token, transport error, non-200 such as 404 "not stored", bad body) are cached as
   // undefined for failTtlMs (10 s) and warned about the same way, so a missing secret is not re-fetched on every call.
-  function remember(name: string, value: string | undefined, ttl: number): void {
+  function remember(name: string, epoch: number, value: string | undefined, ttl: number): void {
+    if (epochOf(name) !== epoch) return;
     cache.set(name, { value, expiresAt: now() + ttl });
   }
 
@@ -57,9 +66,10 @@ export function createSecretsClient(opts: SecretsClientOptions): SecretsClient {
   }
 
   async function load(name: string): Promise<string | undefined> {
+    const epoch = epochOf(name);
     const token = readToken();
     if (!token) {
-      remember(name, undefined, failTtlMs);
+      remember(name, epoch, undefined, failTtlMs);
       return undefined;
     }
 
@@ -72,13 +82,13 @@ export function createSecretsClient(opts: SecretsClientOptions): SecretsClient {
       });
     } catch {
       warn(`secrets API request failed for ${name}`);
-      remember(name, undefined, failTtlMs);
+      remember(name, epoch, undefined, failTtlMs);
       return undefined;
     }
 
     if (res.status !== 200) {
       warn(`secrets API returned HTTP ${res.status} for ${name}`);
-      remember(name, undefined, failTtlMs);
+      remember(name, epoch, undefined, failTtlMs);
       return undefined;
     }
 
@@ -88,17 +98,17 @@ export function createSecretsClient(opts: SecretsClientOptions): SecretsClient {
       value = body && typeof body === "object" ? (body as { value?: unknown }).value : undefined;
     } catch {
       warn(`secrets API returned an unreadable response for ${name}`);
-      remember(name, undefined, failTtlMs);
+      remember(name, epoch, undefined, failTtlMs);
       return undefined;
     }
 
     if (typeof value !== "string" || value.length === 0) {
       warn(`secrets API returned no value for ${name}`);
-      remember(name, undefined, failTtlMs);
+      remember(name, epoch, undefined, failTtlMs);
       return undefined;
     }
 
-    remember(name, value, ttlMs);
+    remember(name, epoch, value, ttlMs);
     return value;
   }
 
@@ -110,11 +120,17 @@ export function createSecretsClient(opts: SecretsClientOptions): SecretsClient {
       const pending = inflight.get(name);
       if (pending) return pending;
 
-      const request = load(name).finally(() => {
-        inflight.delete(name);
+      const request: Promise<string | undefined> = load(name).finally(() => {
+        if (inflight.get(name) === request) inflight.delete(name);
       });
       inflight.set(name, request);
       return request;
+    },
+
+    invalidate(name: string): void {
+      epochs.set(name, epochOf(name) + 1);
+      cache.delete(name);
+      inflight.delete(name);
     },
   };
 }

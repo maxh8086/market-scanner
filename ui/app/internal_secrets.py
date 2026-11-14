@@ -13,18 +13,25 @@ the llm-client service (never key material). Rules, in order:
    names the service: collector, llm_client or server.
 3. Each endpoint has its own allowlist:
    - secrets: collector may read upstox_analytics_token; server may read
-     upstox_analytics_token and kite_api_key; llm_client may read names that
-     match ^llm_key_[a-z][a-z0-9_]{0,40}$. Any other name -> 403.
+     upstox_analytics_token and kite_api_key, and any broker secret named
+     broker_<profile>_<broker>_access_token or broker_<profile>_<broker>_api_key
+     (names in broker_tokens.SECRET_NAME_RE); llm_client may read names that
+     match ^llm_key_[a-z][a-z0-9_]{0,40}$. Any other name -> 403. Broker api_secret
+     names are never served to any service. collector and llm_client get 403 for all
+     broker_* names.
    - llm providers: llm_client only. Any other service -> 403.
-   kite_access_token may be stored, but the allowlist never serves it to any service
+   The global kite_access_token may be stored, but no service is ever served it
    (Decision 16 in docs/designs/secrets-and-roles.md). kite_api_secret is never served either.
 4. Secrets are decrypted here, with the master key, and returned with Cache-Control:
    no-store. Secret not stored -> 404. Provider row not found -> 404.
+   A broker access token is served only while unexpired (Decision 17, which replaces 16 for
+   broker tokens): an expired one is treated as not stored, and is never decrypted.
 
 Only the name and the status code are logged. Never the token or the value.
 """
 from __future__ import annotations
 
+import datetime as dt
 import hmac
 import logging
 import os
@@ -33,7 +40,7 @@ import re
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse
 
-from scanner import app_secrets
+from scanner import app_secrets, broker_tokens
 from scanner.pg import db
 from scanner.secret_crypto import load_master_key
 
@@ -104,7 +111,27 @@ def _authenticate(label: str, authorization: str | None) -> str:
 def _secret_name_allowed(service: str, name: str) -> bool:
     if service == "llm_client":
         return LLM_KEY_NAME.fullmatch(name) is not None
-    return name in SERVICE_ALLOWED.get(service, set())
+    if name in SERVICE_ALLOWED.get(service, set()):
+        return True
+    if service == "server":
+        parsed = broker_tokens.parse_secret_name(name)
+        return parsed is not None and parsed[2] in ("access_token", "api_key")
+    return False
+
+
+def _utc_now() -> dt.datetime:
+    return dt.datetime.now(dt.timezone.utc)
+
+
+def _broker_token_usable(conn, name: str) -> bool:
+    """False for a broker access token that is not stored or has expired. Reads meta only."""
+    parsed = broker_tokens.parse_secret_name(name)
+    if parsed is None or parsed[2] != "access_token":
+        return True
+    meta = app_secrets.get_meta(conn, name)
+    if meta is None:
+        return False
+    return not broker_tokens.is_expired(parsed[1], meta["updated_at"], _utc_now())
 
 
 @router.get("/internal/secrets/{name}")
@@ -116,9 +143,10 @@ def get_internal_secret(name: str, authorization: str | None = Header(default=No
         raise HTTPException(status_code=403, detail="not allowed for this service")
 
     try:
-        key = load_master_key()
         with db.connect() as conn:
-            value = app_secrets.get_value(conn, key, name)
+            if not _broker_token_usable(conn, name):
+                raise app_secrets.SecretNotFound(name)
+            value = app_secrets.get_value(conn, load_master_key(), name)
     except app_secrets.SecretNotFound:
         log.info("internal secret %s: status 404", safe)
         raise HTTPException(status_code=404, detail="secret not found") from None

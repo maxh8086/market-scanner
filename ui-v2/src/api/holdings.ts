@@ -1,6 +1,7 @@
-/** Client for GET /api/holdings (Zerodha Kite). Shape mirrors server/src/holdings/kiteHoldings.ts. */
+/** Client for GET /api/holdings: the latest stored portfolio snapshot for a profile (no live broker call). */
 
 import { apiGet } from "./session";
+import type { BrokerName } from "./broker";
 
 export interface Holding {
   symbol: string;
@@ -11,6 +12,13 @@ export interface Holding {
   pnl: number;
   dayChange: number | null;
   dayChangePct: number | null;
+}
+
+/** The stored snapshot. syncedAt and broker are null when no sync has run yet. */
+export interface HoldingsSnapshot {
+  holdings: Holding[];
+  syncedAt: string | null;
+  broker: BrokerName | null;
 }
 
 export class HoldingsError extends Error {
@@ -43,7 +51,7 @@ function isHoldingsBody(body: unknown): body is { holdings: Holding[] } {
   return typeof body === "object" && body !== null && Array.isArray((body as { holdings?: unknown }).holdings);
 }
 
-export async function fetchHoldings(options: { signal?: AbortSignal } = {}): Promise<Holding[]> {
+export async function fetchHoldings(options: { signal?: AbortSignal } = {}): Promise<HoldingsSnapshot> {
   let response: Response;
   try {
     response = await apiGet("/api/holdings", {
@@ -70,5 +78,10 @@ export async function fetchHoldings(options: { signal?: AbortSignal } = {}): Pro
   if (!isHoldingsBody(body)) {
     throw new HoldingsError("The holdings response had an unexpected shape.", response.status);
   }
-  return body.holdings;
+  const { syncedAt, broker } = body as { syncedAt?: unknown; broker?: unknown };
+  return {
+    holdings: body.holdings,
+    syncedAt: typeof syncedAt === "string" ? syncedAt : null,
+    broker: broker === "kite" ? "kite" : null,
+  };
 }
