@@ -86,7 +86,7 @@ class ComposeServerServiceTests(unittest.TestCase):
             "server must not receive APP_MASTER_KEY_FILE (only the UI holds the master key)",
         )
 
-    def test_server_has_single_required_readonly_ingest_token_mount(self):
+    def test_server_has_exactly_two_readonly_secret_file_mounts(self):
         self.assertIn("server", self.services, "server service missing")
         service = self.services["server"]
         app_keys_entries = [
@@ -96,27 +96,32 @@ class ComposeServerServiceTests(unittest.TestCase):
         ]
         self.assertEqual(
             len(app_keys_entries),
-            1,
-            "server must have exactly one volume whose target starts with /run/app-keys",
+            2,
+            "server must have exactly two volumes whose target starts with /run/app-keys",
         )
-        host, target, mode = app_keys_entries[0]
-        self.assertTrue(
-            any(
-                v.endswith(":/run/app-keys/home_events_ingest_token:ro")
-                for v in _volume_strings(service)
-            ),
-            "server's /run/app-keys mount must be the file /run/app-keys/home_events_ingest_token, read-only",
-        )
+        by_target = {target: (host, mode) for host, target, mode in app_keys_entries}
+        expected = {
+            "/run/app-keys/home_events_ingest_token": INGEST_TOKEN_VAR,
+            "/run/app-keys/server_db_password": "APP_SERVER_DB_PASSWORD_FILE",
+        }
         self.assertEqual(
-            target,
-            "/run/app-keys/home_events_ingest_token",
-            "server's /run/app-keys mount must target /run/app-keys/home_events_ingest_token",
+            set(by_target),
+            set(expected),
+            "server's /run/app-keys mounts must target exactly the ingest token file and the server db password file",
         )
-        self.assertEqual(mode, "ro", "server's ingest token mount must be read-only (:ro)")
-        self.assertTrue(
-            host.startswith("${" + INGEST_TOKEN_VAR + ":?"),
-            f"server's ingest token host path must be ${{{INGEST_TOKEN_VAR}:?...}} so compose refuses to start when unset; got {host!r}",
-        )
+        strings = _volume_strings(service)
+        for target, var in expected.items():
+            with self.subTest(target=target):
+                host, mode = by_target[target]
+                self.assertTrue(
+                    any(v.endswith(":" + target + ":ro") for v in strings),
+                    f"server's mount of {target} must be read-only (:ro)",
+                )
+                self.assertEqual(mode, "ro", f"server's mount of {target} must be read-only (:ro)")
+                self.assertTrue(
+                    host.startswith("${" + var + ":?"),
+                    f"server's host path for {target} must be ${{{var}:?...}} so compose refuses to start when unset; got {host!r}",
+                )
 
     def test_server_has_no_master_key_folder_mount(self):
         self.assertIn("server", self.services, "server service missing")
@@ -160,6 +165,32 @@ class ComposeServerServiceTests(unittest.TestCase):
                     str(environment[key]),
                     value,
                     f"server environment {key} must be {value!r}",
+                )
+
+    def test_server_database_login_environment(self):
+        self.assertIn("server", self.services, "server service missing")
+        environment = self.services["server"].get("environment") or {}
+        self.assertEqual(
+            str(environment.get("POSTGRES_USER")),
+            "market_scanner_server",
+            "server must log in to Postgres as role market_scanner_server",
+        )
+        self.assertEqual(
+            str(environment.get("POSTGRES_PASSWORD_FILE")),
+            "/run/app-keys/server_db_password",
+            "server POSTGRES_PASSWORD_FILE must be /run/app-keys/server_db_password",
+        )
+        self.assertEqual(
+            str(environment.get("POSTGRES_DB")),
+            "${POSTGRES_DB:-market_scanner}",
+            "server POSTGRES_DB must be ${POSTGRES_DB:-market_scanner}",
+        )
+        for key in ("POSTGRES_PASSWORD", "POSTGRES_DSN", "UPSTOX_ACCESS_TOKEN", "KITE_ACCESS_TOKEN"):
+            with self.subTest(key=key):
+                self.assertNotIn(
+                    key,
+                    environment,
+                    f"server environment must not define {key}",
                 )
 
     def test_server_ports_loopback_only_8081(self):
@@ -289,6 +320,11 @@ class ComposeServerServiceTests(unittest.TestCase):
             INGEST_TOKEN_VAR,
             text,
             f"env.template must document {INGEST_TOKEN_VAR}",
+        )
+        self.assertIn(
+            "APP_SERVER_DB_PASSWORD_FILE",
+            text,
+            "env.template must document APP_SERVER_DB_PASSWORD_FILE",
         )
 
 

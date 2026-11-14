@@ -178,15 +178,20 @@ services:
   server:                # Fastify API: home-events ingest, /internal/* and /api/*; reached at http://server:8081
     build: {context: ., dockerfile: docker/server/Dockerfile}
     # No env_file and no ./data mount: database logins and tokens come from files under /run/app-keys, not .env or data/secrets.env.
-    # Only host and port of the database are set here. The database login is NOT wired yet (open decision, docs/designs/t4f-mvp-plan.md).
+    # Database login: dedicated role market_scanner_server (migration 057, created without a password; the user sets it out of band). Its password comes from the mounted file, read by server/src/config.ts.
     environment:
       <<: *scanner-db-env
       SERVER_HOST: 0.0.0.0                # listen on all container interfaces; the host publish below is loopback only
       SERVER_PORT: "8081"
       SERVICE_TOKEN_DIR: /run/app-keys    # server/src/index.ts reads <dir>/home_events_ingest_token
+      POSTGRES_USER: market_scanner_server
+      POSTGRES_DB: ${POSTGRES_DB:-market_scanner}
+      POSTGRES_PASSWORD_FILE: /run/app-keys/server_db_password   # container path of the server role's password file
     volumes:
       # Read-only single-file mount of the home-events ingest token. Do NOT mount the folder that holds app_master_key: only `ui` holds the master key.
       - ${APP_HOME_EVENTS_INGEST_TOKEN_FILE:?set APP_HOME_EVENTS_INGEST_TOKEN_FILE in .env to the host path of the home-events ingest token file}:/run/app-keys/home_events_ingest_token:ro
+      # Read-only single-file mount of the server database role's password file named in .env (APP_SERVER_DB_PASSWORD_FILE).
+      - ${APP_SERVER_DB_PASSWORD_FILE:?set APP_SERVER_DB_PASSWORD_FILE in .env to the host path of the server database password file}:/run/app-keys/server_db_password:ro
     ports:
       - "127.0.0.1:${SERVER_PORT:-8081}:8081"   # loopback only on the host
     networks:
