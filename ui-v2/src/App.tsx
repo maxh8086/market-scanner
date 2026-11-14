@@ -13,6 +13,7 @@ import { SectorHeatmap } from "./sectors/SectorHeatmap";
 import { HomeEventFeed } from "./home/HomeEventFeed";
 import { ScreenerTable } from "./table/ScreenerTable";
 import { ThemeProvider } from "./theme/ThemeProvider";
+import { useCollectorStatus } from "./shell/useCollectorStatus";
 
 const TABS: TabItem[] = [
   { id: "home", label: "Home" },
@@ -42,7 +43,7 @@ type FilterOptionsState =
 const CLOCK_REFRESH_MS = 60_000;
 
 interface SessionBanner {
-  kind: Extract<StateKind, "market_closed" | "pre_open" | "stale">;
+  kind: Extract<StateKind, "market_closed" | "pre_open" | "stale" | "collector_paused">;
   message: string;
 }
 
@@ -102,7 +103,13 @@ export default function App() {
   }, []);
 
   const now = new Date();
-  const banner = latest.status === "ready" ? sessionBanner(latest.run.runDate, now) : null;
+  // A collector pause wins over the session banner and shows even when the latest run is not ready.
+  const { paused: collectorPaused } = useCollectorStatus();
+  const banner: SessionBanner | null = collectorPaused
+    ? { kind: "collector_paused", message: "Data collection is paused. Data may be out of date." }
+    : latest.status === "ready"
+      ? sessionBanner(latest.run.runDate, now)
+      : null;
   // Live prices stream only in the open session (09:15 to 15:30 IST) with a run loaded.
   const liveEnabled = latest.status === "ready" && getMarketSession(now).status === "open";
 

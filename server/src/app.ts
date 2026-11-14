@@ -39,6 +39,7 @@ import { registerCollectorRefreshRoute } from "./collectorRefresh.js";
 import { createSessionStore, registerCsrfGate, registerSessionRoutes, type SessionStore } from "./session.js";
 import { registerHomeEventsRoutes, type HomeEventsRouteDeps } from "./homeEventsRoute.js";
 import { registerCollectorDueRoute, type CollectorDueRouteDeps } from "./collectorDueRoute.js";
+import { registerCollectorStatusRoute } from "./collectorStatusRoute.js";
 import { registerEventsReadRoute } from "./eventsReadRoute.js";
 import { registerCollectorFinishRoute } from "./collectorFinishRoute.js";
 import {
@@ -342,7 +343,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   // Collector watchdog poll (S5a). Off unless the caller wires a token check and a services loader.
   if (deps.collectorDue) {
-    registerCollectorDueRoute(app, { query: deps.query, ...deps.collectorDue });
+    const due = registerCollectorDueRoute(app, { query: deps.query, ...deps.collectorDue });
+    registerCollectorStatusRoute(app, { getLastDuePollAt: due.getLastDuePollAt, now: deps.collectorDue.now });
     registerCollectorFinishRoute(app, { query: deps.query, ...deps.collectorDue });
   }
 

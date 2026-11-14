@@ -102,6 +102,9 @@ function routeFetch(latest: Response | Error, filterOptions: Response | Error = 
     if (url === "/api/session") {
       return jsonResponse({ csrfToken: "test-csrf" });
     }
+    if (url === "/api/collector/status") {
+      return jsonResponse({ collector: { paused: false, since: null } });
+    }
     if (url.startsWith("/api/stocks/RELIANCE/candles")) {
       return jsonResponse(CANDLES);
     }
@@ -243,6 +246,29 @@ describe("App Home screen", () => {
 
       const banner = await screen.findByText("Data is 1 trading day(s) old (run date 2026-11-05)");
       expect(banner.closest("[data-state]")).toHaveAttribute("data-state", "stale");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the collector_paused banner over the market-closed banner when the collector is paused", async () => {
+    // Saturday 2026-11-14 12:00 IST, market closed. The collector pause must take the banner's place.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-14T06:30:00Z"));
+    try {
+      const base = routeFetch(jsonResponse({ runId: "run-42", runDate: "2026-11-13" }));
+      const fetchMock = vi.fn(async (url: string) =>
+        url === "/api/collector/status"
+          ? jsonResponse({ collector: { paused: true, since: "2026-11-14T11:50:00+05:30" } })
+          : base(url),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      render(<App />);
+
+      const banner = await screen.findByText("Data collection is paused. Data may be out of date.");
+      expect(banner.closest("[data-state]")).toHaveAttribute("data-state", "collector_paused");
+      expect(screen.queryByText(/Market closed/)).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
