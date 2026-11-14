@@ -9,7 +9,7 @@ feature and exposes its components and pure helpers.
 - `main.tsx`: entry point. Mounts the app. Not an importable module.
 - `App.tsx`: `App`. Root component.
 - Subdirectories: [api](./api/EGM.md), [filters](./filters/EGM.md),
-  [lib](./lib/EGM.md), [live](./live/EGM.md), [sectors](./sectors/EGM.md),
+  [home](./home/EGM.md), [lib](./lib/EGM.md), [live](./live/EGM.md), [sectors](./sectors/EGM.md),
   [shell](./shell/EGM.md), [stock](./stock/EGM.md), [table](./table/EGM.md),
   [theme](./theme/EGM.md).
 - `styles/`: `index.css` and `tokens.css`, CSS only. No code contract, so it

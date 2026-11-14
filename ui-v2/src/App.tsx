@@ -10,6 +10,7 @@ import { StateView, type StateKind } from "./shell/StateView";
 import type { TabItem } from "./shell/TabStrip";
 import { StockPage } from "./stock/StockPage";
 import { SectorHeatmap } from "./sectors/SectorHeatmap";
+import { HomeEventFeed } from "./home/HomeEventFeed";
 import { ScreenerTable } from "./table/ScreenerTable";
 import { ThemeProvider } from "./theme/ThemeProvider";
 
@@ -189,6 +190,7 @@ export default function App() {
           <StockPage key={activeStock.id} symbol={activeStock.id} company={activeStock.company} />
         ) : (
           <>
+            <HomeEventFeed />
             {latest.status === "loading" && <StateView kind="loading" message="Loading the current run." />}
             {latest.status === "empty" && <StateView kind="empty" message="No current run." />}
             {latest.status === "error" && <StateView kind="error" message={latest.message} action={retryAction} />}

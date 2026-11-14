@@ -75,6 +75,30 @@ function routeFetch(latest: Response | Error, filterOptions: Response | Error = 
     if (url === "/api/presets") {
       return jsonResponse({ presets: [] });
     }
+    if (url === "/api/events") {
+      // One event, not an empty list: an empty feed renders its own role="status" block, which would make
+      // the existing single getByRole("status") assertions ambiguous.
+      return jsonResponse({
+        generated_at: "2026-11-09T10:00:00+05:30",
+        latest_fetched_at: null,
+        window_days: 7,
+        events: [
+          {
+            id: "evt-1",
+            symbol: "TFL",
+            isin: null,
+            company: "Test Filer Ltd",
+            event_type: "results",
+            feed_tier: "high_priority",
+            feed_code: "nse:Financial_Results",
+            headline: "Results filed",
+            published_at: "2026-11-09T09:00:00+05:30",
+            fetched_at: "2026-11-09T09:05:00+05:30",
+            source_url: "https://example.com/filing",
+          },
+        ],
+      });
+    }
     if (url === "/api/session") {
       return jsonResponse({ csrfToken: "test-csrf" });
     }
