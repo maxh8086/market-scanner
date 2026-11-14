@@ -86,7 +86,7 @@ class ComposeServerServiceTests(unittest.TestCase):
             "server must not receive APP_MASTER_KEY_FILE (only the UI holds the master key)",
         )
 
-    def test_server_has_exactly_two_readonly_secret_file_mounts(self):
+    def test_server_has_exactly_three_readonly_secret_file_mounts(self):
         self.assertIn("server", self.services, "server service missing")
         service = self.services["server"]
         app_keys_entries = [
@@ -96,18 +96,19 @@ class ComposeServerServiceTests(unittest.TestCase):
         ]
         self.assertEqual(
             len(app_keys_entries),
-            2,
-            "server must have exactly two volumes whose target starts with /run/app-keys",
+            3,
+            "server must have exactly three volumes whose target starts with /run/app-keys",
         )
         by_target = {target: (host, mode) for host, target, mode in app_keys_entries}
         expected = {
             "/run/app-keys/home_events_ingest_token": INGEST_TOKEN_VAR,
             "/run/app-keys/server_db_password": "APP_SERVER_DB_PASSWORD_FILE",
+            "/run/app-keys/server_secrets_token": "APP_SERVER_SECRETS_TOKEN_FILE",
         }
         self.assertEqual(
             set(by_target),
             set(expected),
-            "server's /run/app-keys mounts must target exactly the ingest token file and the server db password file",
+            "server's /run/app-keys mounts must target exactly the ingest token file, the server db password file and the server secrets token file",
         )
         strings = _volume_strings(service)
         for target, var in expected.items():
@@ -144,6 +145,28 @@ class ComposeServerServiceTests(unittest.TestCase):
                     "server must not mount the master key file (app_master_key)",
                 )
 
+    def test_only_ui_mounts_master_key_dir(self):
+        ui_hosts = [host for host, _target, _mode in _volume_entries(self.services["ui"])]
+        self.assertTrue(
+            any("APP_MASTER_KEY_DIR" in host for host in ui_hosts),
+            "ui must keep the APP_MASTER_KEY_DIR mount",
+        )
+        for name, service in self.services.items():
+            if name == "ui":
+                continue
+            for host, target, _mode in _volume_entries(service):
+                with self.subTest(service=name, target=target):
+                    self.assertNotIn(
+                        "APP_MASTER_KEY_DIR",
+                        host,
+                        f"only the ui service may mount the master key folder; {name} does",
+                    )
+                    self.assertNotIn(
+                        "app_master_key",
+                        host,
+                        f"only the ui service may mount the master key file; {name} does",
+                    )
+
     def test_server_environment_values(self):
         self.assertIn("server", self.services, "server service missing")
         environment = self.services["server"].get("environment")
@@ -166,6 +189,20 @@ class ComposeServerServiceTests(unittest.TestCase):
                     value,
                     f"server environment {key} must be {value!r}",
                 )
+
+    def test_server_secrets_api_environment(self):
+        self.assertIn("server", self.services, "server service missing")
+        environment = self.services["server"].get("environment") or {}
+        self.assertEqual(
+            str(environment.get("SECRETS_TOKEN_FILE")),
+            "/run/app-keys/server_secrets_token",
+            "server SECRETS_TOKEN_FILE must be /run/app-keys/server_secrets_token",
+        )
+        self.assertEqual(
+            str(environment.get("SECRETS_API_URL")),
+            "http://ui:8080",
+            "server SECRETS_API_URL must be http://ui:8080",
+        )
 
     def test_server_database_login_environment(self):
         self.assertIn("server", self.services, "server service missing")
@@ -282,6 +319,28 @@ class ComposeServerServiceTests(unittest.TestCase):
             "ui must keep its read-only key folder mount at /run/app-keys",
         )
 
+    def test_ui_server_token_env_and_readonly_mount(self):
+        self.assertIn("ui", self.services, "ui service missing")
+        ui = self.services["ui"]
+        environment = ui.get("environment") or {}
+        self.assertEqual(
+            str(environment.get("SERVER_TOKEN_FILE")),
+            "/run/service-tokens/server_token",
+            "ui SERVER_TOKEN_FILE must be /run/service-tokens/server_token",
+        )
+        matches = [
+            (host, mode)
+            for host, target, mode in _volume_entries(ui)
+            if target == "/run/service-tokens/server_token"
+        ]
+        self.assertEqual(len(matches), 1, "ui must mount /run/service-tokens/server_token exactly once")
+        host, mode = matches[0]
+        self.assertEqual(mode, "ro", "ui mount of the server token must be read-only (:ro)")
+        self.assertTrue(
+            host.startswith("${APP_SERVER_SECRETS_TOKEN_FILE:?"),
+            f"ui host path for the server token must be ${{APP_SERVER_SECRETS_TOKEN_FILE:?...}}; got {host!r}",
+        )
+
     def test_start_ps1_brings_up_ui_collector_and_server(self):
         self.assertTrue(START_PS1_PATH.exists(), "start.ps1 missing at repo root")
         text = START_PS1_PATH.read_text(encoding="utf-8")
@@ -325,6 +384,11 @@ class ComposeServerServiceTests(unittest.TestCase):
             "APP_SERVER_DB_PASSWORD_FILE",
             text,
             "env.template must document APP_SERVER_DB_PASSWORD_FILE",
+        )
+        self.assertRegex(
+            text,
+            r"(?m)^# APP_SERVER_SECRETS_TOKEN_FILE=",
+            "env.template must document APP_SERVER_SECRETS_TOKEN_FILE as a commented line",
         )
 
 

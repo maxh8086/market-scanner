@@ -84,6 +84,37 @@ describe("fetchKiteHoldings", () => {
   });
 });
 
+describe("GET /api/holdings with async credentials", () => {
+  const query = async () => ({ rows: [] });
+
+  it("awaits async credentials and uses them for the Kite call", async () => {
+    const fetch = vi.fn<KiteFetch>(async () => jsonResponse(200, sampleBody));
+    const app = buildApp({
+      query,
+      kite: { credentials: async () => ({ apiKey: "key1", accessToken: "secret-token" }), fetch },
+    });
+    const response = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/holdings" });
+
+    expect(response.statusCode).toBe(200);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "token key1:secret-token" }) }),
+    );
+    expect(response.body).not.toContain("secret-token");
+    await app.close();
+  });
+
+  it("reports 503 without calling Kite when async credentials lack an access token", async () => {
+    const fetch = vi.fn<KiteFetch>(async () => jsonResponse(200, sampleBody));
+    const app = buildApp({ query, kite: { credentials: async () => ({ apiKey: "key1" }), fetch } });
+    const response = await app.inject({ headers: { cookie: (await browserSession(app)).cookie }, method: "GET", url: "/api/holdings" });
+
+    expect(response.statusCode).toBe(503);
+    expect(fetch).not.toHaveBeenCalled();
+    await app.close();
+  });
+});
+
 describe("GET /api/holdings", () => {
   const query = async () => ({ rows: [] });
 

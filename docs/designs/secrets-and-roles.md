@@ -98,9 +98,10 @@ Stored encrypted in `app_secret` as an app-level key, set by the admin (decision
 - Each service gets its own token file. The file is readable by that service's user only.
 - Status: approved. Built: S5 (PR #73, merge 8b26503).
 
-## Decision 16: Kite access token is runtime-only (decided 2026-11-10)
-- `kite_access_token` is not stored in `app_secret`, not imported from `data/secrets.env`, and not shared with any service. It is issued by Kite at the daily login (`scanner/auth.py`, cached in the git-ignored `.kite_token`).
-- Done: the `KITE_ACCESS_TOKEN` mapping in `scanner/secrets_cli.py` (ENV_TO_APP) and the `KITE_ACCESS_TOKEN` line in `env.template` have been removed. The token is read from `.kite_token` (the daily login cache written by `python -m scanner.auth`).
+## Decision 16: Kite access token is never served to a service (decided 2026-11-10)
+- `kite_access_token` is issued by Kite at the daily login (`scanner/auth.py`, cached in the git-ignored `.kite_token`). It is the runtime source for Kite calls.
+- The token can be stored: `scanner/secrets_cli.py` (ENV_TO_APP) still maps `KITE_ACCESS_TOKEN`, `env.template` still has a `KITE_ACCESS_TOKEN=` line, and `import-env` stores it (tests/test_secrets_cli.py).
+- It is never served to any service: the ui secrets endpoint allowlist (`ui/app/internal_secrets.py`) returns 403 for `kite_access_token` to every service (collector, server, llm_client). The daily login cache `.kite_token` remains its runtime source.
 - `KITE_API_KEY` and `KITE_API_SECRET` remain stored app secrets.
 
 ## Ingest token roles and the collector service token (proposed 2026-11-10)
@@ -117,4 +118,4 @@ Decision A1 (2026-11-10): each source has its own ingest route and token. These 
 
 The FRED key row is not added. It waits on overview decision C6.
 
-Service token mapping (Upstox review finding 19): the secret endpoint serves `upstox_analytics_token` only to the service token mapped to `collector` (`ui/app/internal_secrets.py`, `SERVICE_ALLOWED`). The Upstox poller runs under that collector token and adds no new service identity. The `collector only` limit holds for the secret endpoint. Fastify also reads an Upstox token from the environment (`server/src/index.ts`). The location of the ingest tokens is open (see the Upstox doc, Open list).
+Service token mapping (Upstox review finding 19): the secret endpoint serves `upstox_analytics_token` to the service token mapped to `collector` and to the `server` identity (`ui/app/internal_secrets.py`, `SERVICE_ALLOWED`). The Upstox poller runs under the collector token. The `server` identity (S3b) reads `upstox_analytics_token` for live feeds and `kite_api_key` for holdings. Fastify no longer reads an Upstox token from the environment (`server/src/index.ts`). The collector-only limit now reads: collector and server (analytics token), server (kite_api_key). `kite_access_token` stays runtime-only and is not served to any service. The location of the ingest tokens is open (see the Upstox doc, Open list).

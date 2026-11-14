@@ -172,7 +172,7 @@ def main(argv: list[str] | None = None, *, conn_factory=None, key_loader=None,
     s_.add_argument("--created"); s_.add_argument("--expires"); s_.add_argument("--by", default="admin")
     i = sub.add_parser("import-env"); i.add_argument("--dry-run", action="store_true")
     i.add_argument("--by", default="admin")
-    t = sub.add_parser("service-token"); t.add_argument("name", choices=["collector"])
+    t = sub.add_parser("service-token"); t.add_argument("name", choices=["collector", "server"])
     t.add_argument("--out", required=True)
     te = sub.add_parser("test"); te.add_argument("name")
     r = sub.add_parser("rotate"); r.add_argument("name")

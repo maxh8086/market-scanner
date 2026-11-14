@@ -11,7 +11,9 @@ testable without a database.
   types.
 - `index.ts`: process entry point. Not an importable module.
 - `config.ts`: `loadPoolConfig`.
-- `secrets.ts`: `readSecret`, `secretsFilePath`.
+- `secretsClient.ts`: `createSecretsClient`. `index.ts` uses it to fetch app
+  secrets from the ui internal secrets endpoint. `secrets.ts` (`readSecret`) is
+  no longer used by `index.ts`.
 - `candles.ts`: `validateCandlesRequest`, `buildCandlesQuery`, `shapeCandles`.
 - `collectorRefresh.ts`: `registerCollectorRefreshRoute`,
   `isBeforeCloseOnTradingDayIst`, `buildIndexEodRefreshInsert`,
@@ -44,7 +46,8 @@ testable without a database.
 - Postgres reads through the injected `query` function. `presets.ts` and
   `collectorRefresh.ts` also write (preset insert and delete, index EOD refresh
   insert).
-- Reads the secrets file through `readSecret`.
+- App secrets are fetched over HTTP from the ui internal secrets endpoint by
+  `secretsClient.ts` (`index.ts` wiring), not read from a file.
 - Live-feed socket and server-sent events (see [live](./live/EGM.md)).
 
 ## Verification
