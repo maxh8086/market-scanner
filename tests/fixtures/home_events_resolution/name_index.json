@@ -1,0 +1,122 @@
+[
+  {
+    "source": "nse_csv",
+    "symbol": "GAMMON",
+    "isin": "INEGAM000001",
+    "name_key": "GAMMON INDIA LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "BAJHIND",
+    "isin": "INEBAJ000001",
+    "name_key": "BAJAJ HINDUSTHAN SUGAR LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "AMBIKA",
+    "isin": "INEAMB000001",
+    "name_key": "AMBIKA COTTON MILLS LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "TITAGARH",
+    "isin": "INETIT000001",
+    "name_key": "TITAGARH RAIL SYSTEMS LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "JIOFIN",
+    "isin": "INEJIO000001",
+    "name_key": "JIO FINANCIAL SERVICES LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "PARAMOUNT",
+    "isin": "INEPAR000001",
+    "name_key": "PARAMOUNT SPECIALITY FORGINGS LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "SILGO",
+    "isin": "INESIL000001",
+    "name_key": "SILGO RETAIL LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "BILLIONBR",
+    "isin": "INEBIL000001",
+    "name_key": "BILLIONBRAINS GARAGE VENTURES LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "VINTAGE",
+    "isin": "INEVIN000001",
+    "name_key": "VINTAGE COFFEE AND BEVERAGES LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "STARCEM",
+    "isin": "INESTC000001",
+    "name_key": "STAR CEMENT LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "GALAXYSURF",
+    "isin": "INEGAL000001",
+    "name_key": "GALAXY SURFACTANTS LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "GAYATRI",
+    "isin": "INEGAY000001",
+    "name_key": "GAYATRI PROJECTS LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "BALLARPUR",
+    "isin": "INEBAL000001",
+    "name_key": "BALLARPUR INDUSTRIES LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "INDTONER",
+    "isin": "INEITD000001",
+    "name_key": "INDIAN TONERS AND DEVELOPERS LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "HINDUNILVR",
+    "isin": "INEHUL000001",
+    "name_key": "HINDUSTAN UNILEVER LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "SHREERAM",
+    "isin": "INESRP000001",
+    "name_key": "SHREE RAM PROTEINS LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "AJANTPHARM",
+    "isin": "INEAJP000001",
+    "name_key": "AJANTA PHARMA LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "COCHINSHIP",
+    "isin": "INECSL000001",
+    "name_key": "COCHIN SHIPYARD LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "VIRINCHIA",
+    "isin": "INEVIR000001",
+    "name_key": "VIRINCHI LTD"
+  },
+  {
+    "source": "nse_csv",
+    "symbol": "VIRINCHIB",
+    "isin": "INEVIR000002",
+    "name_key": "VIRINCHI LTD"
+  }
+]

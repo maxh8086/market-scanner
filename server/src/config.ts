@@ -46,3 +46,31 @@ export function loadPoolConfig(
     password,
   };
 }
+
+const DEFAULT_EVENTS_DB = "market_scanner_events";
+
+/**
+ * Builds the pg pool config for the events database.
+ * Uses POSTGRES_EVENTS_DB (default market_scanner_events, same default as
+ * scanner/pg/migrate.py _dbname). With POSTGRES_DSN set, only the database
+ * path is replaced. The DSN is never echoed in errors.
+ */
+export function eventsPoolConfig(env: NodeJS.ProcessEnv = process.env): PoolConfig {
+  const eventsDb = env.POSTGRES_EVENTS_DB || DEFAULT_EVENTS_DB;
+  const dsn = env.POSTGRES_DSN;
+  if (dsn) {
+    let url: URL;
+    try {
+      url = new URL(dsn);
+    } catch {
+      throw new Error("POSTGRES_DSN is not a valid URL");
+    }
+    if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") {
+      throw new Error("POSTGRES_DSN is not a valid URL");
+    }
+    url.pathname = "/" + encodeURIComponent(eventsDb);
+    return { connectionString: url.toString() };
+  }
+
+  return { ...loadPoolConfig(env), database: eventsDb };
+}

@@ -166,6 +166,14 @@ class FetchFeedTests(unittest.TestCase):
         self.assertEqual(parse.calls, [])
         self.assert_single_request_no_retry(session, sleep)
 
+    def test_429_is_blocked_without_retry(self):
+        result, session, sleep, parse, log = run_fetch([FakeResponse(429, {}, b"slow down")])
+        self.assertEqual(result.outcome, "blocked")
+        self.assertEqual(result.items, [])
+        self.assertEqual(result.dropped, 0)
+        self.assertEqual(parse.calls, [])
+        self.assert_single_request_no_retry(session, sleep)
+
     def test_html_200_is_blocked(self):
         result, session, sleep, parse, log = run_fetch(
             [FakeResponse(200, dict(HTML_HEADERS), HTML_BODY)]
@@ -400,6 +408,20 @@ class RunCycleTests(unittest.TestCase):
         self.assertEqual(reason, "blocked:nse:Board_Meetings")
         self.assertEqual(cooldown.resets, [])
         self.assertEqual(len(session.calls), 3)  # a 403 is not retried
+        self.assertEqual(result["fetched"], 2)
+        self.assertEqual(len(posted_rows(post)), 2)  # the two feeds before the block are posted
+
+    def test_429_on_third_feed_failed_and_cooldown_blocked(self):
+        script = [xml_ok(), xml_ok(), FakeResponse(429, {}, b"slow down")]
+        result, session, sleep, post, cooldown = run_cycle_with(script)
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("blocked:nse:Board_Meetings", result["message"])
+        self.assertEqual(len(cooldown.blocks), 1)
+        exchange, _, reason = cooldown.blocks[0]
+        self.assertEqual(exchange, "nse")
+        self.assertEqual(reason, "blocked:nse:Board_Meetings")
+        self.assertEqual(cooldown.resets, [])
+        self.assertEqual(len(session.calls), 3)  # a 429 is not retried
         self.assertEqual(result["fetched"], 2)
         self.assertEqual(len(posted_rows(post)), 2)  # the two feeds before the block are posted
 
@@ -894,6 +916,54 @@ class IngestFloorTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(posted_rows(post), [])
         self.assertIn("isin_conflict=1 date_floor=1", result["message"])
+
+
+class AllEightFeedsTests(unittest.TestCase):
+    """Every FEEDS entry runs in one cycle, with the real registry, parser and fixture bytes."""
+
+    @staticmethod
+    def _responses_in_visit_order(feeds):
+        # Responses are consumed in request order, so build them in the rotation order run_cycle uses.
+        from pathlib import Path
+
+        fixtures_dir = Path(__file__).resolve().parent / "fixtures" / "home_events"
+        responses = []
+        for feed in home_events._rotation(feeds, NOW):
+            body = (fixtures_dir / f"{feed.feed_code.replace(':', '_')}.xml").read_bytes()
+            responses.append(FakeResponse(200, {"Content-Type": "application/xml"}, body))
+        return responses
+
+    def test_all_eight_feeds_requested_with_real_registry(self):
+        self.assertEqual(len(home_events.FEEDS), 8)
+        script = self._responses_in_visit_order(home_events.FEEDS)
+        result, session, sleep, post, cooldown = run_cycle_with(
+            script, feeds=home_events.FEEDS, parse_fn=home_events.parse,
+        )
+        url_to_code = {feed.url: feed.feed_code for feed in home_events.FEEDS}
+        self.assertEqual(len(session.calls), 8)
+        requested_codes = {url_to_code[url] for url in session.calls}
+        self.assertEqual(len(requested_codes), 8)
+        self.assertEqual(requested_codes, {feed.feed_code for feed in home_events.FEEDS})
+        self.assertEqual(cooldown.blocks, [])
+        # Fixture items carry symbols outside the two-symbol test universe, so they are rejected as universe.
+        self.assertIn("universe", result["message"])
+        self.assertEqual(result["status"], "ok")
+
+    def test_nth_feed_403_blocks_once_and_stops(self):
+        feeds = home_events.FEEDS
+        visit = home_events._rotation(feeds, NOW)
+        script = self._responses_in_visit_order(feeds)[:3] + [FakeResponse(403, {}, b"forbidden")]
+        result, session, sleep, post, cooldown = run_cycle_with(
+            script, feeds=feeds, parse_fn=home_events.parse,
+        )
+        fourth = visit[3].feed_code
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["message"], f"blocked:{fourth}")
+        self.assertEqual(len(cooldown.blocks), 1)
+        self.assertEqual(cooldown.blocks[0][2], f"blocked:{fourth}")
+        self.assertEqual(cooldown.resets, [])
+        self.assertEqual(len(session.calls), 4)  # no request after the 403
+        self.assertEqual(session.calls[3], visit[3].url)
 
 
 if __name__ == "__main__":

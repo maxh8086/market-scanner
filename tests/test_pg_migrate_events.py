@@ -19,7 +19,7 @@ import tests.pgschema as pgschema
 class TestEventsMigrationTargets(unittest.TestCase):
     def test_files_events_dir(self):
         names = [f.name for f in migrate.files("events")]
-        self.assertEqual(names, ["001_home_events.sql"])
+        self.assertEqual(names, ["001_home_events.sql", "002_server_role_grants.sql"])
         self.assertEqual(migrate.files("events")[0].parent, migrate.MIGRATION_DIRS["events"])
         self.assertTrue(migrate.MIGRATION_DIRS["events"].name == "events_migrations")
 

@@ -95,16 +95,16 @@ Graph (graph_sync.py, Neo4j reads and writes) and collector Mongo writes also go
 
 - POST /internal/events/batch is defined at server/src/homeEventsRoute.ts:24. It is not mounted in the shipped server. server/src/index.ts:26-33 passes only query, logger, live and kite to buildApp. app.ts:301-302 registers the route only when checkToken and eventsTx are both passed.
 - v2 passes checkToken and eventsTx from index.ts, with the token map from R4 files.
-- Order of checks today: a batch with more rows than MAX_BATCH_ROWS returns 413 before auth (homeEventsRoute.ts:28-29, auth at :32). The file's header comment (homeEventsRoute.ts:7) states that this order is deliberate. The test at server/src/homeEventsRoute.test.ts:107-122 asserts that checkToken is not called in that case (test name not read in this pass).
-- RECOMMENDED: auth first, then the row limit. This reverses a documented decision and changes that test. Open question 10.
+- Order of checks today: auth runs first. The bearer check at homeEventsRoute.ts:25-31 returns 401 or 403, then a batch with more rows than MAX_BATCH_ROWS returns 413 at :36-37. The file's header comment (homeEventsRoute.ts:8) states this order. The test at server/src/homeEventsRoute.test.ts:106-124 (oversize_413) asserts that checkToken is called and that the events transaction is not run; the test at :126 (oversize_without_valid_token_is_401_not_413) covers the 401 path.
+- Auth-first order is the current behaviour, so the route and its tests need no change for it. Open question 10 records the decision to keep this order.
 - Body-size limit: Fastify default bodyLimit with installed Fastify 5.12.7. The ordering of the body limit versus the 413 check is unverified (Section 10).
 
-### R9 Cooldown cap conflict (RECOMMENDED: 1 hour for class "other"; needs approval)
+### R9 Cooldown cap conflict (RESOLVED: flat 1 hour per host, D7, 2026-11-14)
 
 - The split spec says the cap is 2 hours: "on HTTP 403, 429 or a block page ... doubling to 2 h on repeats" (docs/designs/collector-split-spec.md:84). That line is labelled "to be tuned".
 - The S2 row of docs/progress/collector-split-spec-requests.md:18 records the user's backoff classes (2026-11-10): API class (upstox, fred) starts at 3 minutes, caps at 15 minutes; other class (every other host, including nse, bse and rbi) starts at 15 minutes, caps at 1 hour.
-- Governing rule: docs/designs/home-events-filings-spec.md:7 says the collector-split spec governs on the cooldown. That rule points to 2 hours. The 2026-11-10 user decision in the requests file points to 1 hour. These two sources conflict. RECOMMENDED: 1 hour for class other, because it is the later and more specific user decision, and revise split spec line 84 to match. The user must confirm (open question 11).
-- Table name: the split spec calls it exchange_cooldown (split spec line 83). The requests file renames it to source_cooldown (progress :18). docs/designs/collector-split-slices.md:132 says exchange_cooldown was never created and S2 creates source_cooldown directly. v2 uses source_cooldown.
+- Resolved: flat 1 hour per host (D7, decided 2026-11-14). The 2 hour figure and the per-class backoff are dropped, and the split spec cooldown lines are revised to match (D7 edit). Open question 11 is resolved.
+- Table: source_cooldown (host, cooldown_until, reason, updated_at), written by collector containers as the owner role, read by the app through the SELECT grant added in 050. The split spec's exchange_cooldown name is superseded (docs/designs/collector-split-slices.md:132).
 
 ### R10 Filings cron conflict (RECOMMENDED: */5 8-20; needs approval)
 
@@ -257,8 +257,8 @@ Auth values: "session" means the browser cookie from R3. "session + CSRF" also n
 | POST | /internal/collector/requests/{id}/heartbeat | new (R5) | collector | service token: collector | Extends lease_expires_at. Shape TBD. |
 | POST | /internal/collector/runs | scheduler.start_run (scheduler.py:96-106); call site not verified in this pass | collector | service token: collector | Run start. Shape TBD. |
 | POST | /internal/collector/runs/{run_id}/finish | scheduler.finish_run (scheduler.py:108-121); call site not verified in this pass | collector; watchdog for killed runs (R11) | service token: collector; watchdog (name TBD) | Status values ok, failed, skipped. A skip with not_before uses this route (R5). Shape TBD. |
-| GET | /internal/collector/cooldown/{host} | new; source_cooldown table (requests file :18) | collector | service token: collector | Read before each run and each request. Shape TBD. |
-| POST | /internal/collector/cooldown/{host} | new; source_cooldown table | collector | service token: collector | Sets cooldown_until on 403, 429 or block. Resets on success. Shape TBD. |
+| GET | /internal/collector/cooldown/{host} | new; source_cooldown table (host, cooldown_until, reason, updated_at), written by collector containers as the owner role, read by the app through the SELECT grant added in 050 | collector | service token: collector | Read before each run and each request. Shape TBD. |
+| POST | /internal/collector/cooldown/{host} | new; source_cooldown table (see GET row) | collector | service token: collector | Sets cooldown_until = now + 1 hour (flat, D7) on 403, 429 or block. Resets on success. Shape TBD. |
 | GET | /internal/due | new per split spec 4.2 (C2 at collector-split-spec.md:61; Blocker 4 consequences at :62-63); endpoint contract in 4.5a (collector-split-spec.md:109-112) | watchdog (host script) | service token: watchdog (name TBD) | Contract is in split spec 4.5a, which this pass did not read. Shape TBD. |
 | POST | /internal/events/batch | server/src/homeEventsRoute.ts:24 (mount per R8) | collector home_filings ingest | service token: role home_events_ingest (homeEventsAuth.ts:15) | Row limit 500 (review Hazards 11). Order per R8 (open question 10). |
 | (group, path not chosen) | Postgres read of v_announcement_summary (graph_sync.py:86-89) and graph write via g.sync_announcement_summary(rows) (graph_sync.py:93) | graph | service token: graph (name TBD) | Shape TBD. Path not chosen. |
@@ -352,8 +352,8 @@ Each line gives the question and the planner recommendation.
    Answer: recommendation approved.
 10. Order of checks on POST /internal/events/batch: 413 row limit before auth (homeEventsRoute.ts:7 and test :107-122), or auth first (R8)? Recommendation: auth first. This reverses a documented decision.
    Answer: recommendation approved.
-11. Cooldown cap for class other: 1 hour (requests file :18) or 2 hours (split spec :84, which filings spec :7 says governs)? Recommendation: 1 hour, and revise split spec line 84 (labelled "to be tuned").
-   Answer: recommendation approved.
+11. RESOLVED (D7, 2026-11-14). Cooldown cap for class other: 1 hour (requests file :18) or 2 hours (split spec :84, which filings spec :7 says governs)? Recommendation: 1 hour, and revise split spec line 84 (labelled "to be tuned").
+   Answer: flat 1 hour per host (D7, 2026-11-14).
 12. Filings cron: */5 8-20 (filings spec :278 and :672) or 7,22,37,52 8-20 (split spec :135, :175, :200)? Recommendation: */5 8-20, and correct the split spec lines.
    Answer: recommendation approved.
 13. Killed-run finalisation (R11): the watchdog calls the API finish route. The "section 9, Q6" reference in slices:284 has no matching entry. Recommendation: API writes the killed-run row.

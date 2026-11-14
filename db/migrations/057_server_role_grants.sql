@@ -15,5 +15,4 @@ GRANT SELECT, INSERT, DELETE ON scan_presets TO market_scanner_server;
 -- The collector_settings foreign key is checked by PostgreSQL as the owner of that table, so no grant on it is needed.
 GRANT SELECT, INSERT ON collector_requests TO market_scanner_server;
 
--- home_events is NOT granted here. It lives in the separate events database (db/events_migrations/001_home_events.sql);
--- the server's events pool is the open part of F-T5c, and that database's grants belong to that work.
+-- home_events is NOT granted here. It lives in the separate events database. Its INSERT grant is db/events_migrations/002_server_role_grants.sql.
