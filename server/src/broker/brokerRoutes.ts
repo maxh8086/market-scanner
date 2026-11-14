@@ -129,8 +129,9 @@ export function registerBrokerRoutes(app: FastifyInstance, deps: BrokerRouteDeps
     },
   );
 
-  // Exempt from the session gate (session.ts). Always redirects; never puts the request_token in a
-  // redirect, a log or an error. A failed or cancelled login redirects with login=failed and calls nothing.
+  // Exempt from the session gate (session.ts). Always redirects. The callbacks never put the request_token, code or
+  // state in a redirect or an error, and the request log strips the callback query string (see requestLog.ts).
+  // A failed or cancelled login redirects with login=failed and calls nothing.
   app.get<{ Querystring: Record<string, unknown> }>("/api/broker/kite/callback", async (request, reply) => {
     const query = request.query;
     const status = query.status;
