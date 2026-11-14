@@ -1,4 +1,5 @@
-import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyServerOptions } from "fastify";
+import { requestLogSerializer } from "./requestLog.js";
 import {
   buildCountQuery,
   buildLatestRunQuery,
@@ -79,7 +80,8 @@ export interface LiveDeps {
 
 export interface AppDeps {
   query: QueryFn;
-  logger?: boolean;
+  /** true logs to stdout; an object may route the log to a stream (tests use this to inspect it). */
+  logger?: boolean | { stream?: NodeJS.WritableStream };
   live?: LiveDeps;
   /** Broker login and holdings routes. Off unless both broker and portfolioTx are set. */
   broker?: BrokerAppDeps;
@@ -135,8 +137,15 @@ const resultsQuerySchema = {
   },
 } as const;
 
+/** Fastify logger option: off when unset, otherwise with the redacting request serializer and the optional stream. */
+function buildLoggerOption(logger: AppDeps["logger"]): FastifyServerOptions["logger"] {
+  if (!logger) return false;
+  const stream = typeof logger === "object" ? logger.stream : undefined;
+  return { serializers: { req: requestLogSerializer }, ...(stream ? { stream } : {}) };
+}
+
 export function buildApp(deps: AppDeps): FastifyInstance {
-  const app = Fastify({ logger: deps.logger ?? false });
+  const app = Fastify({ logger: buildLoggerOption(deps.logger) });
   const sessions = deps.sessions ?? createSessionStore();
   registerSessionRoutes(app, sessions);
   registerCsrfGate(app, sessions);

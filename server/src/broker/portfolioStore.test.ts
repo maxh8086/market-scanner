@@ -95,7 +95,7 @@ describe("mergeDuplicateHoldings", () => {
     ]);
   });
 
-  it("sums dayChange over the non-null values and keeps null when every value is null", () => {
+  it("averages dayChange over the non-null values weighted by quantity and keeps null when every value is null", () => {
     const a = { ...holding("ACE"), dayChange: 2, dayChangePct: null };
     const b = { ...holding("ACE"), dayChange: 3, dayChangePct: 1 };
     const c = { ...holding("BEE"), dayChange: null, dayChangePct: null };
@@ -103,10 +103,50 @@ describe("mergeDuplicateHoldings", () => {
 
     const merged = mergeDuplicateHoldings([a, b, c, d]);
 
-    expect(merged[0].dayChange).toBe(5);
+    // Both rows have quantity 10: (10*2 + 10*3) / 20 = 2.5. dayChangePct has one non-null value, so it is 1.
+    expect(merged[0].dayChange).toBe(2.5);
     expect(merged[0].dayChangePct).toBe(1);
     expect(merged[1].dayChange).toBeNull();
     expect(merged[1].dayChangePct).toBeNull();
+  });
+
+  it("weights dayChange by quantity instead of summing it (10 @ 2 and 30 @ 4 give 3.5, not 6)", () => {
+    const merged = mergeDuplicateHoldings([
+      { ...holding("ACE"), quantity: 10, dayChange: 2 },
+      { ...holding("ACE"), quantity: 30, dayChange: 4 },
+    ]);
+
+    expect(merged[0].dayChange).toBe(3.5);
+  });
+
+  it("ignores a null dayChange in one row for both the numerator and the weights", () => {
+    const merged = mergeDuplicateHoldings([
+      { ...holding("ACE"), quantity: 10, dayChange: 2 },
+      { ...holding("ACE"), quantity: 30, dayChange: null },
+      { ...holding("ACE"), quantity: 10, dayChange: 4 },
+    ]);
+
+    // (10*2 + 10*4) / (10 + 10) = 3. Counting the null row's 30 shares in the weights would give 1.5.
+    expect(merged[0].dayChange).toBe(3);
+  });
+
+  it("uses the first non-null dayChange when the weights sum to 0", () => {
+    const merged = mergeDuplicateHoldings([
+      { ...holding("ACE"), quantity: 5, dayChange: 2 },
+      { ...holding("ACE"), quantity: -5, dayChange: 6 },
+    ]);
+
+    expect(merged[0].quantity).toBe(0);
+    expect(merged[0].dayChange).toBe(2);
+  });
+
+  it("weights dayChangePct by quantity (10 @ 1 and 30 @ 3 give 2.5, not the first row's 1)", () => {
+    const merged = mergeDuplicateHoldings([
+      { ...holding("ACE"), quantity: 10, dayChangePct: 1 },
+      { ...holding("ACE"), quantity: 30, dayChangePct: 3 },
+    ]);
+
+    expect(merged[0].dayChangePct).toBe(2.5);
   });
 
   it("keeps the first row's average price when the total quantity is 0", () => {

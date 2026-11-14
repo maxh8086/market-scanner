@@ -97,10 +97,34 @@ export function buildHoldingInsert(
 }
 
 /**
+ * Quantity-weighted average of the non-null values: sum(q_i * v_i) / sum(q_i) over rows with v_i !== null. When the
+ * weights sum to 0, the first non-null value. Null when every value is null.
+ */
+function weightedAverage(group: Holding[], pick: (row: Holding) => number | null): number | null {
+  let weighted = 0;
+  let weight = 0;
+  let firstValue: number | null = null;
+  for (const row of group) {
+    const value = pick(row);
+    if (value === null) continue;
+    if (firstValue === null) firstValue = value;
+    weighted += row.quantity * value;
+    weight += row.quantity;
+  }
+  if (firstValue === null) return null;
+  return weight === 0 ? firstValue : weighted / weight;
+}
+
+/**
  * Merges rows that share (symbol, exchange), because the table's primary key rejects duplicates. Keeps first-seen
- * order. Quantity and pnl are summed, averagePrice is quantity-weighted (the first row's value when the total
- * quantity is 0), lastPrice and dayChangePct come from the first row, dayChange is summed over the non-null values,
- * and isin is the first non-null value.
+ * order. The merge rule for each column:
+ * - quantity: summed.
+ * - averagePrice: quantity-weighted over all rows; the first row's value when the total quantity is 0.
+ * - lastPrice: the first row's value.
+ * - pnl: summed.
+ * - dayChange: quantity-weighted average of the non-null values (per share, never summed).
+ * - dayChangePct: same rule as dayChange.
+ * - isin: the first non-null value.
  */
 export function mergeDuplicateHoldings(rows: Holding[]): Holding[] {
   const groups = new Map<string, Holding[]>();
@@ -120,11 +144,6 @@ export function mergeDuplicateHoldings(rows: Holding[]): Holding[] {
     const first = group[0];
     const quantity = group.reduce((sum, row) => sum + row.quantity, 0);
     const cost = group.reduce((sum, row) => sum + row.quantity * row.averagePrice, 0);
-    let dayChange: number | null = null;
-    for (const row of group) {
-      if (row.dayChange === null) continue;
-      dayChange = dayChange === null ? row.dayChange : dayChange + row.dayChange;
-    }
     merged.push({
       symbol: first.symbol,
       exchange: first.exchange,
@@ -133,8 +152,8 @@ export function mergeDuplicateHoldings(rows: Holding[]): Holding[] {
       averagePrice: quantity === 0 ? first.averagePrice : cost / quantity,
       lastPrice: first.lastPrice,
       pnl: group.reduce((sum, row) => sum + row.pnl, 0),
-      dayChange,
-      dayChangePct: first.dayChangePct ?? group.find((row) => row.dayChangePct !== null)?.dayChangePct ?? null,
+      dayChange: weightedAverage(group, (row) => row.dayChange),
+      dayChangePct: weightedAverage(group, (row) => row.dayChangePct),
     });
   }
   return merged;

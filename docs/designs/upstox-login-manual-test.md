@@ -1,6 +1,6 @@
 # Upstox login and holdings sync: manual test
 
-Status: to run once by the user. Phase 2 code is in `feat/broker-login-upstox`. Claude cannot do this test, because it needs your own Upstox console access and your own Upstox login.
+Status: to run once by the user. Phase 2 code is merged to main. Claude cannot do this test, because it needs your own Upstox console access and your own Upstox login.
 
 Purpose: find out three things that the Upstox developer docs do not state clearly:
 
@@ -28,11 +28,23 @@ If the console rejects `127.0.0.1`, go to fallback A below and stop here. Record
 
 ## Step 2: store the app's credentials in the app (not in a file)
 
-1. Copy the app's client ID (the API key) and client secret from the Upstox console.
-2. Open the admin secrets page of the app. Check the page's menu for it.
-3. Store the client ID as `broker_default_upstox_api_key`.
-4. Store the client secret as `broker_default_upstox_api_secret`.
-5. Do not put these values in `.env`, `data/secrets.env`, any other file, a URL or chat.
+Run these from the project folder, one command per secret. Each command asks for the value at a hidden prompt. Paste or type the value at the prompt. Never put the value on the command line.
+
+1. Store the client ID (the API key):
+
+   ```
+   docker compose exec ui python -m scanner.secrets_cli set broker_default_upstox_api_key
+   ```
+
+2. Store the client secret:
+
+   ```
+   docker compose exec ui python -m scanner.secrets_cli set broker_default_upstox_api_secret
+   ```
+
+Copy the client ID and client secret from the Upstox console. Do not put these values in `.env`, `data/secrets.env`, any other file, a URL or chat.
+
+The `exec` command needs an interactive terminal for the hidden prompt. Whether it runs in the live stack exactly as written: not verified.
 
 ## Step 3: check that no file needs changing
 
@@ -56,10 +68,17 @@ Copy this into your reply:
 - (a) Redirect: accepted / rejected. If rejected, the console's exact message. If accepted, whether the login returned you to the app with a success notice.
 - (b) Holdings: returned (number of rows and the time shown) / error (the exact message the app showed, or the Upstox page's text). Holdings values are fine to describe; do not send tokens or codes.
 - (c) Static IP: demanded / not demanded. Demanded means the app shows "Upstox refused the request. Check the static IP setting for the app." That message comes from an HTTP 403 from Upstox.
+- For any 403, also record the raw Upstox error code and message, if you can see them. Do not record the token. The app does not show Upstox's response body, so the raw code and message are usually not visible. If they are not visible, write "not captured". Do not change any code to get them.
 
 ## Fallbacks (from the design, not yet built unless stated)
 
-A. The console rejects `127.0.0.1`. Try `http://localhost:8081/api/broker/upstox/callback` as the registered redirect URI. Then set `UPSTOX_REDIRECT_URI` to the same value in `.env` and restart the `ui` service. Note that this is a file change, so do it only if fallback A is needed. Check that the callback still reaches the server after the login.
+A. The console rejects `127.0.0.1`. Try `http://localhost:8081/api/broker/upstox/callback` as the registered redirect URI. Then set `UPSTOX_REDIRECT_URI` to the same value in `.env`, and recreate the ui container so it picks up the change:
+
+   ```
+   docker compose up -d --force-recreate ui
+   ```
+
+   A plain restart is not enough. Note that this is a file change, so do it only if fallback A is needed. Check that the callback still reaches the server after the login.
 
 B. The console rejects any local address. A single public HTTPS redirect that forwards to the server would be needed. This is not built. Stop and tell Claude which console message you saw.
 
