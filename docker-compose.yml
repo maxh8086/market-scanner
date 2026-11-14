@@ -1,7 +1,8 @@
 # One image per component. Everything here is a one-shot job except `laya`:
 #   docker compose run --rm scanner --symbols INFY,TCS
 # start.ps1 drives the whole sequence; stop.ps1 tears it down.
-# `ui`, `collector` and `server` (Fastify API) are the long-running services; everything else is a one-shot job.
+# `ui`, `collector` and `server` (Fastify API) are the long-running services. Run-once collector services
+# (profile `collectors`, started by the watchdog) are built from the `x-collector-run-once` template; everything else is a one-shot job.
 #
 # The databases (Postgres, MongoDB, Neo4j) are this project's own services (scanner-postgres,
 # scanner-mongo, scanner-neo4j) on the project's `market-scanner` network. The LLM server is
@@ -27,6 +28,43 @@ x-scanner-db-env: &scanner-db-env
   POSTGRES_HOST: scanner-postgres
   POSTGRES_PORT: "5432"
   NEO4J_URI: bolt://scanner-neo4j:7687
+
+# Collector env for the run-once collector services: Postgres only, no Mongo and no Neo4j.
+x-collector-pg-env: &collector-pg-env
+  POSTGRES_HOST: scanner-postgres
+  POSTGRES_PORT: "5432"
+
+# Document-store env for the announcements, filings and fundamentals instances ONLY (M10, option A).
+# Such an instance merges both anchors: environment: {<<: [*collector-pg-env, *collector-mongo-env]}
+x-collector-mongo-env: &collector-mongo-env
+  SCANNER_MONGO_HOST: scanner-mongo:27017
+  DOCSTORE_BACKEND: mongo
+
+# Template for run-once collector services. x- keys are not services, so this adds none by itself.
+# An instance is `<service>: {<<: *collector-run-once, command: ["--source", "<name>"]}`. Instances are added
+# one per move task (S6-S8, T9); this slice adds only the template. No container_name: the watchdog passes
+# --name collector-<source>. No ./output mount (no CSV output), no ports, no docker socket.
+x-collector-run-once: &collector-run-once
+  image: ath-enrich
+  build: {context: ., dockerfile: docker/enrich/Dockerfile}
+  entrypoint: ["python", "collect.py", "run-once"]
+  env_file:
+    - .env
+  environment:
+    <<: *collector-pg-env
+    MARKETDATA_BACKEND: postgres
+    POSTGRES_DSN: ${POSTGRES_DSN_CONTAINER}
+    SECRETS_API_URL: http://ui:8080
+    SERVICE_TOKEN_FILE: /run/app-keys/collector_token
+    EVENTS_API_BASE_URL: ${EVENTS_API_BASE_URL:-http://server:8081}
+  volumes:
+    - ./data:/app/data
+    - ./logs:/app/logs
+    - ./config:/app/config:ro
+    - ${APP_SERVICE_TOKEN_FILE:?set APP_SERVICE_TOKEN_FILE in .env to the host path of the collector token file}:/run/app-keys/collector_token:ro
+  networks: [default]
+  profiles: ["collectors"]
+  restart: "no"
 
 services:
   scanner:
@@ -187,7 +225,7 @@ services:
       <<: *scanner-db-env
       SERVER_HOST: 0.0.0.0                # listen on all container interfaces; the host publish below is loopback only
       SERVER_PORT: "8081"
-      SERVICE_TOKEN_DIR: /run/app-keys    # server/src/index.ts reads <dir>/home_events_ingest_token
+      SERVICE_TOKEN_DIR: /run/app-keys    # server/src/index.ts reads <dir>/home_events_ingest_token and <dir>/collector_watchdog_token
       POSTGRES_USER: market_scanner_server
       POSTGRES_DB: ${POSTGRES_DB:-market_scanner}
       POSTGRES_PASSWORD_FILE: /run/app-keys/server_db_password   # container path of the server role's password file
@@ -204,6 +242,8 @@ services:
       - ${APP_SERVER_DB_PASSWORD_FILE:?set APP_SERVER_DB_PASSWORD_FILE in .env to the host path of the server database password file}:/run/app-keys/server_db_password:ro
       # Read-only single-file mount of the server's bearer token for the ui secrets endpoint (APP_SERVER_SECRETS_TOKEN_FILE).
       - ${APP_SERVER_SECRETS_TOKEN_FILE:?set APP_SERVER_SECRETS_TOKEN_FILE in .env to the host path of the server secrets token file}:/run/app-keys/server_secrets_token:ro
+      # Read-only single-file mount of the collector watchdog token: the server reads it for GET /internal/due, and it is the watchdog's bearer token (APP_COLLECTOR_WATCHDOG_TOKEN_FILE).
+      - ${APP_COLLECTOR_WATCHDOG_TOKEN_FILE:?set APP_COLLECTOR_WATCHDOG_TOKEN_FILE in .env to the host path of the collector watchdog token file}:/run/app-keys/collector_watchdog_token:ro
     ports:
       - "127.0.0.1:${SERVER_PORT:-8081}:8081"   # loopback only on the host
     networks:
