@@ -9,16 +9,16 @@ Sources read: `ui-redesign-spec.md` 5.1, 7.1 to 7.2 (`home-event-sources.md` lin
 Filings only (the eight NSE feeds already stored in `home_events`). Two parts, built in this order, one writer at a time:
 
 - **A. Server:** `GET /api/events` and the events read grant.
-- **B. UI:** a Home feed and shortlist block above `ScreenerTable` in `ui-v2`.
+- **B. UI:** a Home event feed above `ScreenerTable` in `ui-v2`. The shortlist is held (decision Q1, section 7).
 
 Out of scope: the stock-tab events section, the Events screen (5.4), alerts, the LLM stage, any write route, paging beyond one page.
 
 ## 2. Findings that change the plan
 
 1. **A migration is needed.** The plan says "No database migration", but `db/events_migrations/002_server_role_grants.sql` grants only `INSERT` on `home_events` to `market_scanner_server`. A read route needs `SELECT`. Add `db/events_migrations/003_server_role_select_grant.sql` (`GRANT SELECT ON home_events TO market_scanner_server;`), with a down note. Written, not applied; you apply it.
-2. **Two databases.** Events live in the events database, snapshots in the main one. The route runs two single queries (one per pool) and joins in code. `AppDeps` gains `eventsQuery?: QueryFn` (read-only, built from the existing `eventsPool` in `index.ts`). Without it the route is not registered.
+2. **One database.** With the shortlist held, the route reads only the events database. `AppDeps` gains `eventsQuery?: QueryFn` (read-only, built from the existing `eventsPool` in `index.ts`). Without it the route is not registered. The main-database `query` is not used.
 3. **Tiers.** The spec says "tier 1 and tier 2"; the stored column is `feed_tier` with `high_priority` and `catalyst`. The API exposes `feed_tier` as stored. High priority is the top stream, catalyst the secondary one (`home-event-sources.md` lines 160 to 163).
-4. **Shortlist deviation (decision for you).** Spec 7.2 needs an ATH match, UPTREND and at least one of `bonus_issue`, `demerger`, `orderbook_signal`, `expansion_signal`. The filings slice produces none of those factors, and their stored value encodings are not documented, so this slice cannot test them. First-slice rule: **ATH match in the current run, `metrics->>'trend' = 'UPTREND'`, and at least one stored event in the window.** The factor condition is deferred. See question Q1.
+4. **Shortlist held (your decision, Q1).** Spec 7.2 needs an ATH match, UPTREND and at least one of `bonus_issue`, `demerger`, `orderbook_signal`, `expansion_signal`. The filings slice produces none of those factors, and their stored value encodings are not documented. The response has no `shortlist` field and the UI has no chips. To unlock it later: document the factor value encodings in `stock_snapshots.metrics`, then add a `shortlist` field in a follow-up contract (the join would use the current run's snapshots on `isin`).
 
 ## 3. `GET /api/events` (part A)
 
@@ -64,17 +64,13 @@ Response `200`, `Cache-Control: no-store`:
      "event_type": "results", "feed_tier": "high_priority", "feed_code": "Sast_Regulation31",
      "headline": "...", "published_at": "2026-11-14T18:00:00+05:30",
      "fetched_at": "2026-11-14T18:05:02+05:30", "source_url": "https://..."}
-  ],
-  "shortlist": [{"symbol": "ABC", "company": "ABC Ltd", "event_count": 2, "latest_published_at": "..."}]
+  ]
 }
 ```
 
 - Timestamps are ISO with the IST offset (reuse `toIstIso`). `latest_fetched_at` is the newest `fetched_at` in the window across all stored rows (null when none); the UI shows it as the data-age stamp, never the browser clock.
-- `shortlist` (not returned when `symbol` is set): the main pool query `SELECT symbol, company FROM stock_snapshots WHERE run_id = (the current run) AND isin = ANY($1) AND metrics->>'trend' = 'UPTREND'`, where `$1` is the ISIN list from the events result **before the cap and limit** (a second small events query: distinct `isin` and counts in the window). Ordered by `event_count` desc, then symbol; at most 50.
-- "Current run" is the same run the table shows: reuse the latest-run lookup used by `/api/runs/latest`.
-- `isin` null in `stock_snapshots` simply never matches.
 
-Errors: `400 {"error":"invalid_query"}`; `503 {"error":"events_database_unavailable"}` for a connection error on the events pool (reuse `isConnectionError`); `500 {"error":"internal_error"}`. Fixed bodies, no error text, `no-store`. A main-database failure on the shortlist query returns the events with `shortlist: []` and a header-free `"shortlist_unavailable": true` field, so the feed survives a snapshot problem.
+Errors: `400 {"error":"invalid_query"}`; `503 {"error":"events_database_unavailable"}` for a connection error on the events pool (reuse `isConnectionError`); `500 {"error":"internal_error"}`. Fixed bodies, no error text, `no-store`.
 
 Headlines and company names are third-party text: stored and returned verbatim, rendered only as text by the UI. `source_url` is http or https by ingest validation; the UI still checks the scheme before linking.
 
@@ -82,7 +78,7 @@ Headlines and company names are third-party text: stored and returned verbatim, 
 
 - `ui-v2/src/api/events.ts` (pattern of `results.ts`): `buildEventsQueryString`, `fetchEvents(query, {signal})`, `EventsError` with `status`, type guards for the body (reject on a bad shape).
 - `ui-v2/src/home/HomeEventFeed.tsx` mounted above `ScreenerTable`. Two groups, "High priority" and "Catalyst", each a list of `EventRow` (company, event type label, headline, relative time from the event's own `published_at` against `generated_at`, source link `rel="noopener noreferrer" target="_blank"`). Cap shown by the server.
-- Shortlist: chips above the feed (symbol, event count). Click opens the stock tab through the existing `TabStrip` open handler.
+- No shortlist chips in this slice (held, Q1).
 - Header stamp: "Events as of <latest_fetched_at>", read from the response, not `Date.now()`.
 - States through the existing `StateView`: loading, empty ("No filings in the last 7 days"), error (503 shows "Events database unavailable", others a generic line). The block's failure never blocks the table.
 - Refetch on mount and every 5 minutes while the tab is visible; abort on unmount.
@@ -91,9 +87,9 @@ Headlines and company names are third-party text: stored and returned verbatim, 
 
 ## 5. Tests (written by Haiku, run by Sonnet)
 
-- Server: SQL builder (placeholders only, defaults, bounds, `symbol` regex, cap bypass for `symbol`); route with a fake `eventsQuery` and `query` (200 shape, `latest_fetched_at` null on empty, shortlist built from UPTREND rows only, `invalid_query` cases, 503 on a connection error, 500 on other errors, shortlist failure leaves events intact, no error text or secret in any error body, no-store header, route absent without `eventsQuery`); `index.ts` wiring assertion (`eventsQuery` built from `eventsPool`).
+- Server: SQL builder (placeholders only, defaults, bounds, `symbol` regex, cap bypass for `symbol`); route with a fake `eventsQuery` (200 shape, `latest_fetched_at` null on empty, `invalid_query` cases, 503 on a connection error, 500 on other errors, no error text or secret in any error body, no-store header, session required, route absent without `eventsQuery`); `index.ts` wiring assertion (`eventsQuery` built from `eventsPool`).
 - Migration file 003 test in the style of `tests/test_migration_050_internal_due_grants.py` (grants only `SELECT` on `home_events` to `market_scanner_server`, no role created).
-- UI: client (query string, bad body, abort), component (groups, empty, error 503, link scheme check, stamp from the response, shortlist click opens the stock tab).
+- UI: client (query string, bad body, abort), component (both groups shown, empty, error 503, link scheme check, stamp from the response).
 
 ## 6. Dispatch plan and limits
 
@@ -101,10 +97,10 @@ Headlines and company names are third-party text: stored and returned verbatim, 
 2. Part B after A merges (server first, then UI): one Haiku task, files under `ui-v2/src/api/events.ts`, `ui-v2/src/home/`, mount in the Home screen, tests, CHANGELOG. Acceptance: the `ui-v2` test and type-check commands (read its `package.json` first).
 3. Sonnet reviews each diff and runs the checks before each commit and PR.
 
-Not verifiable without you: the route against a real events database (needs 003 applied and rows present), the cross-database shortlist on real snapshots, and how the block looks in a browser at your data sizes.
+Not verifiable without you: the route against a real events database (needs 003 applied and rows present) and how the block looks in a browser at your data sizes.
 
 ## 7. Questions for you
 
-- **Q1 shortlist rule.** Use the first-slice rule in 2.4 (ATH match, UPTREND, at least one filing in the window), or hold the shortlist until the factor fields can be read?
+- **Q1 shortlist: decided 2026-11-14.** Hold the shortlist until the factor fields can be read (see 2.4).
 - **Q2 default window.** 7 days, or another length (filings arrive weekdays only)?
-- **Q3 high-priority only on Home?** Show both groups (this draft) or only `high_priority` until the catalyst feeds are proven live?
+- **Q3 groups: decided 2026-11-14.** Show both groups on Home.
