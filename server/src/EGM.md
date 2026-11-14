@@ -29,6 +29,10 @@ testable without a database.
 - `collectorRefresh.ts`: `registerCollectorRefreshRoute`,
   `isBeforeCloseOnTradingDayIst`, `buildIndexEodRefreshInsert`,
   `buildLastIndexEodRunQuery`.
+- `collectorDue.ts`: `computeDue` (pure due rules for the watchdog poll),
+  `buildDueQueries`, `mapDueRows`, `parseServicesFile`, `isConnectionError`.
+- `collectorDueRoute.ts`: `registerCollectorDueRoute` (GET `/internal/due`,
+  role `collector_watchdog`; returns `getLastDuePollAt`).
 - `filterOptions.ts`: `buildFilterOptionsQuery`, `shapeFilterOptions`.
 - `homeEventsBatch.ts`: `validateBatch`, `buildInsert`.
 - `indexEod.ts`: `buildIndexEodQuery`, `shapeIndexEod`.

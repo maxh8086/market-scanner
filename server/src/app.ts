@@ -38,6 +38,7 @@ import { buildIndexEodQuery, shapeIndexEod } from "./indexEod.js";
 import { registerCollectorRefreshRoute } from "./collectorRefresh.js";
 import { createSessionStore, registerCsrfGate, registerSessionRoutes, type SessionStore } from "./session.js";
 import { registerHomeEventsRoutes, type HomeEventsRouteDeps } from "./homeEventsRoute.js";
+import { registerCollectorDueRoute, type CollectorDueRouteDeps } from "./collectorDueRoute.js";
 import {
   buildIsinLookupQuery,
   createWsSocket,
@@ -83,6 +84,8 @@ export interface AppDeps {
   /** Home events ingest (POST /internal/events/batch). The route is registered only when both are set. */
   checkToken?: HomeEventsRouteDeps["checkToken"];
   eventsTx?: HomeEventsRouteDeps["eventsTx"];
+  /** Collector watchdog poll (GET /internal/due). The route is registered only when set. */
+  collectorDue?: Pick<CollectorDueRouteDeps, "checkToken" | "loadServices" | "now">;
   /** Session store for the browser write gate. A fresh in-memory store is created when omitted. */
   sessions?: SessionStore;
 }
@@ -301,6 +304,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // Home events ingest from the scanner's home_filings collector. Off unless the caller wires a token check and a transaction.
   if (deps.checkToken && deps.eventsTx) {
     registerHomeEventsRoutes(app, { checkToken: deps.checkToken, eventsTx: deps.eventsTx });
+  }
+
+  // Collector watchdog poll (S5a). Off unless the caller wires a token check and a services loader.
+  if (deps.collectorDue) {
+    registerCollectorDueRoute(app, { query: deps.query, ...deps.collectorDue });
   }
 
   // Broker login (ui-mediated) and stored holdings: GET /api/holdings reads the last ok snapshot, and

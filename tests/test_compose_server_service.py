@@ -390,6 +390,22 @@ class ComposeServerServiceTests(unittest.TestCase):
             "server Dockerfile must contain a 'USER node' line",
         )
 
+    def test_server_collector_services_mount_and_env(self):
+        self.assertIn("server", self.services, "server service missing")
+        service = self.services["server"]
+        mount = "./config/collector_services.json:/app/config/collector_services.json:ro"
+        self.assertIn(
+            mount,
+            _volume_strings(service),
+            "server must mount config/collector_services.json read-only at /app/config/collector_services.json",
+        )
+        environment = service.get("environment") or {}
+        self.assertEqual(
+            str(environment.get("COLLECTOR_SERVICES_FILE")),
+            "/app/config/collector_services.json",
+            "server environment must point COLLECTOR_SERVICES_FILE at the mounted services file",
+        )
+
     def test_env_template_documents_ingest_token_variable(self):
         self.assertTrue(ENV_TEMPLATE_PATH.exists(), "env.template missing at repo root")
         text = ENV_TEMPLATE_PATH.read_text(encoding="utf-8")

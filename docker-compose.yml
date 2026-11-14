@@ -194,7 +194,10 @@ services:
       SECRETS_TOKEN_FILE: /run/app-keys/server_secrets_token     # container path of the server's bearer token for the ui internal secrets endpoint
       SECRETS_API_URL: http://ui:8080                            # ui service on the project network (port 8080)
       BROKER_RETURN_URL: ${BROKER_RETURN_URL:-http://127.0.0.1:5173/}   # where the Kite callback sends the browser after login; open the app at 127.0.0.1, not localhost
+      COLLECTOR_SERVICES_FILE: /app/config/collector_services.json       # container path of the collector services file read by GET /internal/due
     volumes:
+      # Read-only single-file mount of the collector services file (config/, no secrets). Read on every watchdog poll.
+      - ./config/collector_services.json:/app/config/collector_services.json:ro
       # Read-only single-file mount of the home-events ingest token. Do NOT mount the folder that holds app_master_key: only `ui` holds the master key.
       - ${APP_HOME_EVENTS_INGEST_TOKEN_FILE:?set APP_HOME_EVENTS_INGEST_TOKEN_FILE in .env to the host path of the home-events ingest token file}:/run/app-keys/home_events_ingest_token:ro
       # Read-only single-file mount of the server database role's password file named in .env (APP_SERVER_DB_PASSWORD_FILE).

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as loadDotenv } from "dotenv";
@@ -11,6 +12,7 @@ import { checkIngestToken } from "./homeEventsAuth.js";
 import { makeEventsTx } from "./eventsTx.js";
 import { makePortfolioTx } from "./portfolioTx.js";
 import { loadServerHost } from "./serverHost.js";
+import { parseServicesFile } from "./collectorDue.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // Repo-root .env. Existing process env vars win over file values.
@@ -28,7 +30,9 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 
 const pool = new Pool(loadPoolConfig());
-const serviceTokens = loadServiceTokens(process.env.SERVICE_TOKEN_DIR ?? "/run/service-tokens", ["home_events_ingest"]);
+const serviceTokens = loadServiceTokens(process.env.SERVICE_TOKEN_DIR ?? "/run/service-tokens", ["home_events_ingest", "collector_watchdog"]);
+// Collector services file, read on every /internal/due poll (not at startup).
+const collectorServicesFile = process.env.COLLECTOR_SERVICES_FILE ?? resolve(here, "../../config/collector_services.json");
 
 // App secrets and broker login calls go to the ui's internal API, authorised by a bearer token read from a file
 // on every fetch. The server holds no master key and never reads data/secrets.env.
@@ -54,6 +58,10 @@ const app = buildApp({
   portfolioTx: makePortfolioTx(pool),
   checkToken: (authorization, role) => checkIngestToken(authorization, role, serviceTokens),
   eventsTx: makeEventsTx(pool),
+  collectorDue: {
+    checkToken: (authorization, role) => checkIngestToken(authorization, role, serviceTokens),
+    loadServices: () => parseServicesFile(readFileSync(collectorServicesFile, "utf8")),
+  },
 });
 
 app.addHook("onClose", async () => {
