@@ -10,6 +10,9 @@ and its types are kept in step with the matching server module.
 - `collectorRefresh.ts`: `requestIndexEodRefresh`, `fetchIndexEodStatus`,
   `IndexEodRefreshResult`, `IndexEodStatus`, `CollectorRefreshError`. Routes:
   `POST /api/collector/index-eod/refresh` and its status route.
+- `events.ts`: `fetchEvents`, `buildEventsQueryString`, `EventsQuery`,
+  `EventsResponse`, `EventItem`, `EventsTier`, `EventsError`. Route:
+  `GET /api/events` (filings feed; the server default window is 7 days).
 - `filterOptions.ts`: `fetchFilterOptions`, `FilterOptions`,
   `FilterOptionsError`. Route: `GET /api/runs/:runId/filter-options`.
 - `broker.ts`: `fetchBrokerStatus`, `requestLoginUrl`, `syncPortfolio`,
