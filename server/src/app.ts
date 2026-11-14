@@ -66,6 +66,8 @@ export type CreateFeedFn = (options: {
 export interface LiveDeps {
   /** Upstox access token. When absent the live route streams nothing and reports "unconfigured". */
   accessToken?: string;
+  /** Preferred over accessToken: resolved once per live request. A rejection counts as unconfigured. */
+  getAccessToken?: () => Promise<string | undefined>;
   /** Feed factory. Tests inject a fake; production uses the Upstox WebSocket client. */
   createFeed?: CreateFeedFn;
 }
@@ -75,7 +77,7 @@ export interface KiteDeps {
   apiKey?: string;
   accessToken?: string;
   /** Preferred over apiKey/accessToken: called on every holdings request. */
-  credentials?: () => { apiKey?: string; accessToken?: string };
+  credentials?: () => { apiKey?: string; accessToken?: string } | Promise<{ apiKey?: string; accessToken?: string }>;
   /** Test seam. Production uses the global fetch. */
   fetch?: KiteFetch;
 }
@@ -312,7 +314,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // The Kite token is read on the server and never sent to the browser.
   app.get("/api/holdings", async (_request, reply) => {
     // Credentials are read per request, so a token saved in the UI works without a server restart.
-    const creds = deps.kite?.credentials?.() ?? { apiKey: deps.kite?.apiKey, accessToken: deps.kite?.accessToken };
+    const creds = (await deps.kite?.credentials?.()) ?? { apiKey: deps.kite?.apiKey, accessToken: deps.kite?.accessToken };
     const result = await fetchKiteHoldings({
       apiKey: creds.apiKey,
       accessToken: creds.accessToken,
@@ -338,9 +340,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     }
     const symbolByKey = new Map(names.map((name) => [INDEX_INSTRUMENT_KEYS[name] as string, name]));
     const createFeed = deps.live?.createFeed ?? defaultCreateFeed;
+    const accessToken = await resolveLiveToken(deps.live);
     streamLiveFeed(reply, (listeners) =>
       createFeed({
-        accessToken: deps.live?.accessToken,
+        accessToken,
         instrumentKeys: [...symbolByKey.keys()],
         mode: "full",
         listeners: {
@@ -391,9 +394,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       }
 
       const createFeed = deps.live?.createFeed ?? defaultCreateFeed;
+      const accessToken = await resolveLiveToken(deps.live);
       streamLiveFeed(reply, (listeners) =>
         createFeed({
-          accessToken: deps.live?.accessToken,
+          accessToken,
           instrumentKeys: [...symbolByKey.keys()],
           listeners: {
             onTick: (tick) => {
@@ -411,6 +415,18 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   );
 
   return app;
+}
+
+/** Token for one live request: getAccessToken wins when set; a rejection means unconfigured. */
+async function resolveLiveToken(live: LiveDeps | undefined): Promise<string | undefined> {
+  if (live?.getAccessToken) {
+    try {
+      return (await live.getAccessToken()) || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return live?.accessToken;
 }
 
 interface SseListeners {

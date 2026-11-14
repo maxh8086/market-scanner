@@ -4,7 +4,7 @@ import { config as loadDotenv } from "dotenv";
 import pg from "pg";
 import { buildApp } from "./app.js";
 import { loadPoolConfig } from "./config.js";
-import { readSecret } from "./secrets.js";
+import { createSecretsClient } from "./secretsClient.js";
 import { loadServiceTokens } from "./serviceTokens.js";
 import { checkIngestToken } from "./homeEventsAuth.js";
 import { makeEventsTx } from "./eventsTx.js";
@@ -28,12 +28,26 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 const pool = new Pool(loadPoolConfig());
 const serviceTokens = loadServiceTokens(process.env.SERVICE_TOKEN_DIR ?? "/run/service-tokens", ["home_events_ingest"]);
 
+// App secrets come from the ui's internal secrets API, authorised by a bearer token read from a file on
+// every fetch. The server holds no master key and never reads data/secrets.env.
+const secrets = createSecretsClient({
+  tokenFile: process.env.SECRETS_TOKEN_FILE ?? "/run/app-keys/server_secrets_token",
+  baseUrl: process.env.SECRETS_API_URL ?? "http://ui:8080",
+  warn: (m) => console.warn(m),
+});
+
 const app = buildApp({
   query: (sql, values) => pool.query(sql, values),
   logger: true,
-  live: { accessToken: process.env.UPSTOX_ACCESS_TOKEN || process.env.UPSTOX_ANALYTICS_ACCESS_TOKEN || undefined },
+  live: { getAccessToken: () => secrets.get("upstox_analytics_token") },
   kite: {
-    credentials: () => ({ apiKey: readSecret("KITE_API_KEY"), accessToken: readSecret("KITE_ACCESS_TOKEN") }),
+    credentials: async () => ({
+      apiKey: await secrets.get("kite_api_key"),
+      // The Kite access token is runtime-only (docs/designs/secrets-and-roles.md Decision 16): it is never
+      // fetched from the ui or shared with any service. The compose service does not set it, so holdings
+      // report unconfigured in the container.
+      accessToken: process.env.KITE_ACCESS_TOKEN?.trim() || undefined,
+    }),
   },
   checkToken: (authorization, role) => checkIngestToken(authorization, role, serviceTokens),
   eventsTx: makeEventsTx(pool),

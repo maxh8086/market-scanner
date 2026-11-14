@@ -159,6 +159,7 @@ services:
       APP_MASTER_KEY_FILE: /run/app-keys/app_master_key   # container path; the UI process holds the master key
       COLLECTOR_TOKEN_FILE: /run/service-tokens/collector_token
       LLM_CLIENT_TOKEN_FILE: /run/service-tokens/llm_client_token
+      SERVER_TOKEN_FILE: /run/service-tokens/server_token
     volumes:
       - ./data:/app/data
       # Host folder that holds the master key (set APP_MASTER_KEY_DIR in .env). Read-only, never baked into the image.
@@ -168,6 +169,8 @@ services:
       - ${APP_SERVICE_TOKEN_FILE:?set APP_SERVICE_TOKEN_FILE in .env to the host path of the collector token file}:/run/service-tokens/collector_token:ro
       # Read-only single-file mount of the llm-client service token named in .env (APP_LLM_CLIENT_TOKEN_FILE).
       - ${APP_LLM_CLIENT_TOKEN_FILE:?set APP_LLM_CLIENT_TOKEN_FILE in .env to the host path of the llm-client service token file}:/run/service-tokens/llm_client_token:ro
+      # Read-only single-file mount of the server service token named in .env (APP_SERVER_SECRETS_TOKEN_FILE).
+      - ${APP_SERVER_SECRETS_TOKEN_FILE:?set APP_SERVER_SECRETS_TOKEN_FILE in .env to the host path of the server secrets token file}:/run/service-tokens/server_token:ro
     ports:
       - "127.0.0.1:8080:8080"            # loopback only: the UI has no login
     networks:
@@ -177,7 +180,7 @@ services:
 
   server:                # Fastify API: home-events ingest, /internal/* and /api/*; reached at http://server:8081
     build: {context: ., dockerfile: docker/server/Dockerfile}
-    # No env_file and no ./data mount: database logins and tokens come from files under /run/app-keys, not .env or data/secrets.env.
+    # No env_file and no ./data mount: database logins and tokens (ingest token, server secrets token) come from files under /run/app-keys, not .env or data/secrets.env.
     # Database login: dedicated role market_scanner_server (migration 057, created without a password; the user sets it out of band). Its password comes from the mounted file, read by server/src/config.ts.
     environment:
       <<: *scanner-db-env
@@ -187,11 +190,15 @@ services:
       POSTGRES_USER: market_scanner_server
       POSTGRES_DB: ${POSTGRES_DB:-market_scanner}
       POSTGRES_PASSWORD_FILE: /run/app-keys/server_db_password   # container path of the server role's password file
+      SECRETS_TOKEN_FILE: /run/app-keys/server_secrets_token     # container path of the server's bearer token for the ui internal secrets endpoint
+      SECRETS_API_URL: http://ui:8080                            # ui service on the project network (port 8080)
     volumes:
       # Read-only single-file mount of the home-events ingest token. Do NOT mount the folder that holds app_master_key: only `ui` holds the master key.
       - ${APP_HOME_EVENTS_INGEST_TOKEN_FILE:?set APP_HOME_EVENTS_INGEST_TOKEN_FILE in .env to the host path of the home-events ingest token file}:/run/app-keys/home_events_ingest_token:ro
       # Read-only single-file mount of the server database role's password file named in .env (APP_SERVER_DB_PASSWORD_FILE).
       - ${APP_SERVER_DB_PASSWORD_FILE:?set APP_SERVER_DB_PASSWORD_FILE in .env to the host path of the server database password file}:/run/app-keys/server_db_password:ro
+      # Read-only single-file mount of the server's bearer token for the ui secrets endpoint (APP_SERVER_SECRETS_TOKEN_FILE).
+      - ${APP_SERVER_SECRETS_TOKEN_FILE:?set APP_SERVER_SECRETS_TOKEN_FILE in .env to the host path of the server secrets token file}:/run/app-keys/server_secrets_token:ro
     ports:
       - "127.0.0.1:${SERVER_PORT:-8081}:8081"   # loopback only on the host
     networks:

@@ -189,6 +189,120 @@ describe("GET /api/live/indices stream", () => {
   });
 });
 
+describe("live access token from getAccessToken", () => {
+  function tokenRecorder() {
+    const seen: Array<string | undefined> = [];
+    let stopped = false;
+    const createFeed: CreateFeedFn = ({ accessToken }) => {
+      seen.push(accessToken);
+      const feed: LiveFeed = {
+        start: () => {},
+        stop: () => {
+          stopped = true;
+        },
+        status: () => "connecting",
+      };
+      return feed;
+    };
+    return { createFeed, seen, wasStopped: () => stopped };
+  }
+
+  it("passes the resolved token, not the static one, to createFeed on /api/live/indices", async () => {
+    const rec = tokenRecorder();
+    const app = buildApp({
+      query: queuedQuery([]).query,
+      live: { accessToken: "static-token", getAccessToken: async () => "resolved-token", createFeed: rec.createFeed },
+    });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = app.server.address() as AddressInfo;
+
+    const controller = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${port}/api/live/indices`, {
+      signal: controller.signal,
+      headers: { cookie: (await browserSession(app)).cookie },
+    });
+    expect(res.status).toBe(200);
+    expect(rec.seen).toEqual(["resolved-token"]);
+
+    controller.abort();
+    await waitUntil(() => rec.wasStopped());
+    await app.close();
+  });
+
+  it("passes the resolved token to createFeed on /api/live/ticks", async () => {
+    const { query } = queuedQuery([[{ run_id: RUN_ID }], [{ symbol: "TCS", isin: "INE467B01029" }]]);
+    const rec = tokenRecorder();
+    const app = buildApp({
+      query,
+      live: { getAccessToken: async () => "resolved-token", createFeed: rec.createFeed },
+    });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = app.server.address() as AddressInfo;
+
+    const controller = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${port}/api/live/ticks?runId=${RUN_ID}&symbols=tcs`, {
+      signal: controller.signal,
+      headers: { cookie: (await browserSession(app)).cookie },
+    });
+    expect(res.status).toBe(200);
+    expect(rec.seen).toEqual(["resolved-token"]);
+
+    controller.abort();
+    await waitUntil(() => rec.wasStopped());
+    await app.close();
+  });
+
+  it("falls back to the unconfigured path (undefined token) when getAccessToken rejects", async () => {
+    const rec = tokenRecorder();
+    const app = buildApp({
+      query: queuedQuery([]).query,
+      live: {
+        accessToken: "static-token",
+        getAccessToken: async () => {
+          throw new Error("secrets unavailable");
+        },
+        createFeed: rec.createFeed,
+      },
+    });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = app.server.address() as AddressInfo;
+
+    const controller = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${port}/api/live/indices`, {
+      signal: controller.signal,
+      headers: { cookie: (await browserSession(app)).cookie },
+    });
+    expect(res.status).toBe(200);
+    expect(rec.seen).toEqual([undefined]);
+
+    controller.abort();
+    await waitUntil(() => rec.wasStopped());
+    await app.close();
+  });
+
+  it("passes undefined when getAccessToken resolves to nothing", async () => {
+    const rec = tokenRecorder();
+    const app = buildApp({
+      query: queuedQuery([]).query,
+      live: { getAccessToken: async () => undefined, createFeed: rec.createFeed },
+    });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = app.server.address() as AddressInfo;
+
+    const controller = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${port}/api/live/indices`, {
+      signal: controller.signal,
+      headers: { cookie: (await browserSession(app)).cookie },
+    });
+    expect(res.status).toBe(200);
+    expect(rec.seen).toEqual([undefined]);
+
+    controller.abort();
+    await waitUntil(() => rec.wasStopped());
+    await app.close();
+  });
+});
+
 describe("GET /api/live/ticks stream", () => {
   it("streams status and tick events for resolved symbols, then stops the feed on disconnect", async () => {
     const { query, calls } = queuedQuery([[{ run_id: RUN_ID }], [{ symbol: "TCS", isin: "INE467B01029" }]]);

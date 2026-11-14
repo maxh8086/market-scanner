@@ -1,18 +1,23 @@
-"""Internal endpoints for other services on the project network (secrets S5, LC2).
+"""Internal endpoints for other services on the project network (secrets S5, LC2, S6).
 
 GET /internal/secrets/{name} returns one app secret to a service that holds its own
 bearer token. GET /internal/llm/providers/{provider_id} returns one llm_provider row to
 the llm-client service (never key material). Rules, in order:
 
-1. The collector token file (COLLECTOR_TOKEN_FILE) and the llm-client token file
-   (LLM_CLIENT_TOKEN_FILE) are read on every request. Each token is matched on its own.
+1. The three token files are read on every request: the collector token file
+   (COLLECTOR_TOKEN_FILE), the llm-client token file (LLM_CLIENT_TOKEN_FILE) and the
+   server token file (SERVER_TOKEN_FILE). Each token is matched on its own.
    If no token matches and the collector token file is missing, unreadable or empty -> 503.
-2. Authorization must be "Bearer <token>" and match one of the token files (constant-time)
-   -> else 401. The matching token names the service: collector or llm_client.
+2. Authorization must be "Bearer <token>" and match one of the token files (constant-time,
+   compared in the order collector, llm_client, server) -> else 401. The matching token
+   names the service: collector, llm_client or server.
 3. Each endpoint has its own allowlist:
-   - secrets: collector may read upstox_analytics_token; llm_client may read names that
+   - secrets: collector may read upstox_analytics_token; server may read
+     upstox_analytics_token and kite_api_key; llm_client may read names that
      match ^llm_key_[a-z][a-z0-9_]{0,40}$. Any other name -> 403.
    - llm providers: llm_client only. Any other service -> 403.
+   kite_access_token is runtime-only and never served to any service (Decision 16 in
+   docs/designs/secrets-and-roles.md). kite_api_secret is never served either.
 4. Secrets are decrypted here, with the master key, and returned with Cache-Control:
    no-store. Secret not stored -> 404. Provider row not found -> 404.
 
@@ -38,7 +43,11 @@ router = APIRouter()
 
 DEFAULT_TOKEN_FILE = "/run/app-keys/collector_token"
 DEFAULT_LLM_TOKEN_FILE = "/run/app-keys/llm_client_token"
-SERVICE_ALLOWED = {"collector": {"upstox_analytics_token"}}
+DEFAULT_SERVER_TOKEN_FILE = "/run/service-tokens/server_token"
+SERVICE_ALLOWED = {
+    "collector": {"upstox_analytics_token"},
+    "server": {"upstox_analytics_token", "kite_api_key"},
+}
 LLM_KEY_NAME = re.compile(r"llm_key_[a-z][a-z0-9_]{0,40}")
 PROVIDER_FIELDS = ("provider_id", "class", "origin", "approved", "key_ref", "key_version")
 _LOG_UNSAFE = re.compile(r"[^A-Za-z0-9_.:-]")
@@ -71,6 +80,7 @@ def _authenticate(label: str, authorization: str | None) -> str:
     """
     collector = _read_token("COLLECTOR_TOKEN_FILE", DEFAULT_TOKEN_FILE)
     llm = _read_token("LLM_CLIENT_TOKEN_FILE", DEFAULT_LLM_TOKEN_FILE)
+    server = _read_token("SERVER_TOKEN_FILE", DEFAULT_SERVER_TOKEN_FILE)
     scheme, _, presented = (authorization or "").partition(" ")
     presented = presented.strip()
     if scheme == "Bearer" and presented:
@@ -79,6 +89,8 @@ def _authenticate(label: str, authorization: str | None) -> str:
             return "collector"
         if llm and hmac.compare_digest(raw, llm.encode("utf-8")):
             return "llm_client"
+        if server and hmac.compare_digest(raw, server.encode("utf-8")):
+            return "server"
 
     if not collector:
         log.warning("%s: status 503 (service token unavailable)", label)

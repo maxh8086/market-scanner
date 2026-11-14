@@ -62,7 +62,9 @@ class InternalSecretsEndpoint(unittest.TestCase):
         self.get_value = self._patch("ui.app.internal_secrets.app_secrets.get_value",
                                      return_value="VALUE-XYZ")
         self.db_connect = self._patch("scanner.pg.db.connect")
-        env = patch.dict(os.environ, {"COLLECTOR_TOKEN_FILE": self.token_file})
+        absent = os.path.join(tmp.name, "server_token_absent")
+        env = patch.dict(os.environ, {"COLLECTOR_TOKEN_FILE": self.token_file,
+                                      "SERVER_TOKEN_FILE": absent})
         env.start()
         self.addCleanup(env.stop)
 
@@ -193,6 +195,105 @@ class InternalSecretsEndpoint(unittest.TestCase):
             resp = self._get("llm_key_openai", token=token)
         self.assertTrue(200 <= resp.status_code < 300,
                         f"expected 2xx for llm_key_openai with collector file missing, got {resp.status_code}")
+
+    # server service token (S6-b). Allowed names: upstox_analytics_token and kite_api_key only.
+    SERVER_TOKEN = "tok-server-789"
+    SERVER_TOKEN_ENV = "SERVER_TOKEN_FILE"
+
+    def _use_server_token(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = os.path.join(tmp.name, "server_token")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(self.SERVER_TOKEN)
+        env = patch.dict(os.environ, {self.SERVER_TOKEN_ENV: path})
+        env.start()
+        self.addCleanup(env.stop)
+        return self.SERVER_TOKEN
+
+    def _assert_value_no_store(self, resp, name):
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"name": name, "value": "VALUE-XYZ"})
+        self.assertIn("no-store", resp.headers.get("Cache-Control", "").lower())
+
+    def test_server_token_reads_upstox_analytics_token(self):
+        token = self._use_server_token()
+        self._assert_value_no_store(self._get("upstox_analytics_token", token=token),
+                                    "upstox_analytics_token")
+
+    def test_server_token_reads_kite_api_key(self):
+        token = self._use_server_token()
+        self._assert_value_no_store(self._get("kite_api_key", token=token), "kite_api_key")
+
+    def test_server_token_refused_for_kite_tokens_llm_keys_and_unknown_names(self):
+        token = self._use_server_token()
+        for name in ("kite_access_token", "kite_api_secret", "llm_key_openai", "unknown_name"):
+            with self.subTest(name=name):
+                self.get_value.reset_mock()
+                resp = self._get(name, token=token)
+                self.assertEqual(resp.status_code, 403)
+                self.get_value.assert_not_called()
+
+    def test_collector_and_llm_tokens_refused_for_kite_names(self):
+        llm_token = self._use_llm_client_token()
+        for token in (self.TOKEN, llm_token):
+            for name in ("kite_api_key", "kite_access_token"):
+                with self.subTest(token=token, name=name):
+                    self.get_value.reset_mock()
+                    resp = self._get(name, token=token)
+                    self.assertEqual(resp.status_code, 403)
+                    self.get_value.assert_not_called()
+
+    def test_wrong_or_missing_bearer_is_401_with_server_token_file_configured(self):
+        self._use_server_token()
+        for token in ("tok-matches-none", None):
+            with self.subTest(token=token):
+                self.get_value.reset_mock()
+                resp = self._get("upstox_analytics_token", token=token)
+                self.assertEqual(resp.status_code, 401)
+                self.get_value.assert_not_called()
+
+    def test_server_token_reads_when_collector_file_missing(self):
+        token = self._use_server_token()
+        missing = os.path.join(os.path.dirname(self.token_file), "does-not-exist")
+        with patch.dict(os.environ, {"COLLECTOR_TOKEN_FILE": missing}):
+            resp = self._get("kite_api_key", token=token)
+        self._assert_value_no_store(resp, "kite_api_key")
+
+    def test_missing_server_token_file_does_not_break_collector_auth(self):
+        # setUp points SERVER_TOKEN_FILE at a path that does not exist.
+        resp = self._get("upstox_analytics_token")
+        self._assert_value_no_store(resp, "upstox_analytics_token")
+
+    def test_missing_collector_and_server_files_is_503(self):
+        missing = os.path.join(os.path.dirname(self.token_file), "does-not-exist")
+        with patch.dict(os.environ, {"COLLECTOR_TOKEN_FILE": missing}):
+            resp = self._get("kite_api_key", token=self.SERVER_TOKEN)
+        self.assertEqual(resp.status_code, 503)
+        self.get_value.assert_not_called()
+
+    def test_server_token_refused_on_llm_provider_endpoint(self):
+        token = self._use_server_token()
+        resp = self._client().get("/internal/llm/providers/openai",
+                                  headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(resp.status_code, 403)
+        self.db_connect.assert_not_called()
+
+    def test_server_token_and_secret_value_never_reach_logs(self):
+        token = self._use_server_token()
+        handler = _CollectHandler()
+        root = logging.getLogger()
+        old_level = root.level
+        root.addHandler(handler)
+        root.setLevel(logging.DEBUG)
+        self.addCleanup(root.removeHandler, handler)
+        self.addCleanup(root.setLevel, old_level)
+
+        resp = self._get("upstox_analytics_token", token=token)
+        self.assertEqual(resp.status_code, 200)
+        joined = "\n".join(handler.lines)
+        self.assertNotIn("VALUE-XYZ", joined)
+        self.assertNotIn(self.SERVER_TOKEN, joined)
 
 
 # ---------------------------------------------------------------------------
@@ -401,16 +502,30 @@ class ServiceTokenCli(unittest.TestCase):
         with open(existing, encoding="utf-8") as f:
             self.assertEqual(f.read(), "old-token\n")
 
-    def test_only_collector_name_is_accepted(self):
-        # Success with the valid name first, so this test fails on the name rule and not on a missing command.
-        ok_path = os.path.join(self.dir, "ok_token")
-        rc_ok, _ = self._main(["service-token", "collector", "--out", ok_path])
-        self.assertEqual(rc_ok, 0)
+    def test_server_name_writes_file_and_prints_only_path(self):
+        path = os.path.join(self.dir, "server_token")
+        rc, out = self._main(["service-token", "server", "--out", path])
+        self.assertEqual(rc, 0)
+        with open(path, encoding="utf-8") as f:
+            token = f.read().strip()
+        self.assertRegex(token, self.TOKEN_SHAPE)
+        self.assertIn("written", out)
+        self.assertIn(path, out)
+        self.assertNotIn(token, out)
 
-        path = os.path.join(self.dir, "other_token")
-        rc, _ = self._main(["service-token", "kite", "--out", path])
-        self.assertNotEqual(rc, 0)
-        self.assertFalse(os.path.exists(path))
+    def test_only_collector_and_server_names_are_accepted(self):
+        for name in ("collector", "server"):
+            with self.subTest(name=name):
+                path = os.path.join(self.dir, f"{name}_ok_token")
+                rc, _ = self._main(["service-token", name, "--out", path])
+                self.assertEqual(rc, 0)
+                self.assertTrue(os.path.exists(path))
+        for name in ("kite", "llm_client", "ui", "Server"):
+            with self.subTest(name=name):
+                path = os.path.join(self.dir, f"other_{name}_token")
+                rc, _ = self._main(["service-token", name, "--out", path])
+                self.assertNotEqual(rc, 0)
+                self.assertFalse(os.path.exists(path))
 
 
 if __name__ == "__main__":
