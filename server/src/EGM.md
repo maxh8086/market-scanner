@@ -33,6 +33,10 @@ testable without a database.
   `buildDueQueries`, `mapDueRows`, `parseServicesFile`, `isConnectionError`.
 - `collectorDueRoute.ts`: `registerCollectorDueRoute` (GET `/internal/due`,
   role `collector_watchdog`; returns `getLastDuePollAt`).
+- `collectorFinishRoute.ts`: `registerCollectorFinishRoute` (POST
+  `/internal/due/finish`, role `collector_watchdog`; body `{source}`; marks the
+  newest running `collector_runs` row of that source failed with `killed`),
+  `readFinishSource`, `FINISH_KILLED_SQL`. It does not touch the poll time.
 - `filterOptions.ts`: `buildFilterOptionsQuery`, `shapeFilterOptions`.
 - `homeEventsBatch.ts`: `validateBatch`, `buildInsert`.
 - `indexEod.ts`: `buildIndexEodQuery`, `shapeIndexEod`.
