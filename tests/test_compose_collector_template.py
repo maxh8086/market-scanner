@@ -194,5 +194,89 @@ class ComposeCollectorTemplateTests(unittest.TestCase):
                 self.assertEqual(service.get("restart"), "no", f"{service_name} must use restart: \"no\"")
 
 
+HOME_SERVICE = "collector-home-filings"
+INGEST_TOKEN_TARGET = "/run/app-keys/home_events_ingest_token"
+RUN_KEYS_FOLDER = "/run/app-keys"
+MASTER_KEY_DIR_VAR = "APP_MASTER_KEY_DIR"
+
+
+class HomeFilingsCollectorServiceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.compose = _load_compose()
+        cls.services = cls.compose.get("services") or {}
+
+    def _service(self):
+        self.assertIn(HOME_SERVICE, self.services, f"docker-compose.yml must define {HOME_SERVICE}")
+        service = self.services[HOME_SERVICE]
+        self.assertIsInstance(service, dict, f"{HOME_SERVICE} must be a mapping")
+        return service
+
+    def test_template_sets_collector_api_base_url(self):
+        template = self.compose["x-collector-run-once"]
+        environment = template.get("environment") or {}
+        self.assertIn("COLLECTOR_API_BASE_URL", environment, "template must set COLLECTOR_API_BASE_URL")
+        value = str(environment["COLLECTOR_API_BASE_URL"])
+        self.assertIn("EVENTS_API_BASE_URL", value, "COLLECTOR_API_BASE_URL must reference EVENTS_API_BASE_URL")
+        self.assertIn("http://server:8081", value, "COLLECTOR_API_BASE_URL must default to http://server:8081")
+
+    def test_service_is_run_once_collector(self):
+        service = self._service()
+        self.assertIn("collectors", service.get("profiles") or [], "must have profile collectors")
+        self.assertEqual(service.get("restart"), "no", 'must use restart: "no"')
+        self.assertEqual(service.get("entrypoint"), ["python", "collect.py", "run-once"])
+        self.assertEqual(service.get("command"), ["--source", "home_filings"])
+        self.assertNotIn("container_name", service, "must not set container_name")
+        self.assertFalse(service.get("ports"), "must not publish ports")
+        self.assertEqual(_service_networks(service), {"default"}, "must join the default network only")
+
+    def test_service_has_no_mongo_or_neo4j_env(self):
+        environment = self._service().get("environment") or {}
+        for key in MONGO_ENV_KEYS:
+            with self.subTest(key=key):
+                self.assertNotIn(key, environment, f"{HOME_SERVICE} must not define {key}")
+
+    def test_service_mounts_tokens_readonly_without_key_folder(self):
+        triples = _volume_triples(self._service())
+        targets = {target: (host, mode) for host, target, mode in triples}
+
+        collector = targets.get(COLLECTOR_TOKEN_TARGET)
+        self.assertIsNotNone(collector, f"must mount {COLLECTOR_TOKEN_TARGET}")
+        self.assertEqual(collector[1], "ro", "collector token mount must be read-only")
+
+        ingest = targets.get(INGEST_TOKEN_TARGET)
+        self.assertIsNotNone(ingest, f"must mount {INGEST_TOKEN_TARGET}")
+        self.assertEqual(ingest[1], "ro", "ingest token mount must be read-only")
+        self.assertTrue(
+            ingest[0].startswith("${APP_HOME_EVENTS_INGEST_TOKEN_FILE:?"),
+            f"ingest token host path must be ${{APP_HOME_EVENTS_INGEST_TOKEN_FILE:?...}}; got {ingest[0]!r}",
+        )
+
+        self.assertNotIn(RUN_KEYS_FOLDER, targets, f"must not mount {RUN_KEYS_FOLDER} as a folder")
+        for host, target, _mode in triples:
+            with self.subTest(target=target):
+                self.assertNotIn(MASTER_KEY_DIR_VAR, host, "must not mount the folder that holds app_master_key")
+                self.assertNotIn("app_master_key", host, "must not mount a path naming app_master_key")
+
+    def test_services_file_maps_home_filings(self):
+        data = json.loads(COLLECTOR_SERVICES_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(
+            (data.get("sources") or {}).get("home_filings"),
+            {"service": HOME_SERVICE, "host": "nse"},
+        )
+        self.assertIn(HOME_SERVICE, self.services)
+
+    def test_source_in_command_is_registered(self):
+        from scanner.collect.sources import SOURCES
+
+        command = self._service().get("command") or []
+        self.assertIn("home_filings", command)
+        self.assertIn("home_filings", SOURCES, "the command source must be registered in scanner.collect.sources.SOURCES")
+
+    def test_runtime_limit_is_330(self):
+        runtime = json.loads((REPO_ROOT / "config" / "collector_runtime.json").read_text(encoding="utf-8"))
+        self.assertEqual((runtime.get("sources") or {}).get("home_filings"), 330)
+
+
 if __name__ == "__main__":
     unittest.main()
