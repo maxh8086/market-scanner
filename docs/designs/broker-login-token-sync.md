@@ -1,6 +1,6 @@
 # Broker login and token sync from the UI (Kite first, then Upstox)
 
-Status: DRAFT v2, unreviewed (no review subagents were run). Open questions answered by the user 2026-11-14; needs user approval of this version before any task is dispatched.
+Status: DRAFT v3, unreviewed (no review subagents were run). Open questions answered by the user 2026-11-14 (including per-profile and per-broker connections); needs user approval of this version before any task is dispatched.
 Depends on: PR 126 (S3b, the `server` identity on the ui secrets endpoint). Cut the implementation branch after that merges, or stack on it.
 Supersedes: Decision 16 in `docs/designs/secrets-and-roles.md` (see Decision 17 below).
 
@@ -77,7 +77,32 @@ This keeps the rule intact (no browser call to FastAPI or to a provider API), ke
 - `state` stops a forged callback from planting an attacker's token; the exchange accepts nothing without a valid unused `state`. The callback is the only browser-reachable path that causes a token write, and it can only write the token for that broker.
 - Tests assert: expired token is not served; `collector` and `llm_client` get 403 for broker access tokens; no token or api secret in logs or in any response to the browser; a failed sync keeps the previous snapshot; a replayed or expired `state` is rejected.
 
+## Scope of connections: per profile and per broker (user decision, 2026-11-14)
+
+A user may hold accounts at one or many brokers, and there may be several profiles. So a broker connection is keyed by `(profile_id, broker)`:
+
+- The access token, and also the api key and api secret for that broker app, are stored per `(profile_id, broker)` in `app_secret` under names of the form `broker.<profile_id>.<broker>.access_token`, `.api_key`, `.api_secret` (exact scheme to be checked against the `app_secret` schema in `db/migrations/045_app_secret.sql` in review). Reason for per-profile api credentials: a Kite Connect personal app only lets its owner's account log in (to be verified against Zerodha's current plan terms), so a second person needs their own app and key.
+- The server allowlist becomes a prefix rule: `server` may read `broker.<profile_id>.<broker>.access_token` and `.api_key`, never `.api_secret`. The existing global names (`kite_api_key`, `upstox_analytics_token`) stay for the analytics and live-feed use and for the `default` profile until migrated.
+- The `state` value, the callback and the status call carry `profile_id`; the stored `portfolio_*` rows already do.
+- Phase 1 still ships with one `default` profile, but with the per-profile names so no rename is needed later.
+
+## Upstox: same app or its own? (checked against Upstox docs, 2026-11-14)
+
+Facts from the Upstox developer docs:
+
+- Holdings endpoint: `GET https://api.upstox.com/v2/portfolio/long-term-holdings`, `Authorization: Bearer <token>`. Response items include `isin`, `trading_symbol`, `exchange`, `instrument_token`, `quantity`, `average_price`, `last_price`, `close_price`, `pnl`, `day_change`, `product`. The page does not name which token types it accepts.
+- Login: `https://api.upstox.com/v2/login/authorization/dialog` (`response_type=code`, `client_id`, `redirect_uri`, `state`); token exchange by server-to-server POST to `https://api.upstox.com/v2/login/authorization/token` with `code`, `client_id`, `client_secret`, `redirect_uri`, `grant_type=authorization_code`. The code is single-use. The redirect URI must exactly match the one registered on the app. The docs do not say whether `127.0.0.1` is allowed or whether an app can register more than one redirect URI. Standard access tokens expire at about 03:30 IST daily (secondary sources).
+- Analytics token: read-only, valid one year, one active per account. Since 2026-06-06 it also works for account-specific GET APIs, including Portfolio (holdings), but only with Static IP enabled on the account. Market-data GETs need no static IP. The docs do not say whether the standard OAuth token needs static IP for Portfolio.
+- An Extended token (one-year, read-only, includes Get Holdings) exists but secondary sources say it is available on request for business integrations.
+
+Recommendation:
+
+1. Use the same Upstox app (same `client_id` and secret) for holdings as for the rest of the user's Upstox access, and use the OAuth login flow above. It is the only route that works for another user's account, and it fits the per-profile model: each profile logs in and gets its own daily token. Do not use the Analytics Token for holdings: it belongs to one account, needs a static IP, and would only ever return that account's holdings.
+2. Register the server callback `http://127.0.0.1:8081/api/broker/upstox/callback` as the redirect URI on that app. Because the docs don't confirm `127.0.0.1` or multiple redirect URIs, make this the first task of phase 2: register it in the Upstox console and run one test login by hand. If Upstox rejects it, fall back to a `localhost` URL, or to a single public HTTPS redirect that forwards to the server.
+3. Keep the existing analytics token for the live feed and market data (no static IP needed for those). Holdings use the profile's own OAuth token, so a daily-expiring token never affects live prices.
+4. First check in phase 2: whether the OAuth token also needs a whitelisted static IP for Portfolio. If it does, a home connection without a fixed IP cannot sync Upstox holdings, and the design falls back to manual CSV import for Upstox.
+
 ## Open questions
 
-1. Profile scope: one `default` profile now. Should broker tokens also become per-profile later, or stay one app-level connection per broker? (Affects only the future multi-user work; not needed for phase 1.)
-2. Is the Upstox holdings endpoint covered by the same API key and app as the analytics token, or does it need its own registered Upstox app (and its own redirect URL)? To check against Upstox's docs at the start of phase 2.
+1. Does the Upstox OAuth token need Static IP for Portfolio, and does the console accept `127.0.0.1` as a redirect URI? Both answered only by trying a login against the real console (phase 2, first task).
+2. Is a Kite Connect personal app limited to the owner's account? Check Zerodha's current terms before promising multi-user Kite.
