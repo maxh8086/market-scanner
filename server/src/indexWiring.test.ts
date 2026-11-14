@@ -4,6 +4,18 @@ import { describe, expect, it } from "vitest";
 // index.ts starts the server and opens the database pool when imported, so its wiring is checked as source text.
 const indexSource = readFileSync(new URL("./index.ts", import.meta.url), "utf-8");
 
+describe("index.ts events pool wiring", () => {
+  it("passes the events pool, not the main pool, to the events transaction", () => {
+    expect(indexSource).toContain("makeEventsTx(eventsPool)");
+    expect(indexSource).not.toContain("makeEventsTx(pool)");
+  });
+
+  it("builds the events pool from eventsPoolConfig and pings it for /api/health", () => {
+    expect(indexSource).toContain("new Pool(eventsPoolConfig())");
+    expect(indexSource).toContain('eventsPing: () => eventsPool.query("SELECT 1")');
+  });
+});
+
 describe("index.ts secrets wiring", () => {
   it("never asks the secrets API for the Kite access token", () => {
     expect(indexSource).not.toContain('secrets.get("kite_access_token")');
