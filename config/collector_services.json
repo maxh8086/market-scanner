@@ -1,3 +1,5 @@
 {
-  "sources": {}
+  "sources": {
+    "home_filings": {"service": "collector-home-filings", "host": "nse"}
+  }
 }

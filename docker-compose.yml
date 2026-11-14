@@ -57,6 +57,8 @@ x-collector-run-once: &collector-run-once
     SECRETS_API_URL: http://ui:8080
     SERVICE_TOKEN_FILE: /run/app-keys/collector_token
     EVENTS_API_BASE_URL: ${EVENTS_API_BASE_URL:-http://server:8081}
+    # collect.api_base_url() reads COLLECTOR_API_BASE_URL, not EVENTS_API_BASE_URL; without it a run-once container would call 127.0.0.1 inside itself.
+    COLLECTOR_API_BASE_URL: ${EVENTS_API_BASE_URL:-http://server:8081}
   volumes:
     - ./data:/app/data
     - ./logs:/app/logs
@@ -187,6 +189,18 @@ services:
       - ./config:/app/config:ro
       - ${APP_SERVICE_TOKEN_FILE:?set APP_SERVICE_TOKEN_FILE in .env to the host path of the collector token file}:/run/app-keys/collector_token:ro
     restart: always
+
+  # Run-once home_filings collector (F-T9). Started by the host watchdog, never by `up`: profile collectors.
+  collector-home-filings:
+    <<: *collector-run-once
+    command: ["--source", "home_filings"]
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+      - ${APP_SERVICE_TOKEN_FILE:?set APP_SERVICE_TOKEN_FILE in .env to the host path of the collector token file}:/run/app-keys/collector_token:ro
+      # Read-only single-file mount of the home-events ingest token (HOME_EVENTS_INGEST_TOKEN_FILE default path).
+      - ${APP_HOME_EVENTS_INGEST_TOKEN_FILE:?set APP_HOME_EVENTS_INGEST_TOKEN_FILE in .env to the host path of the home-events ingest token file}:/run/app-keys/home_events_ingest_token:ro
 
   ui:                    # runs, cost metrics and stock dashboards on http://127.0.0.1:8080
     build: {context: ., dockerfile: docker/ui/Dockerfile}

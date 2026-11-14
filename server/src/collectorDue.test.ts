@@ -218,6 +218,12 @@ describe("row mapping and services parsing", () => {
     expect(() => parseServicesFile("not json")).toThrow();
   });
 
+  it("parses the real config/collector_services.json and maps home_filings", () => {
+    const text = readFileSync(fileURLToPath(new URL("../../config/collector_services.json", import.meta.url)), "utf8");
+    const services = parseServicesFile(text);
+    expect(services.sources.home_filings).toEqual({ service: "collector-home-filings", host: "nse" });
+  });
+
   it("recognises connection-class errors only", () => {
     expect(isConnectionError(Object.assign(new Error("x"), { code: "08006" }))).toBe(true);
     expect(isConnectionError(Object.assign(new Error("x"), { code: "ETIMEDOUT" }))).toBe(true);
