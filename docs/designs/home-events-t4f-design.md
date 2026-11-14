@@ -240,7 +240,7 @@ Quoted answers are in section 5.1.
 - R1. ISIN in both sources: the NSE symbol and name are used. Upstox is used only where NSE has no row for that ISIN.
 - R2. Symbol level: an NSE symbol and its ISIN are never removed by an Upstox row, even when the same symbol maps to a different ISIN in Upstox.
 - R3. Name level: name lookup reads nse_csv only (D3), so an Upstox row cannot make an NSE name ambiguous.
-- Tests (MT2) (planned names; not yet written): test_upstox_row_with_same_isin_loses_to_nse; test_upstox_only_collision_keeps_nse_row; test_symbol_shared_across_sources_keeps_nse_pair; test_name_lookup_ignores_upstox.
+- Tests (MT2) (written in tests/test_company_reference.py): test_upstox_row_with_same_isin_loses_to_nse; test_upstox_only_collision_keeps_nse_row; test_symbol_shared_across_sources_keeps_nse_pair; test_name_lookup_ignores_upstox.
 - No run-time result changes until filings T9 (B-09).
 
 ### 4.4 Index membership (MT1, MT4)
