@@ -8,6 +8,7 @@ import { readSecret } from "./secrets.js";
 import { loadServiceTokens } from "./serviceTokens.js";
 import { checkIngestToken } from "./homeEventsAuth.js";
 import { makeEventsTx } from "./eventsTx.js";
+import { loadServerHost } from "./serverHost.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // Repo-root .env. Existing process env vars win over file values.
@@ -42,5 +43,5 @@ app.addHook("onClose", async () => {
   await pool.end();
 });
 
-// Loopback only. Never bind 0.0.0.0.
-await app.listen({ host: "127.0.0.1", port });
+// Loopback by default. In the container SERVER_HOST=0.0.0.0; compose publishes the port on the host's 127.0.0.1 only.
+await app.listen({ host: loadServerHost(), port });

@@ -1,7 +1,7 @@
 # One image per component. Everything here is a one-shot job except `laya`:
 #   docker compose run --rm scanner --symbols INFY,TCS
 # start.ps1 drives the whole sequence; stop.ps1 tears it down.
-# `ui` and `collector` are the two long-running services; everything else is a one-shot job.
+# `ui`, `collector` and `server` (Fastify API) are the long-running services; everything else is a one-shot job.
 #
 # The databases (Postgres, MongoDB, Neo4j) are this project's own services (scanner-postgres,
 # scanner-mongo, scanner-neo4j) on the project's `market-scanner` network. The LLM server is
@@ -174,6 +174,30 @@ services:
       - default
       - llm
     restart: always
+
+  server:                # Fastify API: home-events ingest, /internal/* and /api/*; reached at http://server:8081
+    build: {context: ., dockerfile: docker/server/Dockerfile}
+    # No env_file and no ./data mount: database logins and tokens come from files under /run/app-keys, not .env or data/secrets.env.
+    # Only host and port of the database are set here. The database login is NOT wired yet (open decision, docs/designs/t4f-mvp-plan.md).
+    environment:
+      <<: *scanner-db-env
+      SERVER_HOST: 0.0.0.0                # listen on all container interfaces; the host publish below is loopback only
+      SERVER_PORT: "8081"
+      SERVICE_TOKEN_DIR: /run/app-keys    # server/src/index.ts reads <dir>/home_events_ingest_token
+    volumes:
+      # Read-only single-file mount of the home-events ingest token. Do NOT mount the folder that holds app_master_key: only `ui` holds the master key.
+      - ${APP_HOME_EVENTS_INGEST_TOKEN_FILE:?set APP_HOME_EVENTS_INGEST_TOKEN_FILE in .env to the host path of the home-events ingest token file}:/run/app-keys/home_events_ingest_token:ro
+    ports:
+      - "127.0.0.1:${SERVER_PORT:-8081}:8081"   # loopback only on the host
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8081/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
 
   llm-client:            # LLM client service; no host ports, reachable only on the llm network
     build: {context: ., dockerfile: docker/llm-client/Dockerfile}
