@@ -22,7 +22,7 @@ Tables and views created or altered (grouped by feature):
 - Fundamentals: `fund_line`, `fund_row_map`, `fund_snapshot`, `fund_growth`
   (027).
 - Collector: `collector_sources` (039), `collector_settings` altered
-  (013, 014, 039, 041).
+  (013, 014, 039, 041); `home_filings` registered as a manual row (052).
 - Presets: `scan_presets` (040).
 - Secrets and alerts: `app_secret` (045), `token_alert_sent` (046).
 - Broker login and portfolio: `user_profile` (seeded `default`), `portfolio_sync`,
