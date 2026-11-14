@@ -10,6 +10,11 @@ describe("index.ts events pool wiring", () => {
     expect(indexSource).not.toContain("makeEventsTx(pool)");
   });
 
+  it("passes eventsQuery built from the events pool, not the main pool", () => {
+    expect(indexSource).toContain("eventsQuery: (sql, values) => eventsPool.query(sql, values)");
+    expect(indexSource).not.toContain("eventsQuery: (sql, values) => pool.query(sql, values)");
+  });
+
   it("builds the events pool from eventsPoolConfig and pings it for /api/health", () => {
     expect(indexSource).toContain("new Pool(eventsPoolConfig())");
     expect(indexSource).toContain('eventsPing: () => eventsPool.query("SELECT 1")');

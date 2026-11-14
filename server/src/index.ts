@@ -50,6 +50,7 @@ const uiClient = createUiClient({ tokenFile: secretsTokenFile, baseUrl: secretsA
 
 const app = buildApp({
   query: (sql, values) => pool.query(sql, values),
+  eventsQuery: (sql, values) => eventsPool.query(sql, values),
   logger: true,
   live: { getAccessToken: () => secrets.get("upstox_analytics_token") },
   // Broker login: the browser is sent back here after the Kite login (see broker/brokerRoutes.ts).

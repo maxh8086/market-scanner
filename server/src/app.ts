@@ -39,6 +39,7 @@ import { registerCollectorRefreshRoute } from "./collectorRefresh.js";
 import { createSessionStore, registerCsrfGate, registerSessionRoutes, type SessionStore } from "./session.js";
 import { registerHomeEventsRoutes, type HomeEventsRouteDeps } from "./homeEventsRoute.js";
 import { registerCollectorDueRoute, type CollectorDueRouteDeps } from "./collectorDueRoute.js";
+import { registerEventsReadRoute } from "./eventsReadRoute.js";
 import { registerCollectorFinishRoute } from "./collectorFinishRoute.js";
 import {
   buildIsinLookupQuery,
@@ -91,6 +92,8 @@ export interface AppDeps {
   sessions?: SessionStore;
   /** events database liveness for /api/health; unset keeps health unchanged. */
   eventsPing?: () => Promise<void>;
+  /** read-only events database query for GET /api/events; unset means the route is not registered. */
+  eventsQuery?: QueryFn;
 }
 
 /** How long /api/health waits for the events database ping before it reports 503. */
@@ -323,6 +326,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const found = await deps.query(query.sql, query.values);
     return shapeIndexEod(found.rows);
   });
+
+  // Home events read from the events database. Off unless the caller passes eventsQuery.
+  if (deps.eventsQuery) {
+    registerEventsReadRoute(app, { eventsQuery: deps.eventsQuery });
+  }
 
   // Manual EOD refresh for the index_eod collector (refused on trading days before 15:30 IST).
   registerCollectorRefreshRoute(app, deps.query);
