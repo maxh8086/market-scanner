@@ -39,7 +39,7 @@ is set in config/retention.json -- 3 years by default, "purge": false turns it o
 .PARAMETER SkipEnrich     Skip enrichment (and the stages that build on it can still use the last enriched file).
 .PARAMETER SkipCrosscheck Skip the independent price cross-check.
 .PARAMETER SkipPortfolio  Skip the Kite holdings overlay.
-.PARAMETER SkipServices   Do not start the UI (http://127.0.0.1:8080) and the collector afterwards.
+.PARAMETER SkipServices   Do not start the UI (http://127.0.0.1:8080), the collector and the server (http://127.0.0.1:8081) afterwards.
 .PARAMETER Rebuild        Rebuild images without the cache.
 
 .EXAMPLE
@@ -412,12 +412,15 @@ if ($script:RunBegun) {
 }
 
 if ($SkipServices) {
-    Write-Host "UI and collector not started."
+    Write-Host "UI, collector and server not started."
 } else {
-    Write-Stage "Starting the UI and the collector (they keep running until ./stop.ps1)"
-    $code = Invoke-Docker @('compose', 'up', '-d', 'ui', 'collector')
-    if ($code -ne 0) { Write-Host "Could not start the UI/collector (exit $code) -- a warning." -ForegroundColor Yellow }
-    else { Write-Host "UI: http://127.0.0.1:8080" -ForegroundColor Green }
+    Write-Stage "Starting the UI, the collector and the server (they keep running until ./stop.ps1)"
+    $code = Invoke-Docker @('compose', 'up', '-d', 'ui', 'collector', 'server')
+    if ($code -ne 0) { Write-Host "Could not start the UI/collector/server (exit $code) -- a warning." -ForegroundColor Yellow }
+    else {
+        Write-Host "UI: http://127.0.0.1:8080" -ForegroundColor Green
+        Write-Host "Server API: http://127.0.0.1:8081" -ForegroundColor Green
+    }
 }
 
 Write-Stage "Done"
