@@ -160,6 +160,7 @@ services:
       COLLECTOR_TOKEN_FILE: /run/service-tokens/collector_token
       LLM_CLIENT_TOKEN_FILE: /run/service-tokens/llm_client_token
       SERVER_TOKEN_FILE: /run/service-tokens/server_token
+      UPSTOX_REDIRECT_URI: ${UPSTOX_REDIRECT_URI:-http://127.0.0.1:8081/api/broker/upstox/callback}   # Upstox login redirect; must match the URI registered on the Upstox app (the server's callback)
     volumes:
       - ./data:/app/data
       # Host folder that holds the master key (set APP_MASTER_KEY_DIR in .env). Read-only, never baked into the image.

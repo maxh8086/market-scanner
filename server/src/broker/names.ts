@@ -7,7 +7,13 @@
 export const DEFAULT_PROFILE = "default";
 export const PROFILE_RE = /^[a-z][a-z0-9]{0,15}$/;
 
-export type BrokerId = "kite";
+export type BrokerId = "kite" | "upstox";
+export const BROKER_IDS: readonly BrokerId[] = ["kite", "upstox"];
+
+/** True only for an exact broker id. Anything else (including a case variant) is not a broker. */
+export function isBrokerId(raw: unknown): raw is BrokerId {
+  return typeof raw === "string" && (BROKER_IDS as readonly string[]).includes(raw);
+}
 export type BrokerSecretKind = "access_token" | "api_key";
 
 export type ParsedProfile = { ok: true; profile: string } | { ok: false };

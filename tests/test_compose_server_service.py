@@ -350,6 +350,15 @@ class ComposeServerServiceTests(unittest.TestCase):
             f"ui host path for the server token must be ${{APP_SERVER_SECRETS_TOKEN_FILE:?...}}; got {host!r}",
         )
 
+    def test_ui_upstox_redirect_uri_environment(self):
+        self.assertIn("ui", self.services, "ui service missing")
+        environment = self.services["ui"].get("environment") or {}
+        self.assertEqual(
+            str(environment.get("UPSTOX_REDIRECT_URI")),
+            "${UPSTOX_REDIRECT_URI:-http://127.0.0.1:8081/api/broker/upstox/callback}",
+            "ui UPSTOX_REDIRECT_URI must default to the server's Upstox callback",
+        )
+
     def test_start_ps1_brings_up_ui_collector_and_server(self):
         self.assertTrue(START_PS1_PATH.exists(), "start.ps1 missing at repo root")
         text = START_PS1_PATH.read_text(encoding="utf-8")

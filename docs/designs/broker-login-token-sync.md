@@ -1,6 +1,6 @@
 # Broker login and token sync from the UI (Kite first, then Upstox)
 
-Status: v3.1, approved by the user 2026-11-14; implementation in feat/broker-login-impl (stacked on PR 126). Open questions answered by the user 2026-11-14 (including per-profile and per-broker connections).
+Status: v3.1, approved by the user 2026-11-14. Phase 1 (Kite) is in feat/broker-login-impl (stacked on PR 126). Phase 2 (Upstox) code is in feat/broker-login-upstox, awaiting the manual test in docs/designs/upstox-login-manual-test.md. Open questions answered by the user 2026-11-14 (including per-profile and per-broker connections).
 Depends on: PR 126 (S3b, the `server` identity on the ui secrets endpoint). Cut the implementation branch after that merges, or stack on it.
 Supersedes: Decision 16 in `docs/designs/secrets-and-roles.md` (see Decision 17 below).
 
@@ -120,3 +120,14 @@ These corrections were found while implementing. Where they differ from the sect
 - Kite `state` travels in `redirect_params`, so Kite returns it on the callback.
 - The ui keeps the pending `state` values in one in-process store, so the ui must run a single uvicorn worker.
 - A non-default profile needs a `user_profile` row before its portfolio can be stored (foreign key in `portfolio_sync`). Only `default` is seeded.
+
+## Implementation notes (phase 2, Upstox)
+
+- Names: `broker_<profile>_upstox_api_key`, `broker_<profile>_upstox_api_secret` and `broker_<profile>_upstox_access_token`, with the same rules as Kite (Decision 17 in `docs/designs/secrets-and-roles.md`).
+- No global fallback. Unlike `default` for Kite, the `default` profile does not fall back to a global Upstox key. Credentials must be stored per profile.
+- Redirect URI: env `UPSTOX_REDIRECT_URI`, read by the ui at call time (not at import). Default `http://127.0.0.1:8081/api/broker/upstox/callback`, the server's callback. The ui service sets it in `docker-compose.yml`, and `env.template` documents it. The same value must be used at login and at the token exchange, and it must match the URI registered on the Upstox app.
+- The server needs only the access token. The ui does the exchange with the client ID and secret, and the server never reads either. Upstox access tokens expire at 03:30 IST (`token_expiry` in `scanner/broker_tokens.py`).
+- Callback: `GET /api/broker/upstox/callback` is session-exempt by exact path, like the Kite callback. Upstox denial (`error` with no `code`) redirects with `login=failed` and calls nothing.
+- Holdings panel: a broker switch (Kite | Upstox) drives the status line, the login button, "Sync portfolio" and the stored holdings. The initial broker comes from `?broker=` after a login redirect, else Kite.
+- `GET /api/holdings?profile=&broker=` returns the stored snapshot for that broker; `broker` defaults to `kite`, and any other value is a 400.
+- Not yet verified against the live Upstox console: whether it accepts `127.0.0.1` and more than one redirect URI, and whether holdings need a static IP. These are for the manual test in `docs/designs/upstox-login-manual-test.md`.

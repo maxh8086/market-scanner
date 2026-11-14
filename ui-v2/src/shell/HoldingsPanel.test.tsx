@@ -8,7 +8,9 @@ import {
   formatSignedPct,
   HoldingsPanel,
   LOGIN_REQUIRED_NOTICE,
+  loginRequiredNotice,
   NO_STORED_PORTFOLIO,
+  noStoredPortfolio,
   toHoldingRow,
   totalHoldings,
 } from "./HoldingsPanel";
@@ -50,7 +52,11 @@ const HOLDING = {
 const SYNCED_AT = "2026-11-13T10:15:00.000Z";
 const EXPIRES_AT = "2026-11-14T00:30:00.000Z";
 
-function snapshot(holdings: unknown[], syncedAt: string | null, broker: "kite" | null = syncedAt ? "kite" : null) {
+function snapshot(
+  holdings: unknown[],
+  syncedAt: string | null,
+  broker: "kite" | "upstox" | null = syncedAt ? "kite" : null,
+) {
   return { holdings, syncedAt, broker };
 }
 
@@ -216,6 +222,99 @@ describe("login notice from the URL", () => {
 
     expect(await screen.findByText("Kite login failed. Try again.")).toBeInTheDocument();
     await waitFor(() => expect(window.location.search).toBe("?view=holdings"));
+  });
+});
+
+describe("broker switch", () => {
+  it("opens on kite and switches to upstox, reading its status and holdings", async () => {
+    render(<HoldingsPanel />);
+
+    expect(await screen.findByRole("tab", { name: "Kite" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("tab", { name: "Upstox" }));
+
+    expect(screen.getByRole("tab", { name: "Upstox" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Kite" })).toHaveAttribute("aria-selected", "false");
+    expect(await screen.findByRole("button", { name: "Log in to Upstox" })).toBeInTheDocument();
+    expect(api.fetchBrokerStatus).toHaveBeenCalledWith("upstox");
+    expect(api.fetchHoldings).toHaveBeenLastCalledWith("default", "upstox", { signal: expect.any(AbortSignal) });
+  });
+
+  it("starts on upstox when the login redirect names it, and says so in the notice", async () => {
+    window.history.replaceState({}, "", "/?broker=upstox&login=ok");
+    render(<HoldingsPanel />);
+
+    expect(
+      await screen.findByText("Upstox login complete. Press Sync portfolio to load your holdings."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Upstox" })).toHaveAttribute("aria-selected", "true");
+    expect(api.fetchBrokerStatus).toHaveBeenCalledWith("upstox");
+    await waitFor(() => expect(window.location.search).toBe(""));
+  });
+
+  it("starts on kite for an unknown broker parameter", async () => {
+    window.history.replaceState({}, "", "/?broker=zerodha");
+    render(<HoldingsPanel />);
+
+    expect(await screen.findByRole("tab", { name: "Kite" })).toHaveAttribute("aria-selected", "true");
+    expect(api.fetchBrokerStatus).toHaveBeenCalledWith("kite");
+  });
+
+  it("requests the Upstox login URL from the Upstox tab", async () => {
+    const loginUrl = "https://api.upstox.com/v2/login/authorization/dialog?response_type=code";
+    api.requestLoginUrl.mockResolvedValue(loginUrl);
+    render(<HoldingsPanel />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Upstox" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Log in to Upstox" }));
+
+    await waitFor(() => expect(api.redirectToBrokerLogin).toHaveBeenCalledWith(loginUrl));
+    expect(api.requestLoginUrl).toHaveBeenCalledWith("upstox");
+  });
+
+  it("keeps one broker's error off the other broker's tab", async () => {
+    api.fetchHoldings.mockImplementation(async (_profile: string, broker: string) => {
+      if (broker === "kite") throw new HoldingsError("Kite snapshot could not be read.", 500);
+      return snapshot([], null);
+    });
+    render(<HoldingsPanel />);
+
+    expect(await screen.findByText("Kite snapshot could not be read.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Upstox" }));
+
+    expect(await screen.findByText(noStoredPortfolio("upstox"))).toBeInTheDocument();
+    expect(screen.queryByText("Kite snapshot could not be read.")).not.toBeInTheDocument();
+  });
+
+  it("syncs through the Upstox route and reports the Upstox sync", async () => {
+    api.fetchBrokerStatus.mockImplementation(async (broker: string) =>
+      broker === "upstox" ? { connected: true, expiresAt: EXPIRES_AT } : { connected: false, expiresAt: null },
+    );
+    api.fetchHoldings.mockResolvedValue(snapshot([HOLDING], SYNCED_AT, "upstox"));
+    api.syncPortfolio.mockResolvedValue({ syncedAt: SYNCED_AT, broker: "upstox", rowCount: 1 });
+    render(<HoldingsPanel />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Upstox" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sync portfolio" }));
+
+    await waitFor(() => expect(api.syncPortfolio).toHaveBeenCalledWith("upstox"));
+    expect(await screen.findByText("Portfolio synced from Upstox.")).toBeInTheDocument();
+    expect(screen.getByText("ACE")).toBeInTheDocument();
+  });
+
+  it("shows the Upstox login-required notice and disconnects only the Upstox tab", async () => {
+    api.fetchBrokerStatus.mockImplementation(async (broker: string) =>
+      broker === "upstox" ? { connected: true, expiresAt: EXPIRES_AT } : { connected: false, expiresAt: null },
+    );
+    api.fetchHoldings.mockResolvedValue(snapshot([HOLDING], SYNCED_AT, "upstox"));
+    api.syncPortfolio.mockRejectedValue(new BrokerError("login required", 401));
+    render(<HoldingsPanel />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Upstox" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sync portfolio" }));
+
+    expect(await screen.findByText(loginRequiredNotice("upstox"))).toBeInTheDocument();
+    expect(screen.getByText("Upstox: not connected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Log in to Upstox" })).toBeInTheDocument();
   });
 });
 

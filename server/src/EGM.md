@@ -21,9 +21,10 @@ testable without a database.
   broker API. Transport failures come back as status 0.
 - `portfolioTx.ts`: `makePortfolioTx`, `PortfolioTx`. One pooled-client
   transaction for the snapshot writes, same shape as `eventsTx`.
-- `broker/`: broker login routes (`brokerRoutes.ts`), credential names
-  (`names.ts`, `credentials.ts`) and stored portfolio snapshots
-  (`portfolioStore.ts`). It has no EGM.md of its own; this file covers it.
+- `broker/`: broker login routes (`brokerRoutes.ts`) for the broker set
+  `kite|upstox`, credential names (`names.ts`, `credentials.ts`) and stored
+  portfolio snapshots (`portfolioStore.ts`). It has no EGM.md of its own; this
+  file covers it. `isBrokerId` is the one place the broker set is checked.
 - `candles.ts`: `validateCandlesRequest`, `buildCandlesQuery`, `shapeCandles`.
 - `collectorRefresh.ts`: `registerCollectorRefreshRoute`,
   `isBeforeCloseOnTradingDayIst`, `buildIndexEodRefreshInsert`,
@@ -61,9 +62,13 @@ testable without a database.
   `secretsClient.ts` (`index.ts` wiring), not read from a file.
 - Broker login goes through the ui internal broker API (`uiClient.ts`): login
   URL, code exchange and status. The browser never receives a broker token or
-  API key, and a Kite callback redirects back to the UI without them.
-- Holdings: `GET /api/holdings` reads the stored snapshot only. Only
-  `POST /api/holdings/sync` calls Kite, and it writes Postgres
+  API key. The Kite and Upstox callbacks redirect back to the UI without them,
+  and a callback with an Upstox `error` or a missing code or state calls nothing.
+- Upstox sync needs only the stored access token. The app's client_id and
+  secret stay in the ui.
+- Holdings: `GET /api/holdings?broker=` (default `kite`) reads the stored
+  snapshot only. Only `POST /api/holdings/sync` calls a broker (`broker`
+  `kite|upstox`, default `kite`), and it writes Postgres
   (`portfolio_sync` and `portfolio_holding`) in one transaction through
   `portfolioTx.ts`. A failed sync writes nothing.
 - Live-feed socket and server-sent events (see [live](./live/EGM.md)).

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { readKiteAccessToken, readKiteApiKey, type SecretReader } from "./credentials.js";
+import { readKiteAccessToken, readKiteApiKey, readUpstoxAccessToken, type SecretReader } from "./credentials.js";
 
 function fakeSecrets(values: Record<string, string | undefined>) {
   const get = vi.fn(async (name: string): Promise<string | undefined> => values[name]);
@@ -29,6 +29,21 @@ describe("readKiteApiKey", () => {
   it("returns undefined when nothing is stored", async () => {
     const { secrets } = fakeSecrets({});
     expect(await readKiteApiKey(secrets, "default")).toBeUndefined();
+  });
+});
+
+describe("readUpstoxAccessToken", () => {
+  it("reads the per-profile upstox access token name", async () => {
+    const { secrets, get } = fakeSecrets({ broker_main_upstox_access_token: "tok" });
+    expect(await readUpstoxAccessToken(secrets, "main")).toBe("tok");
+    expect(get).toHaveBeenCalledWith("broker_main_upstox_access_token");
+  });
+
+  it("never falls back to a global or kite name, even for the default profile", async () => {
+    const { secrets, get } = fakeSecrets({ upstox_access_token: "tok", broker_default_kite_access_token: "k" });
+    expect(await readUpstoxAccessToken(secrets, "default")).toBeUndefined();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith("broker_default_upstox_access_token");
   });
 });
 

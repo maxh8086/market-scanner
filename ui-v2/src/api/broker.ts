@@ -5,7 +5,22 @@
 
 import { apiGet, CSRF_HEADER, getCsrfToken, invalidateCsrfToken } from "./session";
 
-export type BrokerName = "kite";
+export type BrokerName = "kite" | "upstox";
+
+/** The brokers the UI can log in to, in the order the panel's tabs show them. */
+export const BROKER_NAMES: readonly BrokerName[] = ["kite", "upstox"];
+
+const BROKER_LABELS: Record<BrokerName, string> = { kite: "Kite", upstox: "Upstox" };
+
+/** The name a user reads for a broker, e.g. "Kite" or "Upstox". */
+export function brokerLabel(broker: BrokerName): string {
+  return BROKER_LABELS[broker];
+}
+
+/** Whether a value is one of the supported broker names. */
+export function isBrokerName(value: unknown): value is BrokerName {
+  return value === "kite" || value === "upstox";
+}
 
 export const DEFAULT_PROFILE = "default";
 /** Message for a sync that the server refused because no valid broker token is stored. */
@@ -176,14 +191,14 @@ export async function requestLoginUrl(broker: BrokerName, profile: string = DEFA
 function isSyncResult(value: unknown): value is SyncResult {
   if (typeof value !== "object" || value === null) return false;
   const { syncedAt, broker, rowCount } = value as { syncedAt?: unknown; broker?: unknown; rowCount?: unknown };
-  return typeof syncedAt === "string" && broker === "kite" && typeof rowCount === "number";
+  return typeof syncedAt === "string" && isBrokerName(broker) && typeof rowCount === "number";
 }
 
 /**
  * Pulls the portfolio from the broker into the stored snapshot. A 401 means no valid login: the message is
  * "login required". A failed sync leaves the stored snapshot unchanged on the server.
  */
-export async function syncPortfolio(broker: BrokerName = "kite", profile: string = DEFAULT_PROFILE): Promise<SyncResult> {
+export async function syncPortfolio(broker: BrokerName, profile: string = DEFAULT_PROFILE): Promise<SyncResult> {
   const response = await sendPost("/api/holdings/sync", { profile, broker });
   if (!response.ok) {
     if (response.status === 401) {

@@ -41,6 +41,27 @@ afterEach(() => {
 });
 
 describe("fetchHoldings", () => {
+  it("asks for the kite snapshot of the default profile when no broker is given", async () => {
+    const fetchMock = stubFetch({ holdings: [] });
+
+    await fetchHoldings();
+
+    const urls = fetchMock.mock.calls.map(([url]) => url);
+    expect(urls).toContain("/api/holdings?profile=default&broker=kite");
+  });
+
+  it("passes the broker and profile in the query", async () => {
+    const fetchMock = stubFetch({ holdings: [HOLDING], syncedAt: "2026-11-13T10:15:00.000Z", broker: "upstox" });
+
+    await expect(fetchHoldings("default", "upstox")).resolves.toEqual({
+      holdings: [HOLDING],
+      syncedAt: "2026-11-13T10:15:00.000Z",
+      broker: "upstox",
+    });
+    const urls = fetchMock.mock.calls.map(([url]) => url);
+    expect(urls).toContain("/api/holdings?profile=default&broker=upstox");
+  });
+
   it("returns the stored snapshot with its sync time and broker", async () => {
     stubFetch({ holdings: [HOLDING], syncedAt: "2026-11-13T10:15:00.000Z", broker: "kite" });
 
