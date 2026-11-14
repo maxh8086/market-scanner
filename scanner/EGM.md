@@ -41,7 +41,8 @@ Public symbols by module:
   `parse_json_response`), `conclude.py` (`build_packet`, `packet_hash`,
   `data_gaps`, `unverified_numbers`, `Conclusion`), `modelcheck.py`
   (`measure`, `verdict`, `rank`), `extractcheck.py` (`compare`, `verdict`).
-- Outputs: `report.py` (`write_outputs`, `print_summary`), `workbook.py`
+- Outputs: `report.py` (`write_outputs`, `print_summary`), `ath_scan_store.py`
+  (`write_scan`, `read_latest_scan`, `scan_row_count`; the candidate table), `workbook.py`
   (`write_workbook`, `summary_rows`), `crosscheck.py` (`compare`, `check_ath`,
   `FallbackChain`), `portfolio.py` (`load_holdings`, `overlay`).
 - Secrets: `app_secrets.py` (`put`, `get_value`, `list_meta`),

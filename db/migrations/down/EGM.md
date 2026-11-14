@@ -2,11 +2,12 @@
 
 ## Overview
 Reverse migrations for the main database. Each script undoes one forward
-migration in `../`. Only 045 and 046 have a reverse script.
+migration in `../`. Only 045, 046 and 060 have a reverse script.
 
 ## Interface
 - `045_app_secret.down.sql`: drops `app_secret`.
 - `046_token_expiry_alert.down.sql`: drops `token_alert_sent`.
+- `060_ath_scan_candidates.down.sql`: drops `ath_scan_candidates`.
 
 ## Invariants
 - Each reverse script is the exact inverse of its forward migration and is

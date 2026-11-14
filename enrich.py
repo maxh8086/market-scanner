@@ -68,17 +68,26 @@ def _die(message: str) -> None:
     raise SystemExit(1)
 
 
-def latest_scan(path: str | None) -> Path:
-    """The scan CSV to enrich: the one named, or the most recent in output/."""
+def latest_scan(path: str | None) -> tuple[pd.DataFrame, str, str]:
+    """The scan to enrich, as (frame, stem, label).
+
+    With --scan PATH: that CSV, its stem taken from the file name. Otherwise the newest scan
+    in ath_scan_candidates, its stem the scan date. stem names the output files; label names
+    the source in messages.
+    """
     if path:
         p = Path(path)
         if not p.exists():
             _die(f"scan file not found: {p}")
-        return p
-    candidates = sorted(OUTPUT_DIR.glob("ath_scan_*.csv"))
-    if not candidates:
-        _die("no scan CSV in output/ -- run ath_scan.py first, or pass --scan")
-    return candidates[-1]
+        return load_scan(p), p.stem.replace("ath_scan_", ""), p.name
+    from scanner import ath_scan_store
+    with ath_scan_store.connect() as conn:
+        found = ath_scan_store.read_latest_scan(conn)
+    if found is None:
+        _die("no scan in ath_scan_candidates -- run ath_scan.py first, or pass --scan")
+    df, scan_date = found
+    stem = scan_date.isoformat()
+    return df, stem, f"ath_scan_candidates {stem}"
 
 
 def load_scan(path: Path) -> pd.DataFrame:
@@ -942,7 +951,7 @@ def _capacity_for_symbol(db, symbol: str) -> str:
     return ""
 
 
-def stage_report(db, df: pd.DataFrame, scan_path: Path,
+def stage_report(db, df: pd.DataFrame, stem: str,
                  with_forecast: bool = True, timesfm: bool = False) -> Path:
     print("\n=== Report ===")
     industries = {}
@@ -1005,7 +1014,6 @@ def stage_report(db, df: pd.DataFrame, scan_path: Path,
         ["_rank", "order_pct_of_mcap"], ascending=False).drop(columns=["_rank"])
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    stem = scan_path.stem.replace("ath_scan_", "")
 
     if with_forecast:
         print("\n  --- forward-looking columns (highlight only, not ranked) ---")
@@ -1041,7 +1049,8 @@ def _round(value, places: int = 2):
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--scan", help="scan CSV to enrich (default: newest in output/)")
+    p.add_argument("--scan", help="scan CSV to enrich instead of the candidate table "
+                                  "(default: newest scan in ath_scan_candidates)")
     p.add_argument("--fundamentals", action="store_true")
     p.add_argument("--filings", action="store_true")
     p.add_argument("--llm", action="store_true")
@@ -1118,15 +1127,14 @@ def main() -> None:
             p.print_help()
             return
 
-        scan_path = latest_scan(args.scan)
-        df = load_scan(scan_path)
+        df, stem, label = latest_scan(args.scan)
         if df.empty:
             # A quiet market (or a narrow --symbols list) can leave nothing within range.
             # That is a result, not an error: later stages must not see a stale enriched file
             # as this scan's, so write nothing and let the caller skip them.
-            print(f"{scan_path.name} has no stocks within range of their ATH; nothing to enrich.")
+            print(f"{label} has no stocks within range of their ATH; nothing to enrich.")
             return
-        print(f"Enriching {scan_path.name}: {len(df)} rows")
+        print(f"Enriching {label}: {len(df)} rows")
 
         if args.fundamentals or args.all:
             stage_fundamentals(db, df, force=args.force, limit=args.limit)
@@ -1139,7 +1147,7 @@ def main() -> None:
             stage_llm(db, cfg, limit=args.limit, only_gaps=not args.llm_all,
                       rerun=args.llm_rerun, workers=args.llm_workers)
         if args.report or args.all:
-            stage_report(db, df, scan_path,
+            stage_report(db, df, stem,
                          with_forecast=not args.no_forecast,
                          timesfm=args.timesfm)
     finally:

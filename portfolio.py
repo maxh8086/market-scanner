@@ -6,7 +6,7 @@ Usage:
 
 Defaults:
     --holdings: data/holdings.json or data/holdings.csv (or Kite API if KITE_API_KEY + KITE_ACCESS_TOKEN set)
-    --scan: newest output/ath_scan_*.csv
+    --scan: a scan CSV you supply (default: newest scan in ath_scan_candidates)
     --enriched: newest output/ath_enriched_*.csv (optional)
     --output-dir: output
 
@@ -30,7 +30,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Overlay Kite holdings on ATH scan results.")
     p.add_argument("--holdings", type=str, default=None, help="Path to holdings file (JSON/CSV)")
-    p.add_argument("--scan", type=str, default=None, help="Path to scan CSV (default: newest ath_scan_*.csv)")
+    p.add_argument("--scan", type=str, default=None, help="Path to a scan CSV you supply (default: newest scan in ath_scan_candidates)")
     p.add_argument("--enriched", type=str, default=None, help="Path to enriched CSV (optional, default: newest ath_enriched_*.csv)")
     p.add_argument("--output-dir", type=str, default="output", help="Output directory (default: output)")
     p.add_argument("--verbose", action="store_true", help="Verbose output")
@@ -61,16 +61,24 @@ def main() -> int:
         )
         return 2
 
-    # Load scan
-    scan_path = args.scan
-    if not scan_path:
-        scan_path = find_latest("ath_scan_*.csv", args.output_dir)
-    if not scan_path or not Path(scan_path).exists():
-        print(f"Error: Scan CSV not found (run ath_scan.py first or pass --scan PATH)")
-        return 2
-    scan_df = pd.read_csv(scan_path, keep_default_na=False)
+    # Load scan: the newest in ath_scan_candidates, or a CSV named with --scan
+    if args.scan:
+        if not Path(args.scan).exists():
+            print(f"Error: Scan CSV not found: {args.scan}")
+            return 2
+        scan_df = pd.read_csv(args.scan, keep_default_na=False)
+        scan_label = args.scan
+    else:
+        from scanner import ath_scan_store
+        with ath_scan_store.connect() as conn:
+            found = ath_scan_store.read_latest_scan(conn)
+        if found is None:
+            print("Error: no scan in ath_scan_candidates (run ath_scan.py first or pass --scan PATH)")
+            return 2
+        scan_df = ath_scan_store.as_csv_frame(found[0])
+        scan_label = f"ath_scan_candidates {found[1].isoformat()}"
     if args.verbose:
-        print(f"Loaded scan: {scan_path} ({len(scan_df)} rows)")
+        print(f"Loaded scan: {scan_label} ({len(scan_df)} rows)")
 
     # Load enriched (optional)
     enriched_df = None
