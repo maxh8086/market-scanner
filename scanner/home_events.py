@@ -2,8 +2,9 @@
 
 T3a added `redact_error`. T3b adds `Feed`, `ParseError`, `ParseResult`,
 `dedupe_key` and `to_event_row`. T3c adds `filter_items`, `classify_response`,
-`FetchResult` and `Cooldown`. Later tasks add the feed table (FEEDS),
-the parsers, and the fetch and run logic to this module.
+`FetchResult` and `Cooldown`. The feed table (FEEDS), the parsers, `fetch_feed`,
+`run_cycle` and `post_events` are also in this module. `scanner.collect.sources.HomeFilings`
+(F-T4d) is the caller that runs `run_cycle`.
 """
 from __future__ import annotations
 
@@ -50,7 +51,7 @@ class ParseError(Exception):
 
 @dataclass(frozen=True)
 class Feed:
-    """One exchange feed in the registry (spec 4.0). The FEEDS tuple is added in T4e."""
+    """One exchange feed in the registry (spec 4.0). The NSE feeds are listed in FEEDS."""
 
     feed_code: str  # "nse:<Name>"
     url: str
@@ -622,7 +623,7 @@ def post_events(rows: list[dict], *, base_url: str, token: str, http, timeout_s:
     return totals
 
 
-# The NSE feed table (spec 4.0). Nothing calls FEEDS yet; run wiring is a later task.
+# The NSE feed table (spec 4.0). scanner.collect.sources.HomeFilings (F-T4d) passes it to run_cycle.
 _NSE_RSS = "https://nsearchives.nseindia.com/content/RSS/"
 
 FEEDS: tuple[Feed, ...] = (
@@ -734,8 +735,8 @@ def _parse_financial_results(body: bytes) -> ParseResult:
     """Parse the nse:Financial_Results RSS feed (spec 4.0, 4.3, 6).
 
     symbol and isin are None on parsed items. Name-only items are resolved in
-    run_cycle through company_reference.fill_from_name. No production code calls
-    run_cycle yet; wiring it in is task T2.
+    run_cycle through company_reference.fill_from_name. scanner.collect.sources.HomeFilings
+    (F-T4d) calls run_cycle with this parser through `parse`.
     """
     return _parse_rss_feed(body, _PUB_DATE_FORMAT)
 

@@ -1,6 +1,7 @@
 """Data source classes: one per source type. Each has run(params) returning status."""
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -38,7 +39,7 @@ class Source(ABC):
     """Abstract base for a collectable data source."""
 
     # True for sources that write through the API events endpoints. execute_source checks the
-    # API health endpoint before such a source runs (spec 4.5). No source sets this yet.
+    # API health endpoint before such a source runs (spec 4.5). HomeFilings sets this.
     events: bool = False
 
     def __init__(self, name: str):
@@ -670,6 +671,128 @@ class CompanyReference(Source):
         }
 
 
+_HOME_FILINGS_TOKEN_FILE_DEFAULT = "/run/app-keys/home_events_ingest_token"
+_HOME_FILINGS_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
+
+def _home_filings_failed(message: str) -> dict:
+    return {"status": "failed", "fetched": 0, "new": 0, "from": None, "to": None,
+            "message": message}
+
+
+class HomeFilings(Source):
+    """NSE exchange filings for the home events feed (spec 5.1, 4.5, 4.6, 6).
+
+    Calls scanner.home_events.run_cycle with the NSE feed table, the company index from
+    company_reference and the API ingest endpoint. The source is registered as `manual`
+    (migration 052), so the serve loop does not run it. `events = True` makes execute_source
+    check the API before the run. run() returns a `status` key ("ok", "failed" or
+    "skipped"), which _run_locked records as the run status.
+    """
+
+    # Read by collect._run_locked through getattr(source, "events", False).
+    events = True
+
+    def __init__(self):
+        super().__init__("home_filings")
+
+    def plan(self, params: dict, now: Optional[datetime] = None) -> dict:
+        """Count the enabled feeds without a network call, a DB connection or a token read."""
+        from scanner import home_events
+
+        try:
+            _cfg, enabled = home_events._run_config(params, home_events.FEEDS)
+        except home_events._ConfigError as exc:
+            return {"fetched": 0, "new": 0, "from": None, "to": None,
+                    "message": f"config:{exc.key}"}
+        return {"fetched": 0, "new": 0, "from": None, "to": None,
+                "message": f"dry-run: would fetch {len(enabled)} NSE feeds"}
+
+    def run(self, params: dict, now: Optional[datetime] = None,
+            dry_run: bool = False) -> dict:
+        """Run one filings cycle. Every path returns the status shape; no exception escapes."""
+        if dry_run:
+            return self.plan(params, now)
+
+        # Import late, as the other sources do; collect imports this module, so a top-level
+        # import of collect would be circular.
+        import random
+        import time
+        from collect import api_base_url
+        from scanner import home_events
+        from scanner.collect.cooldown import PgCooldown
+        from scanner.company_reference import load_index_for_source
+        from scanner.pg import db
+
+        if now is None:
+            now = datetime.now(pytz.UTC)
+        elif now.tzinfo is None:
+            now = pytz.UTC.localize(now)
+
+        token_path = os.environ.get("HOME_EVENTS_INGEST_TOKEN_FILE", _HOME_FILINGS_TOKEN_FILE_DEFAULT)
+        try:
+            with open(token_path, encoding="utf-8") as fh:
+                token = fh.read().strip()
+        except Exception:
+            # Neither the path nor the exception text is kept: both can name the secret location.
+            return _home_filings_failed("token_unavailable")
+        if not token:
+            return _home_filings_failed("token_unavailable")
+
+        try:
+            with db.connect() as conn:
+                index = load_index_for_source(conn, "nse_csv")
+        except Exception as e:
+            return _home_filings_failed(f"index_unavailable: {type(e).__name__}")
+
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": _HOME_FILINGS_USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+
+        try:
+            base_url = api_base_url()
+            timeout_s = params.get("post_timeout_s", 15)
+
+            def post(rows: list[dict]) -> dict:
+                return home_events.post_events(rows, base_url=base_url, token=token,
+                                               http=requests, timeout_s=timeout_s)
+
+            result = home_events.run_cycle(
+                params, now,
+                feeds=home_events.FEEDS,
+                parse_fn=home_events.parse,
+                universe=index.universe,
+                by_name=index.by_name,
+                session=session,
+                post=post,
+                sleep=time.sleep,
+                rng=random.Random(),
+                clock=lambda: datetime.now(pytz.UTC),
+                cooldown=PgCooldown(),
+            )
+            return {
+                "status": result["status"],
+                "fetched": result["fetched"],
+                "new": result["new"],
+                "from": _iso_to_date(result.get("from")),
+                "to": _iso_to_date(result.get("to")),
+                "message": result.get("message", ""),
+            }
+        except Exception as e:
+            return _home_filings_failed(_redact(f"{type(e).__name__}: {e}"))
+
+
+def _iso_to_date(value: Optional[str]) -> Optional[date]:
+    """The date part of run_cycle's ISO datetime string, or None."""
+    return datetime.fromisoformat(value).date() if value else None
+
+
 # Registry of all sources
 SOURCES = {
     "candles_eod": CandlesEOD(),
@@ -680,4 +803,5 @@ SOURCES = {
     "fundamentals": Fundamentals(),
     "ath_scan": AthScan(),
     "company_reference": CompanyReference(),
+    "home_filings": HomeFilings(),
 }

@@ -14,7 +14,14 @@ exist.
   `request_run`, `list_runs`.
 - `sources.py`: `Source` base class and one class per source type
   (`CandlesEOD`, `Announcements`, `CorporateActions`, `Filings`,
-  `Fundamentals`, `AthScan`, `IndexEOD`). Each `run(params)` returns a status.
+  `Fundamentals`, `AthScan`, `IndexEOD`, `CompanyReference`, `HomeFilings`).
+  Each `run(params)` returns a status.
+- `HomeFilings` (`home_filings`, `events = True`): calls
+  `scanner.home_events.run_cycle` and returns `status` ("ok", "failed" or
+  "skipped"), `fetched`, `new`, `from`/`to` as dates, and `message`. `plan` is
+  offline. Its failure messages are `token_unavailable`,
+  `index_unavailable: <ExceptionClass>` and `<ExceptionClass>: <text>`, and never
+  hold the token or the token path.
 - `__init__.py` re-exports nothing; import from the module you need.
 
 ## Invariants
@@ -25,6 +32,11 @@ exist.
   (`_valid_param_keys`) before writing.
 - Each run is recorded through `start_run` and `finish_run`, and linked to the
   request that caused it.
+- When a source's `run` result has a `status` of `failed` or `skipped`,
+  `_run_locked` records that status (a skip uses the result message as its
+  reason). Other results are recorded as `ok`.
+- An events source (`events = True`) is skipped with `api_unavailable` when the
+  API health check fails.
 
 ## Side Effects
 - Postgres reads and writes: collector settings, collector sources, run rows,
