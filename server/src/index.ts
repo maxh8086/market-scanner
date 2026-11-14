@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { config as loadDotenv } from "dotenv";
 import pg from "pg";
 import { buildApp } from "./app.js";
-import { loadPoolConfig } from "./config.js";
+import { eventsPoolConfig, loadPoolConfig } from "./config.js";
 import { createSecretsClient } from "./secretsClient.js";
 import { createUiClient } from "./uiClient.js";
 import { loadServiceTokens } from "./serviceTokens.js";
@@ -30,6 +30,9 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 
 const pool = new Pool(loadPoolConfig());
+// Home events live in the events database, so their transactions use this pool, not the main one.
+const eventsPool = new Pool(eventsPoolConfig());
+eventsPool.on("error", () => console.warn("events pool error"));
 const serviceTokens = loadServiceTokens(process.env.SERVICE_TOKEN_DIR ?? "/run/service-tokens", ["home_events_ingest", "collector_watchdog"]);
 // Collector services file, read on every /internal/due poll (not at startup).
 const collectorServicesFile = process.env.COLLECTOR_SERVICES_FILE ?? resolve(here, "../../config/collector_services.json");
@@ -57,7 +60,8 @@ const app = buildApp({
   },
   portfolioTx: makePortfolioTx(pool),
   checkToken: (authorization, role) => checkIngestToken(authorization, role, serviceTokens),
-  eventsTx: makeEventsTx(pool),
+  eventsTx: makeEventsTx(eventsPool),
+  eventsPing: () => eventsPool.query("SELECT 1").then(() => undefined),
   collectorDue: {
     checkToken: (authorization, role) => checkIngestToken(authorization, role, serviceTokens),
     loadServices: () => parseServicesFile(readFileSync(collectorServicesFile, "utf8")),
@@ -65,7 +69,11 @@ const app = buildApp({
 });
 
 app.addHook("onClose", async () => {
-  await pool.end();
+  try {
+    await pool.end();
+  } finally {
+    await eventsPool.end();
+  }
 });
 
 // Loopback by default. In the container SERVER_HOST=0.0.0.0; compose publishes the port on the host's 127.0.0.1 only.

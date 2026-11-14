@@ -89,7 +89,12 @@ export interface AppDeps {
   collectorDue?: Pick<CollectorDueRouteDeps, "checkToken" | "loadServices" | "now">;
   /** Session store for the browser write gate. A fresh in-memory store is created when omitted. */
   sessions?: SessionStore;
+  /** events database liveness for /api/health; unset keeps health unchanged. */
+  eventsPing?: () => Promise<void>;
 }
+
+/** How long /api/health waits for the events database ping before it reports 503. */
+export const HEALTH_PING_TIMEOUT_MS = 2000;
 
 const defaultCreateFeed: CreateFeedFn = (options) =>
   createLiveFeed({
@@ -132,7 +137,27 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   registerSessionRoutes(app, sessions);
   registerCsrfGate(app, sessions);
 
-  app.get("/api/health", async () => ({ ok: true }));
+  app.get("/api/health", async (_request, reply) => {
+    if (!deps.eventsPing) return { ok: true };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        deps.eventsPing(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("events ping timed out")), HEALTH_PING_TIMEOUT_MS);
+        }),
+      ]);
+      return { ok: true };
+    } catch {
+      // Fixed body only: the ping error may carry connection detail.
+      return reply
+        .code(503)
+        .header("Cache-Control", "no-store")
+        .send({ ok: false, error: "events_database_unavailable" });
+    } finally {
+      clearTimeout(timer);
+    }
+  });
 
   // Registered before any /api/runs/:runId route so "latest" is not read as an id.
   app.get("/api/runs/latest", async (_request, reply) => {
