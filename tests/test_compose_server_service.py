@@ -2,7 +2,8 @@
 
 Parses docker-compose.yml at the repo root and checks that:
 - the server service exists and takes no .env file (DB logins and tokens never come from .env);
-- its only secret mount is the single home-events ingest token file, read-only and required;
+- its secret mounts are four single-file read-only mounts under /run/app-keys (ingest token,
+  server db password, server secrets token, collector watchdog token), each required;
 - it has no mount of the master key folder;
 - its environment, loopback-only port, healthcheck, restart policy, networks and build are right;
 - the ui service keeps its existing mounts;
@@ -86,7 +87,7 @@ class ComposeServerServiceTests(unittest.TestCase):
             "server must not receive APP_MASTER_KEY_FILE (only the UI holds the master key)",
         )
 
-    def test_server_has_exactly_three_readonly_secret_file_mounts(self):
+    def test_server_has_exactly_four_readonly_secret_file_mounts(self):
         self.assertIn("server", self.services, "server service missing")
         service = self.services["server"]
         app_keys_entries = [
@@ -96,19 +97,20 @@ class ComposeServerServiceTests(unittest.TestCase):
         ]
         self.assertEqual(
             len(app_keys_entries),
-            3,
-            "server must have exactly three volumes whose target starts with /run/app-keys",
+            4,
+            "server must have exactly four volumes whose target starts with /run/app-keys",
         )
         by_target = {target: (host, mode) for host, target, mode in app_keys_entries}
         expected = {
             "/run/app-keys/home_events_ingest_token": INGEST_TOKEN_VAR,
             "/run/app-keys/server_db_password": "APP_SERVER_DB_PASSWORD_FILE",
             "/run/app-keys/server_secrets_token": "APP_SERVER_SECRETS_TOKEN_FILE",
+            "/run/app-keys/collector_watchdog_token": "APP_COLLECTOR_WATCHDOG_TOKEN_FILE",
         }
         self.assertEqual(
             set(by_target),
             set(expected),
-            "server's /run/app-keys mounts must target exactly the ingest token file, the server db password file and the server secrets token file",
+            "server's /run/app-keys mounts must target exactly the ingest token file, the server db password file, the server secrets token file and the collector watchdog token file",
         )
         strings = _volume_strings(service)
         for target, var in expected.items():
@@ -423,6 +425,25 @@ class ComposeServerServiceTests(unittest.TestCase):
             text,
             r"(?m)^# APP_SERVER_SECRETS_TOKEN_FILE=",
             "env.template must document APP_SERVER_SECRETS_TOKEN_FILE as a commented line",
+        )
+
+    def test_env_template_documents_collector_watchdog_token_variable(self):
+        self.assertTrue(ENV_TEMPLATE_PATH.exists(), "env.template missing at repo root")
+        text = ENV_TEMPLATE_PATH.read_text(encoding="utf-8")
+        self.assertRegex(
+            text,
+            r"(?m)^# APP_COLLECTOR_WATCHDOG_TOKEN_FILE=",
+            "env.template must document APP_COLLECTOR_WATCHDOG_TOKEN_FILE as a commented line",
+        )
+        self.assertRegex(
+            text,
+            r"(?m)^# EVENTS_API_BASE_URL=http://server:8081",
+            "env.template must document EVENTS_API_BASE_URL with its default as a commented line",
+        )
+        self.assertRegex(
+            text,
+            r"(?m)^# SERVER_HOST=",
+            "env.template must document SERVER_HOST as a commented line",
         )
 
 
