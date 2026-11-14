@@ -12,7 +12,7 @@ The user's replies below override section 1 and later text where they conflict.
 - D4 (S4): keep S4 in the MVP.
 - D5 (migration numbers): accept the 049 to 052 gap. Nothing is held: migration 048 is applied (checked in the market_scanner database on 2026-11-13). The runner applies unrecorded files in filename order and does not require contiguous numbers (scanner/pg/migrate.py lines 71 to 81).
 - D6 (feeds in the MVP): all eight feeds. The user chose this on 2026-11-13. Outcome O10 (one-feed restriction) and NEW-ONE-FEED-SWITCH are dropped. Each tick requests all eight NSE feeds. Parsers and fixtures exist for all eight (tests/fixtures/home_events/ has eight NSE XML files; scanner/home_events.py has the feed registry). Risk: all eight share one NSE host and one NSE cooldown (D7), so one 403 pauses all eight for the cooldown.
-- D7 (cooldown): 1 hour (the overview value). Conflict (audit 2026-11-13): the slices doc and the filings spec use class backoff of 15, 30 and 60 minutes. Choose one rule before S2 is specified. S2 must match the existing Cooldown Protocol signatures active(host, now), block(host, now, reason) and reset(host) in scanner/home_events.py lines 229 to 238, not block(host, reason, now).
+- D7 (cooldown): DECIDED, flat 1 hour per host (user, 2026-11-14). A flat hour is the simplest rule that stops hammering a blocking host; the per-class backoff (15, 30, 60 minutes) and the 2 hour figure are dropped. S2 must match the existing Cooldown Protocol signatures active(host, now), block(host, now, reason) and reset(host) in scanner/home_events.py lines 229 to 238, not block(host, reason, now).
 - D8 (Sast_Regulation31 values): decided 2026-11-13, option B. No size threshold: the Sast31 feed carries no share count, value or percentage (see docs/designs/t4f-d8-sast31-values.md), so the Home cap of 3 events per stock is the only limiter, and a size rule waits for a source that carries one. Age floor: ingest_floor_days = 730 for all eight feeds, applied at ingest. The 730 value keeps all 20 Related_Party_Trans fixture items (oldest 628 days).
 - Totals: see section 5. The earlier totals are superseded (revised 2026-11-13).
 
@@ -79,7 +79,7 @@ Revised figures are planning estimates, not measured.
 | S0 report-only measurement | Done | 0.5-1 | 0 | Report docs/progress/collector-split-s0.md (2026-11-12). Closed. |
 | S1a execute_source, run-once, health for events sources | Merged (PR 120, commit 3e7b5b5) | 2-3 | 0 | The status contract (failed and skipped to collector_runs) moves into F-T4d. |
 | S1b collector_services.json and claim_requests | Merged (PR 120, commit 3e7b5b5) | 1-2 | 0 | Committed with S1a. |
-| S2 source_cooldown table, migration 049 | Not built | 0.5-1 | 0.5-1 | Table, cooldown.py and Protocol adapter for host nse only. Migration 049 with down file. tests/test_source_cooldown.py on real Postgres. Legacy fetcher wiring deferred. The filings spec claim that source_cooldown exists is wrong. Gates S5a and F-T4d. Cooldown rule open (D7). |
+| S2 source_cooldown table, migration 049 | In progress | 0.5-1 | 0.5-1 | Table source_cooldown (migration 049 with down file) plus scanner/collect/cooldown.py PgCooldown with the flat 1 hour rule (D7, decided 2026-11-14). Protocol adapter for host nse only. tests/test_source_cooldown.py on real Postgres. Legacy fetcher wiring deferred. Grants arrive with 050 (S5a). The filings spec claim that source_cooldown exists is wrong. Gates S5a and F-T4d. |
 | S3 compose service per source | Not built | 2-3 | 1.5-2.5 | Compose and server container. Reuse the x-persist, x-scanner-db-env and &persist-config anchors, the token-mount pattern and the tests/test_compose_llm_network.py loader. Start.ps1:418 only runs compose up -d ui collector, so add server. Per-source instances defer to S6-S8 and T9. Decide: how the server container gets .env and data/secrets.env, and SERVER_HOST (server/src/index.ts:46 hard-codes 127.0.0.1). |
 | S5a GET /internal/due and due rule, migration 050 | Not built | 1-2 | 1-2 | server/src/collectorDue.ts (TS due rule: ok-only slot catch-up, never-run, 15-minute retry gap, cooldown omission, services filter). collectorDueRoute.ts with watchdog token (401, 503, 500). app.ts registration. Migration 050 grants (collector_settings and source_cooldown to the app role). Pinned cron-parser dependency, needs user approval before install. Vectors file tests/data/collector_due_vectors.json with a Python test. Needs S2. |
 | F-T1 home_filings registration, migration 052 | Not built | 0.5-1 | 0.25-0.5 | Optional two-INSERT migration with down file. Inserts the home_filings collector_settings row as mode manual with cron */5 8-20 * * 1-5. ensure_sources creates the row anyway once SOURCES['home_filings'] exists. If the "migrate --status lists it" acceptance is dropped, the migration can be replaced by a flip in F-T9. |
@@ -160,11 +160,11 @@ New items subtotal: old 5.1-9.6 (sum of the old column without NEW-ONE-FEED-SWIT
 
 ## 9. Open decisions (the user must answer)
 
-Decided: D1, D3, D4 (keep S4), D5, D6, D8. See section 0.
+Decided: D1, D3, D4 (keep S4), D5, D6, D7 (flat 1 hour, 2026-11-14), D8. See section 0.
 
 Open:
 - D2: awaiting the user's confirmation. Only the per-feed Sast31 count on the full nse_csv list is missing (NEW-SAST31-MEASURE).
-- D7: backoff rule. Flat 1 hour (overview) versus 15, 30 and 60 minute class backoff (slices doc and filings spec) versus 2 hours (split S2). S2 must match the Cooldown Protocol signatures active(host, now), block(host, now, reason) and reset(host).
+- D7: DECIDED 2026-11-14, flat 1 hour per host (user). The per-class backoff and the 2 hour figure are dropped. S2 must match the Cooldown Protocol signatures active(host, now), block(host, now, reason) and reset(host).
 - Legacy filings cron for S8: db/migrations/001_core.sql line 94 says 10,40 8-20 * * 1-5. The spec's */5 applies only to home_filings. S8 must not conflate the two.
 - Token path: SERVICE_TOKEN_DIR (server/src/index.ts line 28) versus /run/app-keys.
 - Server container mounts: .env and secrets (server/src/index.ts line 14, secrets.ts).
@@ -216,13 +216,13 @@ Side notes on the path:
 - NEW-HOME-FEED follows F-T5c and the contract addendum. It does not need the collector track.
 - Parallel, no collector track needed: NEW-DATE-FLOOR, the F-T4f fixture test, the NEW-T4F-SPEC-TESTS doc edit and the spec corrections. They touch scanner/home_events.py, tests and docs only.
 - S2a is on the critical path only for later moves of filings, fundamentals or ath_scan, not for the MVP.
-- Decisions needed before their tasks start: D7 backoff rule (before S2); token path and secret mounts (before S3 and F-T5c); flag name (before F-T4d); collector_services.json field name (before F-T9).
+- Decisions needed before their tasks start: token path and secret mounts (before S3 and F-T5c); flag name (before F-T4d); collector_services.json field name (before F-T9).
 
 Risks (new, from the audit):
 - F-T5c wrong database: server/src/index.ts lines 27 and 38 pass the main pool to makeEventsTx, and no migration in db/migrations creates home_events. Batches return 500 until fixed.
 - Failed runs recorded as ok: collect.py lines 142 to 148 store ok unless run() raises, so a blocked run looks healthy. S1a's status contract must be finished, or HomeFilings must raise.
 - Flag name conflict: events (sources.py lines 40 to 43) versus events_source (filings spec line 447, slices doc).
-- D7 backoff conflict: flat 1 hour versus 15, 30 and 60 minute class backoff. The S2 block signature differs from the Protocol (scanner/home_events.py lines 229 to 238).
+- D7 backoff conflict: RESOLVED 2026-11-14, flat 1 hour per host (D7). The S2 block signature must match the Protocol (scanner/home_events.py lines 229 to 238).
 - Filings spec is stale: it says name resolution is unbuilt (lines 552 and 610), says source_cooldown exists, and says 413 precedes auth.
 - One 403 on the shared NSE cooldown pauses all eight feeds (scanner/home_events.py lines 461 to 519). The loop posts per feed (line 509), so up to eight POSTs per tick.
 - Feed GETs go out with the default python-requests User-Agent unless HomeFilings sets browser headers (scanner/home_events.py line 246). Live NSE access was measured with unknown T0 headers.

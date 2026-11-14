@@ -1,6 +1,7 @@
 # Collector split: slice specifications S1a, S1b, S2, S3, S4, S5a
 
 Status: DRAFT for user review. Not approved. No task is dispatched from this document. Nothing here edits `docs/designs/collector-split-spec.md` (user-owned).
+Slice status (2026-11-14): S2 in progress, with migration 049 (`049_source_cooldown.sql`) and PgCooldown in `scanner/collect/cooldown.py`, flat 1 hour per host (D7).
 Date: 2026-11-12. Parent: `docs/designs/collector-split-spec.md` (the "split spec", sections 4, 6 and 8). Inputs: `docs/progress/collector-split-spec-requests.md` (the requests file) and `docs/designs/home-events-filings-spec.md` sections 2, 4.1, 4.6 and 9 (the "filings spec").
 
 ## 0. How to read this draft
@@ -19,7 +20,7 @@ Date: 2026-11-12. Parent: `docs/designs/collector-split-spec.md` (the "split spe
 |---|---|---|
 | 047 | taken | `company_reference` |
 | 048 | taken | `index_constituents` (latest file in `db/migrations/` on 2026-11-12) |
-| 049 | S2 (already claimed in the split spec) | `source_cooldown` table, seed rows, grants for the collector role if any |
+| 049 | S2 (already claimed in the split spec) | `049_source_cooldown.sql`: `source_cooldown` table (host, cooldown_until, reason, updated_at); no seed rows (D7) |
 | 050 | S5a | `SELECT` grants to `market_scanner_app` on `collector_settings` and `source_cooldown` (both are new reads from Fastify); plus any `collector_requests` change S5a finds it needs |
 | 051 | S8 | `filings` cron migration (`UPDATE ... WHERE value = <old default>`) |
 | 052 | filings T1 | `home_filings` registration (`manual` mode) |
@@ -125,56 +126,43 @@ S0 is report only and gates S1a, S2 and S3 in the split spec. Everything below a
 
 ## 5. Slice S2: `source_cooldown` table and the backoff module
 
-**Purpose.** One shared table in the main database holding one cooldown row per host, read before each fetch and written on a block, so every container obeys a block that another container saw. Implements the requests file row for S2 and S5a: host-keyed, two backoff classes, `ensure_source_row`.
+> **Superseded by D7 (flat 1 hour, 2026-11-14): no backoff_class, block_count, last_block_at, ensure_source_row or seeded hosts; table is source_cooldown (host, cooldown_until, reason, updated_at); see docs/designs/t4f-mvp-plan.md.**
+
+**Purpose.** One shared table in the main database holding one cooldown row per host, read before each fetch and written on a block, so every container obeys a block that another container saw. Implements the requests file row for S2 and S5a: host-keyed, flat 1 hour per host (D7).
 
 **Dependencies.** S0 (existing pacing and symbol-update job name feed the acceptance tests). Independent of S1a.
 
 **Migration number.** 049 (already claimed). Table name: `source_cooldown`. Because `exchange_cooldown` was never created (the grep of the repo shows no table or code of that name), this slice creates `source_cooldown` directly; no rename step exists. The split spec's name `exchange_cooldown` is superseded (section 9, Q4).
 
 **Files to create or change**
-- `db/migrations/049_source_cooldown.sql` (new): the table and seed rows (DDL below).
+- `db/migrations/049_source_cooldown.sql` (new): the table, no seed rows (DDL below).
 - `db/migrations/down/049_source_cooldown.down.sql` (new, manual).
 - `scanner/collect/cooldown.py` (new, proposed): the shared module. Public functions (names proposed; the filings spec 5.1 calls `cooldown.block(host, ...)`, `cooldown.reset(host)` and reads the cooldown before each request, so those three keep those names):
-  - `ensure_source_row(host, backoff_class='other')`: idempotent insert (`ON CONFLICT DO NOTHING`); called the first time a host appears in an accepted Telegram link and before the first fetch of any host with no row.
-  - `active(host, now=None) -> bool` and `cooldown_until(host)`.
-  - `block(host, reason, now=None)`: sets `cooldown_until = now + backoff`, doubling on repeat within the class cap, increments the consecutive-block count.
-  - `reset(host)`: success clears `cooldown_until` and the count.
-- `scanner/marketdata/factors_postgres.py`: wire `_fetch_nse_feed` (around line 44) and the Upstox, screener and symbol-update fetch points to read the cooldown before fetching and write it on 403, 429 or a block page. Keep each source's own pacing constant unchanged (the 3 s gap at line 28 stays).
-- `scanner/collect/sources.py`: where a source ends because a cooldown is active, return `status: "skipped"`, `message: "exchange_cooldown"` (relies on S1a's contract; if S1a has not merged, this slice stops).
-- Tests: `tests/test_source_cooldown.py` (new, proposed), real Postgres through `tests/pgschema.py`.
-- The symbol-update job name and its fetch point come from S0. If S0 does not name it, the slice stops and returns to the user.
+  - `PgCooldown` class implementing the Cooldown Protocol of `scanner/home_events.py`: `active(host, now) -> bool`, `block(host, now, reason)`, `reset(host)`. `now` is a required timezone-aware datetime. No `cooldown_until()` accessor is in this slice.
+  - `block`: sets `cooldown_until = now + 1 hour` (flat, D7). An active cooldown is never shortened (upsert keeps the later of the two values).
+  - `reset(host)`: success clears `cooldown_until`; the row stays.
+- Not in this slice, deferred per the plan: wiring the fetch points in `scanner/marketdata/factors_postgres.py` (read before fetch, write on 403, 429 or a block page) belongs to S3 and F-T4d; the `skipped` / `exchange_cooldown` mapping in `scanner/collect/sources.py` belongs to S5a and relies on S1a's status contract. `scanner/factors.py` and the source `run()` bodies are not touched by S2.
+- Tests: `tests/test_source_cooldown.py` (new), real Postgres through `tests/pgschema.py`.
 
-**DDL (proposed; final shape is for the user to approve, section 9 Q5)**
+**DDL (matches `db/migrations/049_source_cooldown.sql`)**
 ```sql
--- Shared block cooldown, one row per host. Spec: docs/designs/collector-split-spec.md 4.3, 4.3a.
-CREATE TABLE source_cooldown (
-  host           text PRIMARY KEY,
-  backoff_class  text NOT NULL CHECK (backoff_class IN ('api','other')),
+-- Shared block cooldown, one row per host (D7: flat 1 hour).
+CREATE TABLE IF NOT EXISTS source_cooldown (
+  host           text PRIMARY KEY CHECK (host = lower(btrim(host)) AND host <> ''),
   cooldown_until timestamptz,
-  block_count    integer NOT NULL DEFAULT 0,
-  last_block_at  timestamptz,
-  last_reason    text,
+  reason         text,
   updated_at     timestamptz NOT NULL DEFAULT now()
 );
-INSERT INTO source_cooldown (host, backoff_class) VALUES
-  ('upstox','api'), ('fred','api'),
-  ('nse','other'), ('bse','other'), ('screener','other'), ('rbi','other'),
-  ('federal_reserve','other'), ('bls','other'), ('mospi','other'),
-  ('investing_com','other'), ('cnbc_tv18','other')
-ON CONFLICT (host) DO NOTHING;
 ```
 Down file: `DROP TABLE IF EXISTS source_cooldown;` then `DELETE FROM schema_migrations WHERE filename = '049_source_cooldown.sql';`, header "NOT run by the runner. Take a pg_dump first."
 
-**Backoff classes (decided 2026-11-10, requests file)**
-- `api` class (`upstox`, `fred`): first block 3 minutes, doubles to 6 minutes, caps at 15 minutes.
-- `other` class (every other host, including `nse`, `bse`, `rbi`): first block 15 minutes, doubles, caps at 1 hour (15, 30, 60).
+**Cooldown rule (D7, decided 2026-11-14; replaces the 2026-11-10 backoff classes)**
+- Flat 1 hour per host: a block sets `cooldown_until = now + 1 hour`; an active cooldown is never shortened; success (`reset`) clears it. No backoff classes.
 - Per-key independence (4.3a): a block on one host never sets another host's row. An NSE block pauses all NSE callers because they all key `nse`; BSE, Upstox and the rest are independent.
-- A host with no row gets `ensure_source_row(host, 'other')` before its first fetch.
-
 **Acceptance command**
 - Fast loop: `.venv/Scripts/python.exe -m unittest tests.test_source_cooldown -q` (must run against Postgres, not skipped).
 - Gate: full unittest run; `.venv/Scripts/python.exe -m scanner.pg.migrate --status` lists 049.
-- Tests: a block on each of the four original hosts sets only its own row; `upstox` backoff sequence is 3, 6, 12, 15 then stays 15; `nse` sequence is 15, 30, 60 then stays 60; a fresh process reads an active row and the source ends `skipped` / `exchange_cooldown`; success clears the row; a symbol-update 403 blocks `nse` and so pauses the `announcements`, `corporate_actions` and `filings` fetches; `ensure_source_row` is idempotent and does not overwrite an existing class; a host with no row is created `other` on first use; real-Postgres test of the write path.
+- Tests (S2 scope, real Postgres): a block on each of the four original hosts sets only its own row; a block sets `cooldown_until` to now + 1 hour, and a second block while active does not shorten it; `active` is false for a NULL or past `cooldown_until`; a fresh connection reads a row written by an earlier one; `reset` clears it. Source-level `skipped` / `exchange_cooldown`, the symbol-update 403 path and the pauses on `announcements`, `corporate_actions` and `filings` are tested in S5a, S3 and F-T4d, not here.
 
 **Must not change**
 - Each source's own request pacing and retry constants (`REQUEST_INTERVAL_SECONDS`, `RETRY_BACKOFF_SECONDS`, the 3 s gap).
@@ -326,7 +314,7 @@ Still open:
 
 - S0 dispatch status: S0 is report-only and gates S1a, S2 and S3. Default: S0 first, as the split spec requires.
 - S5a depends on S2 and not only S1a: `/internal/due` reads `source_cooldown`, so S5a needs S1a and S2 merged first.
-- S2 DDL columns and the eleven hosts seeded in 049 (`host`, `backoff_class`, `cooldown_until`, `block_count`, `last_block_at`, `last_reason`, `updated_at`; seed rows versus `ensure_source_row` only). Default: seed.
+- D7 DECIDED (flat 1 hour per host, 2026-11-14). Superseded: the per-class columns, `ensure_source_row` and the eleven-host seed in 049 (the earlier default was seed). The table is `host`, `cooldown_until`, `reason`, `updated_at`.
 - CSV and xlsx fate (NB4): whether `scanner/report.py` keeps its human CSV and xlsx exports. Needed before S2a is written.
 - Risk 3 fallback: if S0 measures container start-up above about 20 s, `announcements` and `filings` may stay long-running. Gates S3's service set, not these slices' code.
 - Filings fetch host confirmation after S0: `filings` is assumed `nse` in S2 and S8 until S0 confirms the host inside `stage_filings`.

@@ -245,13 +245,16 @@ class FetchResult:
 
 
 class Cooldown(Protocol):
-    """The shared NSE pause (spec 5.1, 5.2). S2 supplies the real one; tests inject a fake."""
+    """The shared NSE pause (spec 5.1, 5.2). S2 supplies the real one; tests inject a fake.
 
-    def active(self, exchange: str, now: datetime) -> bool: ...
+    The first argument is the cooldown host (for example 'nse'), the key of the shared block.
+    """
 
-    def block(self, exchange: str, now: datetime, reason: str) -> None: ...
+    def active(self, host: str, now: datetime) -> bool: ...
 
-    def reset(self, exchange: str) -> None: ...
+    def block(self, host: str, now: datetime, reason: str) -> None: ...
+
+    def reset(self, host: str) -> None: ...
 
 
 def _request_once(feed: Feed, session: Any, cfg: dict) -> tuple[int | None, str, bytes]:
