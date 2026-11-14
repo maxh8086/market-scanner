@@ -36,7 +36,7 @@ This spec does not build the runner. It consumes what the split spec builds. Wha
 | `execute_source` extraction and a `skipped` write path | S1a | exists in the split spec |
 | **`run()` may return `status` in `ok`, `failed`, `skipped`; `execute_source` persists it with counts and `message`; run-once exits non-zero on `failed`** | S1a | **add to split spec, with a test** (review M1). Without it a block records `ok`. |
 | Run-once container, `--source`, API-health check for events sources | S1a, S3 | exists. **Add:** how run-once learns a source is an events source (this spec: class attribute `events_source = True`, T4d). |
-| `source_cooldown` table, one row per host (every source on its own host is independent) | S2 | not built; S2 creates it (migration 049). S2 owns the backoff and cap values. |
+| `source_cooldown` table, one row per host (every source on its own host is independent) | S2 | not built; S2 creates it (migration 049). Rule: flat 1 hour per host (D7, decided 2026-11-14); no backoff or cap values. |
 | `GET /internal/due` omits a source whose host has an active cooldown | S5a | **add:** a `host` field per entry in `config/collector_services.json` (`home_filings` is `nse`), populated in T9. |
 | Watchdog finalises a `running` row when it kills a container (`failed`, message `killed`) and max-runtime in `config/collector_runtime.json` | S4 | **add** (review M7). Value for `home_filings`: **330 s** (5.3: the worst case is 285 s plus container start of up to about 20 s). |
 | The split spec cites "filings spec 4.7" for the fundamentals queue (its 4.2, the 4.6 table "weekly sweep" row, S5a and S7). 4.7 is now a stub | S5a, S7 | **add:** repoint those four citations to the future `fundamentals-trigger-spec.md`. |
@@ -455,7 +455,7 @@ Order of a run:
 5. At the end of a run in which no block occurred, no cooldown was seen mid-run (step 4b) and at least one feed succeeded, call `cooldown.reset("nse")`. Never reset earlier (review M2: a reset after the first success would stop the backoff from ever escalating).
 6. Return `{"status", "fetched", "new", "from", "to", "message"}`. `fetched` is the parsed item count after `parse()`. `new` is the sum of `inserted` from the API. The API's `invalid` count is summed too (5.2). `from` and `to` are the earliest and latest `published_at` kept, or `None`.
 
-**Who writes what.** `run_cycle` returns the status dict and writes the cooldown only through the injected object (block and success reset). `execute_source` (split S1a) writes the run row. The cooldown's backoff and cap values belong to S2. Decided 2026-11-11: the backoff classes are fixed in decision A2 (API hosts 3 to 15 minutes; other hosts 15 minutes to 1 hour).
+**Who writes what.** `run_cycle` returns the status dict and writes the cooldown only through the injected object (block and success reset). `execute_source` (split S1a) writes the run row. The cooldown rule is flat 1 hour per host (D7, decided 2026-11-14). It replaces the per-class backoff of decision A2 of 2026-11-11 (API hosts 3 to 15 minutes; other hosts 15 minutes to 1 hour); no backoff class applies.
 
 ### 5.2 Response handling, cooldown and status
 
@@ -543,9 +543,9 @@ class FetchResult: outcome: str; items: list[dict]; dropped: int; detail: str
     # outcome: "ok" | "blocked" | "transient" | "fatal" (5.2); detail is redacted, never a URL with a query
 
 class Cooldown(Protocol):                    # S2 supplies the real one; tests inject a fake
-    def active(self, exchange: str, now: datetime) -> bool: ...
-    def block(self, exchange: str, now: datetime, reason: str) -> None: ...
-    def reset(self, exchange: str) -> None: ...
+    def active(self, host: str, now: datetime) -> bool: ...
+    def block(self, host: str, now: datetime, reason: str) -> None: ...
+    def reset(self, host: str) -> None: ...
 
 def parse(feed_code: str, body: bytes) -> ParseResult                    # built (T4e and T7); raises ParseError
 def dedupe_key(feed_code: str, source_id: str | None, source_url: str, title: str, description: str, published_at: datetime) -> str
@@ -655,7 +655,7 @@ The fundamentals trigger (4.7) and the reconciler (4.4) have no task here. Only 
 | D8 | Events in a separate database on the same server. | **Decided 2026-11-10.** |
 | D9 | Only the Fastify server touches the events database. | **Decided 2026-11-10.** |
 | D10 | One container per source, with the watchdog. | **Decided; owned by the split spec.** |
-| Cooldown scope | Per host, shared `source_cooldown` table, one row per host. Webscrape hosts (`nse`, `bse`, `rbi`, other scraped hosts) take the longer class (start 15 minutes, cap 1 hour); API hosts (`upstox`, `fred`) take the shorter class (start 3 minutes, cap 15 minutes). | **Decided 2026-11-11 (user): host-keyed; webscrape longer, API shorter. Supersedes the 2026-11-10 per-exchange row.** |
+| Cooldown scope | Per host, shared `source_cooldown` table, one row per host. Flat 1 hour per host for every host (D7). | **Decided 2026-11-14 (user, D7): flat 1 hour per host. Supersedes the 2026-11-11 webscrape and API classes (15 minutes to 1 hour; 3 to 15 minutes) and the 2026-11-10 per-exchange row.** |
 | Fixtures | All eight feeds' fixtures are real T0 sample files (in the T0 change; seven are synthetic at HEAD b0ab71e). | **Decided 2026-11-10; amended 2026-11-11.** |
 | Ingest floor, future-date test | Add a floor (earlier); then deferred with `date_future`. | **Floor decided (D8, NEW-DATE-FLOOR): `ingest_floor_days` default 730, applied in the runner before `filter_items`, rejection reason `date_floor`. `date_future` still deferred** (4.3). |
 | Cuts | Z2, Z3, Z4, Z5, Z6, Z7, Z12. | **Decided 2026-11-10.** Z7 amended by Q1 (`8-20`). Z12 (order-win feed) deferred by Q2. |
@@ -679,7 +679,7 @@ The fundamentals trigger (4.7) and the reconciler (4.4) have no task here. Only 
 
 **Answered 2026-11-10 (review 3 questions):** D8/D9 stay as decided. The ingest floor and the future-date test are deferred (4.3). The cooldown mid-run re-read, the 30 s request retry, the start-feed rotation, the per-feed deadline accounting, and keeping 4.3a, 4.4 and 4.7 in this spec: all kept. A 403 on one feed stays `blocked` (5.2). Open: whether to poll the two quarterly feeds (`Related_Party_Trans`, `Shareholding_Pattern`) less often than every 5 minutes (explained to you; default is to keep every 5 minutes).
 
-Still open, not blocking a task here: cooldown cap values (split spec S2 still says 2 h, overview 7.3 says 1 h for other hosts; decision A2 sets 15 minutes for API hosts and 1 hour for other hosts; S2 owns the update); overview edits (14 feeds to 8, the 7.3 off-hours polling and 7.4 "stored counts" lines, 5.1 BSE); Z3's later migration and market-cap source; the Upstox holidays endpoint and token; `REVOKE CONNECT` on the events database; events database backup schedule. Resolved 2026-11-11 and no longer open: the cooldown scope (host-keyed `source_cooldown`, sections 2 and 10) and the ingest token path (4.6).
+Still open, not blocking a task here: cooldown cap values are RESOLVED 2026-11-14 (D7): flat 1 hour per host, with no per-class values and no 2 h figure; S2 implements the flat rule; overview edits (14 feeds to 8, the 7.3 off-hours polling and 7.4 "stored counts" lines, 5.1 BSE); Z3's later migration and market-cap source; the Upstox holidays endpoint and token; `REVOKE CONNECT` on the events database; events database backup schedule. Resolved 2026-11-11 and no longer open: the cooldown scope (host-keyed `source_cooldown`, sections 2 and 10) and the ingest token path (4.6).
 
 ## 11. Next steps
 
