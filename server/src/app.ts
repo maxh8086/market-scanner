@@ -39,6 +39,7 @@ import { registerCollectorRefreshRoute } from "./collectorRefresh.js";
 import { createSessionStore, registerCsrfGate, registerSessionRoutes, type SessionStore } from "./session.js";
 import { registerHomeEventsRoutes, type HomeEventsRouteDeps } from "./homeEventsRoute.js";
 import { registerCollectorDueRoute, type CollectorDueRouteDeps } from "./collectorDueRoute.js";
+import { registerCollectorFinishRoute } from "./collectorFinishRoute.js";
 import {
   buildIsinLookupQuery,
   createWsSocket,
@@ -309,6 +310,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // Collector watchdog poll (S5a). Off unless the caller wires a token check and a services loader.
   if (deps.collectorDue) {
     registerCollectorDueRoute(app, { query: deps.query, ...deps.collectorDue });
+    registerCollectorFinishRoute(app, { query: deps.query, ...deps.collectorDue });
   }
 
   // Broker login (ui-mediated) and stored holdings: GET /api/holdings reads the last ok snapshot, and

@@ -421,6 +421,23 @@ if ($SkipServices) {
         Write-Host "UI: http://127.0.0.1:8080" -ForegroundColor Green
         Write-Host "Server API: http://127.0.0.1:8081" -ForegroundColor Green
     }
+
+    # Warning only: the collector watchdog is started by the user (scripts\watchdog.ps1), never here.
+    $watchdogUp = $false
+    try {
+        $watchdogMutex = [System.Threading.Mutex]::OpenExisting('Global\MarketScannerWatchdog')
+        $watchdogMutex.Dispose()
+        $watchdogUp = $true
+    } catch {
+        $watchdogUp = $false
+    }
+    if (-not $watchdogUp) {
+        $watchdogProcs = @(Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*scanner.watchdog*' })
+        $watchdogUp = $watchdogProcs.Count -gt 0
+    }
+    if (-not $watchdogUp) {
+        Write-Host "The collector watchdog is not running. Start it with scripts\watchdog.ps1, or register it at logon with scripts\register_watchdog_task.ps1." -ForegroundColor Yellow
+    }
 }
 
 Write-Stage "Done"
