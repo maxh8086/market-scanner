@@ -83,8 +83,10 @@ when it is past that date and processed. Conclusions are referenced from `stock_
 
 ## Files
 
-The pipeline stages still hand over through `output/` files: `ath_scan_<date>.csv`,
-`ath_enriched_<date>.csv`, `ath_conclusions_<date>.csv`, plus the workbook and cross-check files.
+The scan hand-over is the `ath_scan_candidates` table (migration 060): `ath_scan` writes it and the
+readers take the newest scan from it. `output/ath_scan_<date>.csv` and the workbook are a human
+export only; nothing reads them back. The other pipeline stages still hand over through `output/`
+files: `ath_enriched_<date>.csv`, `ath_conclusions_<date>.csv`, plus the cross-check files.
 Each stage picks its input as the newest file by name, so **never add a suffix or rename files in
-`output/`**; move old outputs into a subfolder instead. Moving these hand-offs into the database
+`output/`**; move old outputs into a subfolder instead. Moving the remaining hand-offs into the database
 (keyed by `run_id`, files only as a manual export) is planned, not done.

@@ -145,16 +145,17 @@ class ComposeCollectorTemplateTests(unittest.TestCase):
         collector = self.services["collector"]
         self.assertEqual(collector.get("entrypoint"), ["python", "collect.py", "serve"])
         self.assertEqual(collector.get("restart"), "always")
-        self.assertIn(
-            "./output",
-            [host for host, target, _mode in _volume_triples(collector)],
-            "the old collector service must keep its ./output mount",
-        )
-        self.assertIn(
+        self.assertNotIn(
             "/app/output",
             [target for _host, target, _mode in _volume_triples(collector)],
-            "the old collector service must keep its /app/output target",
+            "the collector must not mount /app/output (the scan hand-over is ath_scan_candidates)",
         )
+
+    def test_collector_and_run_once_template_have_no_output_mount(self):
+        for name, service in (("collector", self.services["collector"]), ("template", self._template())):
+            for _host, target, _mode in _volume_triples(service):
+                with self.subTest(service=name, target=target):
+                    self.assertNotEqual(target, "/app/output", f"{name} must not mount /app/output")
 
     def test_run_once_services_are_never_restart_always(self):
         for name, service in self.services.items():

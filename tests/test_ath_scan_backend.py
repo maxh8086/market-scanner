@@ -63,6 +63,7 @@ class BackendCheckTests(unittest.TestCase):
             mock.patch.object(ath_scan, "UpstoxClient", _Client),
             mock.patch.object(ath_scan, "load_constituents", return_value=_constituents()),
             mock.patch.object(ath_scan.report, "write_outputs", return_value=("a.csv", "a.xlsx")),
+            mock.patch.object(ath_scan, "ath_scan_store"),  # no database in this offline test
             mock.patch.object(ath_scan.report, "print_summary"),
             mock.patch.object(ath_scan.report, "write_skipped", self.write_skipped),
             # No network for the ISIN master in these tests: CSV ISINs are used.

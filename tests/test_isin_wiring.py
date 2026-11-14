@@ -57,6 +57,7 @@ def _ath_patches(stack, master_result, backend="sqlite", record_side_effect=None
     stack.enter_context(mock.patch.object(ath_scan, "UpstoxClient", _Client))
     stack.enter_context(mock.patch.object(ath_scan, "load_constituents", return_value=_constituents()))
     stack.enter_context(mock.patch.object(ath_scan.report, "write_outputs", return_value=("a.csv", "a.xlsx")))
+    stack.enter_context(mock.patch.object(ath_scan, "ath_scan_store"))  # no database in this offline test
     stack.enter_context(mock.patch.object(ath_scan.report, "print_summary"))
     stack.enter_context(mock.patch.object(ath_scan.report, "write_skipped"))
     stack.enter_context(mock.patch.object(ath_scan, "_load_master_for_scan", return_value=master_result))

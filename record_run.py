@@ -24,18 +24,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from scanner import runs
+from scanner import ath_scan_store, runs
 from scanner.pg import db
-
-
-def _scan_is_empty(path: Path) -> bool:
-    """True when the scan CSV exists, has its header, and no rows."""
-    if not path.exists():
-        return False
-    try:
-        return pd.read_csv(path, keep_default_na=False).empty
-    except Exception:
-        return False
 
 
 def _finish(run_id: str, enriched_df: pd.DataFrame, conclusions_df, status=None) -> int:
@@ -113,10 +103,13 @@ def main(argv=None) -> int:
     # A scan with nothing in range is a complete, empty run: no snapshots, and every stock that
     # was in range last time is recorded as having left it. Checked before the enriched file,
     # which an earlier run of the same date may have left behind.
-    scan_path = Path(__file__).parent / "output" / f"ath_scan_{run_date}.csv"
-    if not args.enriched and _scan_is_empty(scan_path):
-        print(f"{scan_path.name} has no stocks in range: recording an empty run")
-        return _finish(args.run_id, pd.DataFrame(), None, status="complete")
+    # The scan's candidates are in ath_scan_candidates; zero rows for the run date is an empty scan.
+    if not args.enriched:
+        with ath_scan_store.connect() as conn:
+            scan_rows = ath_scan_store.scan_row_count(conn, run_date)
+        if scan_rows == 0:
+            print(f"ath_scan_candidates for {run_date} has no stocks in range: recording an empty run")
+            return _finish(args.run_id, pd.DataFrame(), None, status="complete")
 
     # Load enriched CSV
     if args.enriched:

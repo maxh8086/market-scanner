@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 import traceback
@@ -23,13 +24,14 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from scanner import ath, factors, history, indicators, isin_resolver, report
+from scanner import ath, ath_scan_store, factors, history, indicators, isin_resolver, report
 from scanner.constituents import DEFAULT_INDEX, load_constituents
 from scanner.upstox import QUOTE_BATCH_SIZE, UpstoxClient, instrument_key
 
 IST = timezone(timedelta(hours=5, minutes=30))
 MARKET_CLOSE_HOUR, MARKET_CLOSE_MINUTE = 15, 30
 EXIT_BACKEND = 3
+EXIT_NO_CANDIDATES = 4  # a full-universe run wrote zero rows to ath_scan_candidates
 _BACKEND_HINT = (
     "Start Postgres with scripts/ensure_postgres.ps1, "
     "or set MARKETDATA_BACKEND=sqlite for an offline run."
@@ -120,6 +122,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-factors", action="store_true", help="Skip corporate factors enrichment")
     p.add_argument("--refresh-factors", action="store_true", help="Force re-fetch corporate factors data")
     p.add_argument("--output-dir", type=str, default="output", help="Directory for output files")
+    p.add_argument("--no-export", action="store_true",
+                   help="Skip the human CSV/xlsx export (report.write_outputs, write_skipped); "
+                        "the candidates are still written to ath_scan_candidates")
     return p.parse_args()
 
 
@@ -392,17 +397,31 @@ def main() -> int:
         df["expansion_signal"] = ""
         df["factors_matched"] = 0
 
-    csv_path, xlsx_path = report.write_outputs(df, as_of_str, max_dist=args.max_dist, output_dir=args.output_dir)
-    report.print_summary(df, now.strftime("%Y-%m-%d %H:%M IST"), intraday, max_dist=args.max_dist)
-    report.write_skipped(skipped)
+    # The machine copy: a DB write failure raises, so the scan fails loudly.
+    # COLLECTOR_RUN_ID is set by the collector when it runs this scan; a host run has none.
+    run_id = os.environ.get("COLLECTOR_RUN_ID") or None
+    with ath_scan_store.connect() as conn:
+        rows_written = ath_scan_store.write_scan(conn, today, df, run_id=run_id)
 
-    print(f"\nWrote {csv_path} and {xlsx_path}")
+    report.print_summary(df, now.strftime("%Y-%m-%d %H:%M IST"), intraday, max_dist=args.max_dist)
+    if args.no_export:
+        print(f"Wrote {rows_written} candidate rows for {as_of_str} to ath_scan_candidates (no file export)")
+    else:
+        csv_path, xlsx_path = report.write_outputs(df, as_of_str, max_dist=args.max_dist, output_dir=args.output_dir)
+        report.write_skipped(skipped)
+        print(f"\nWrote {csv_path} and {xlsx_path}")
     st = client.stats()
     print(f"Upstox: {st['requests_made']} requests, {st['responses_429']} rate-limited (429), "
           f"{st['seconds_waiting']}s spent throttling")
     print(f"Skipped {len(skipped)} symbols — see logs/skipped.csv")
     if intraday:
         print("Note: run during market hours — today's high/LTP are intraday, not final.")
+
+    # Zero candidates fails only a full-universe run; a --symbols or --index filter may match nothing.
+    full_run = not args.symbols and args.index == DEFAULT_INDEX
+    if rows_written == 0 and full_run:
+        print("ath_scan found zero candidates", file=sys.stderr)
+        return EXIT_NO_CANDIDATES
 
     return 0
 

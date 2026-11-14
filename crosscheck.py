@@ -6,7 +6,7 @@ providing an independent verification without calling Upstox. Useful for
 detecting anomalies.
 
 Usage:
-    python crosscheck.py                          # latest scan in output/
+    python crosscheck.py                          # newest scan in ath_scan_candidates
     python crosscheck.py --scan output/ath_scan_2026-09-29.csv
     python crosscheck.py --date 2026-09-29
     python crosscheck.py --tol 1.0 --output-dir custom_output
@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
         "--scan",
         type=str,
         default=None,
-        help="Path to scan CSV (default: newest output/ath_scan_*.csv)",
+        help="Path to a scan CSV you supply (default: newest scan in ath_scan_candidates)",
     )
     p.add_argument(
         "--date",
@@ -55,39 +55,25 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def find_latest_scan(output_dir: str = "output") -> tuple[Path, date] | None:
-    """Find the newest scan CSV in output_dir.
-
-    Returns (path, date_from_filename) or None if not found.
-    """
-    output_path = Path(output_dir)
-    if not output_path.exists():
-        return None
-
-    scans = sorted(output_path.glob("ath_scan_*.csv"), reverse=True)
-    if not scans:
-        return None
-
-    # Extract date from filename ath_scan_YYYY-MM-DD.csv
-    filename = scans[0].name
-    date_str = filename.replace("ath_scan_", "").replace(".csv", "")
-    try:
-        scan_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-        return scans[0], scan_date
-    except ValueError:
-        return None
+def find_latest_scan() -> tuple[pd.DataFrame, date] | None:
+    """The newest scan in ath_scan_candidates as (frame, scan_date), or None when there is none."""
+    from scanner import ath_scan_store
+    with ath_scan_store.connect() as conn:
+        return ath_scan_store.read_latest_scan(conn)
 
 
 def main() -> int:
     """Run cross-check and return exit code (0 = OK, 1 = divergences found)."""
     args = parse_args()
 
-    # Determine scan file and date
+    # Determine scan source and date: a CSV named with --scan, or the newest table scan
+    table_df = None
     if args.scan:
         scan_path = Path(args.scan)
         if not scan_path.exists():
             print(f"Error: scan file not found: {scan_path}")
             return 1
+        source = str(scan_path)
 
         # Extract date from path if not given
         if args.date:
@@ -101,24 +87,27 @@ def main() -> int:
                 print("Error: unable to infer scan date; use --date")
                 return 1
     else:
-        # Find latest scan
-        result = find_latest_scan(args.output_dir)
-        if not result:
-            print(f"Error: no scan CSV found in {args.output_dir}")
+        found = find_latest_scan()
+        if not found:
+            print("Error: no scan in ath_scan_candidates")
             return 1
-        scan_path, scan_date = result
+        table_df, scan_date = found
+        source = f"ath_scan_candidates {scan_date}"
 
     if args.date:
         scan_date = datetime.strptime(args.date, "%Y-%m-%d").date()
 
-    print(f"Cross-checking {scan_path} (date: {scan_date})...")
+    print(f"Cross-checking {source} (date: {scan_date})...")
 
     # Load scan
-    try:
-        scan_df = pd.read_csv(scan_path)
-    except Exception as e:
-        print(f"Error reading scan CSV: {e}")
-        return 1
+    if table_df is not None:
+        scan_df = table_df
+    else:
+        try:
+            scan_df = pd.read_csv(scan_path)
+        except Exception as e:
+            print(f"Error reading scan CSV: {e}")
+            return 1
 
     if "symbol" not in scan_df.columns or "ltp" not in scan_df.columns:
         print("Error: scan CSV must have 'symbol' and 'ltp' columns")

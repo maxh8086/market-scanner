@@ -218,18 +218,22 @@ if ($Symbols) { $scanArgs += @('--symbols', $Symbols) }
 $code = Measure-Stage 'scan' { Invoke-Docker $scanArgs }
 if ($code -ne 0) { Stop-Pipeline "Scan failed (exit $code)." }
 
-$newest = Get-ChildItem -LiteralPath 'output' -Filter 'ath_scan_*.csv' -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+# The scan hand-over is the ath_scan_candidates table. Ask the enrich image for its newest scan:
+# exit 0 prints "YYYY-MM-DD <rows>", exit 2 means no rows or Postgres is unreachable.
+$latest = Invoke-DockerCapture @('compose', 'run', '-T', '--rm', '--entrypoint', 'python', 'enrich', '-m', 'scanner.ath_scan_store', 'latest')
+$latestLine = ("$($latest.Out)").Trim()
+$latestMatch = $null
+if ($latest.Code -eq 0 -and $latestLine -match '^(\d{4}-\d{2}-\d{2}) (\d+)$') { $latestMatch = $Matches }
 # Nothing within range is a normal result: skip the stages that need stocks, still record the run.
-$NoStocks = [bool]$newest -and (@(Import-Csv -LiteralPath $newest.FullName).Count -eq 0)
+$NoStocks = [bool]$latestMatch -and ([int]$latestMatch[2] -eq 0)
 if ($NoStocks) {
     Write-Host "The scan found no stocks within range of their ATH: enrichment, conclusions, report, cross-check and portfolio are skipped." -ForegroundColor Yellow
 }
 
 # The run's row must exist before the first LLM call is recorded against it.
 if ($RecordRun) {
-    if ($newest -and $newest.BaseName -match '(\d{4}-\d{2}-\d{2})$') {
-        $script:RunDate = $Matches[1]
+    if ($latestMatch) {
+        $script:RunDate = $latestMatch[1]
         $code = Invoke-Python @('record_run.py', '--begin', '--run-id', $RunId, '--date', $script:RunDate)
         if ($code -eq 0) {
             $script:RunBegun = $true
@@ -239,7 +243,7 @@ if ($RecordRun) {
             Write-Host "Could not open the run in Postgres (exit $code) -- this run will not be recorded." -ForegroundColor Yellow
         }
     } else {
-        Write-Host "No output/ath_scan_<date>.csv found -- this run will not be recorded." -ForegroundColor Yellow
+        Write-Host "No ath_scan_candidates rows found -- this run will not be recorded." -ForegroundColor Yellow
     }
 } else {
     Write-Host "Subset run (-Symbols): not recorded in Postgres." -ForegroundColor Yellow

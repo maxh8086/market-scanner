@@ -297,21 +297,17 @@ class Filings(Source):
             return self.plan(params, now)
 
         try:
-            from scanner import docstore, coverage
-            import pandas as pd
-            from pathlib import Path
+            from scanner import docstore, coverage, ath_scan_store
 
-            # Load the latest scan
-            output_dir = Path("output")
-            candidates = sorted(output_dir.glob("ath_scan_*.csv"))
-            if not candidates:
+            # Load the newest scan from the candidate table
+            with ath_scan_store.connect() as conn:
+                found = ath_scan_store.read_latest_scan(conn)
+            if found is None:
                 return {
                     "fetched": 0, "new": 0, "from": None, "to": None,
-                    "message": "skipped: no ath_scan_*.csv in output/"
+                    "message": "skipped: no ath_scan_candidates rows"
                 }
-
-            scan_path = candidates[-1]
-            df = pd.read_csv(scan_path, keep_default_na=False)
+            df, _ = found
 
             # Dynamically load enrich to get _candidate_filings and stage_filings
             import enrich
@@ -341,11 +337,6 @@ class Filings(Source):
                 "message": ""
             }
 
-        except FileNotFoundError:
-            return {
-                "fetched": 0, "new": 0, "from": None, "to": None,
-                "message": "skipped: no ath_scan_*.csv in output/"
-            }
         except Exception as e:
             return {
                 "fetched": 0, "new": 0, "from": None, "to": None,
@@ -372,21 +363,17 @@ class Fundamentals(Source):
             return self.plan(params, now)
 
         try:
-            from scanner import docstore, constituents, fundamentals
-            import pandas as pd
-            from pathlib import Path
+            from scanner import docstore, constituents, fundamentals, ath_scan_store
 
-            # Load the latest scan
-            output_dir = Path("output")
-            candidates = sorted(output_dir.glob("ath_scan_*.csv"))
-            if not candidates:
+            # Load the newest scan from the candidate table
+            with ath_scan_store.connect() as conn:
+                found = ath_scan_store.read_latest_scan(conn)
+            if found is None:
                 return {
                     "fetched": 0, "new": 0, "from": None, "to": None,
-                    "message": "skipped: no ath_scan_*.csv in output/"
+                    "message": "skipped: no ath_scan_candidates rows"
                 }
-
-            scan_path = candidates[-1]
-            df = pd.read_csv(scan_path, keep_default_na=False)
+            df, _ = found
             symbols = [s for s in df["symbol"].tolist() if s]
 
             # Determine which symbols need refetching
@@ -417,11 +404,6 @@ class Fundamentals(Source):
                 "message": "" if ok == len(to_fetch) else f"{ok} of {len(to_fetch)} succeeded"
             }
 
-        except FileNotFoundError:
-            return {
-                "fetched": 0, "new": 0, "from": None, "to": None,
-                "message": "skipped: no ath_scan_*.csv in output/"
-            }
         except Exception as e:
             return {
                 "fetched": 0, "new": 0, "from": None, "to": None,
@@ -440,8 +422,9 @@ class AthScan(Source):
 
     Queued by the UI "Run now" button and by the first-run watcher (scanner/collect/first_run.py),
     both through collector_settings.request_run. It calls ath_scan.main() with the default
-    full-universe arguments and writes output/ath_scan_<date>.csv, as the scanner image does.
-    A non-zero exit code from ath_scan.main() raises, so the run is recorded as failed.
+    full-universe arguments and --no-export, so the candidates go to the ath_scan_candidates table
+    and no CSV is written. A non-zero exit code from ath_scan.main() raises, and so does a run
+    that leaves zero candidates for the newest scan date.
     """
 
     def __init__(self):
@@ -452,16 +435,13 @@ class AthScan(Source):
         if dry_run:
             return self.plan(params, now)
 
-        import glob
         import sys
-        from pathlib import Path
 
         import ath_scan  # /app/ath_scan.py in the collector image
+        from scanner import ath_scan_store
 
-        out_dir = Path("output")
-        before = set(glob.glob(str(out_dir / "ath_scan_*.csv")))
         saved_argv = sys.argv
-        sys.argv = ["ath_scan.py", "--output-dir", str(out_dir)]
+        sys.argv = ["ath_scan.py", "--no-export"]
         try:
             code = ath_scan.main()  # progress prints go to the collector log
         finally:
@@ -470,17 +450,14 @@ class AthScan(Source):
         if code:
             raise RuntimeError(f"ath_scan exited with code {code}")
 
-        written = sorted(set(glob.glob(str(out_dir / "ath_scan_*.csv"))) - before)
-        if not written:
-            written = sorted(glob.glob(str(out_dir / "ath_scan_*.csv")))[-1:]
-        if not written:
-            raise RuntimeError("ath_scan finished but wrote no output/ath_scan_*.csv")
-
-        import pandas as pd
-        rows = len(pd.read_csv(written[-1], keep_default_na=False))
+        with ath_scan_store.connect() as conn:
+            scan_date = ath_scan_store.latest_scan_date(conn)
+            rows = ath_scan_store.scan_row_count(conn, scan_date) if scan_date else 0
+        if not rows:
+            raise RuntimeError("ath_scan wrote zero candidates to ath_scan_candidates")
         return {
             "fetched": rows, "new": rows, "from": None, "to": None,
-            "message": f"wrote {written[-1]}",
+            "message": f"wrote {rows} candidates for {scan_date.isoformat()}",
         }
 
     def plan(self, params: dict, now: Optional[datetime] = None) -> dict:

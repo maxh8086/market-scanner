@@ -184,7 +184,6 @@ services:
       SERVICE_TOKEN_FILE: /run/app-keys/collector_token
     volumes:
       - ./data:/app/data
-      - ./output:/app/output
       - ./logs:/app/logs
       - ./config:/app/config:ro
       - ${APP_SERVICE_TOKEN_FILE:?set APP_SERVICE_TOKEN_FILE in .env to the host path of the collector token file}:/run/app-keys/collector_token:ro
