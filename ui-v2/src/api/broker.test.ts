@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetCsrfTokenForTests, SESSION_URL } from "./session";
-import { BrokerError, fetchBrokerStatus, LOGIN_REQUIRED_MESSAGE, requestLoginUrl, syncPortfolio } from "./broker";
+import {
+  BrokerError,
+  brokerLabel,
+  fetchBrokerStatus,
+  isBrokerName,
+  LOGIN_REQUIRED_MESSAGE,
+  requestLoginUrl,
+  syncPortfolio,
+} from "./broker";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
@@ -75,6 +83,57 @@ describe("fetchBrokerStatus", () => {
     stubFetch(() => jsonResponse({ expiresAt: null }));
 
     await expect(fetchBrokerStatus("kite")).rejects.toThrow("unexpected shape");
+  });
+});
+
+describe("upstox routes", () => {
+  it("reads the Upstox connection state from the broker's own status route", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ connected: true, expiresAt: "2026-11-14T00:30:00.000Z" }));
+
+    await expect(fetchBrokerStatus("upstox")).resolves.toEqual({
+      connected: true,
+      expiresAt: "2026-11-14T00:30:00.000Z",
+    });
+    expect(callsTo(fetchMock, "/api/broker/upstox/status?profile=default")).toHaveLength(1);
+  });
+
+  it("posts to the Upstox login-url route and returns the login URL", async () => {
+    const loginUrl = "https://api.upstox.com/v2/login/authorization/dialog?response_type=code";
+    const fetchMock = stubFetch(() => jsonResponse({ url: loginUrl }));
+
+    await expect(requestLoginUrl("upstox")).resolves.toBe(loginUrl);
+    const [, init] = callsTo(fetchMock, "/api/broker/upstox/login-url")[0];
+    expect(init).toMatchObject({ method: "POST", body: JSON.stringify({ profile: "default" }) });
+  });
+
+  it("syncs with broker upstox and accepts an upstox sync result", async () => {
+    const fetchMock = stubFetch(() =>
+      jsonResponse({ syncedAt: "2026-11-13T10:15:00.000Z", broker: "upstox", rowCount: 2 }),
+    );
+
+    await expect(syncPortfolio("upstox")).resolves.toEqual({
+      syncedAt: "2026-11-13T10:15:00.000Z",
+      broker: "upstox",
+      rowCount: 2,
+    });
+    const [, init] = callsTo(fetchMock, "/api/holdings/sync")[0];
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ profile: "default", broker: "upstox" });
+  });
+
+  it("maps a 401 from an Upstox sync to the login required message", async () => {
+    stubFetch(() => jsonResponse({ error: "login required" }, 401));
+
+    const error = await syncPortfolio("upstox").catch((caught: unknown) => caught);
+    expect((error as BrokerError).message).toBe(LOGIN_REQUIRED_MESSAGE);
+    expect((error as BrokerError).status).toBe(401);
+  });
+
+  it("names the broker in brokerLabel and recognises only the supported names", () => {
+    expect(brokerLabel("kite")).toBe("Kite");
+    expect(brokerLabel("upstox")).toBe("Upstox");
+    expect(isBrokerName("upstox")).toBe(true);
+    expect(isBrokerName("zerodha")).toBe(false);
+    expect(isBrokerName(null)).toBe(false);
   });
 });
 
@@ -154,6 +213,12 @@ describe("syncPortfolio", () => {
 
   it("rejects a body that is not a sync result", async () => {
     stubFetch(() => jsonResponse({ broker: "upstox", rowCount: 1 }));
+
+    await expect(syncPortfolio("kite")).rejects.toThrow("unexpected shape");
+  });
+
+  it("rejects a sync result that names an unknown broker", async () => {
+    stubFetch(() => jsonResponse({ syncedAt: "2026-11-13T10:15:00.000Z", broker: "zerodha", rowCount: 1 }));
 
     await expect(syncPortfolio("kite")).rejects.toThrow("unexpected shape");
   });

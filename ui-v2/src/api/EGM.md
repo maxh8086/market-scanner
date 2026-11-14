@@ -13,13 +13,16 @@ and its types are kept in step with the matching server module.
 - `filterOptions.ts`: `fetchFilterOptions`, `FilterOptions`,
   `FilterOptionsError`. Route: `GET /api/runs/:runId/filter-options`.
 - `broker.ts`: `fetchBrokerStatus`, `requestLoginUrl`, `syncPortfolio`,
-  `redirectToBrokerLogin`, `BrokerName`, `BrokerStatus`, `SyncResult`,
+  `redirectToBrokerLogin`, `BrokerName` (`kite | upstox`), `BROKER_NAMES`,
+  `brokerLabel`, `isBrokerName`, `BrokerStatus`, `SyncResult`,
   `BrokerError`, `LOGIN_REQUIRED_MESSAGE`. Routes:
   `GET /api/broker/:broker/status`, `POST /api/broker/:broker/login-url`,
-  `POST /api/holdings/sync`.
-- `holdings.ts`: `fetchHoldings`, `Holding`, `HoldingsSnapshot`,
-  `HoldingsError`. Route: `GET /api/holdings` (the stored snapshot, no live
-  broker call).
+  `POST /api/holdings/sync`. The broker is a required argument of the three
+  functions (profile defaults to `default`).
+- `holdings.ts`: `fetchHoldings(profile, broker, { signal })`, `Holding`,
+  `HoldingsSnapshot`, `HoldingsError`. Route: `GET /api/holdings?profile=&broker=`
+  (the stored snapshot for that broker, no live broker call; broker defaults to
+  `kite`).
 - `latestRun.ts`: `fetchLatestRun`, `LatestRun`, `LatestRunError`. Route:
   `GET /api/runs/latest`.
 - `presets.ts`: `listPresets`, `createPreset`, `deletePreset`, `Preset`,
@@ -48,6 +51,8 @@ and its types are kept in step with the matching server module.
   rejection, like the presets client.
 - The browser never receives a broker token. The broker client only sees
   status, expiry, the login URL and sync counts.
+- Upstox uses the same routes as Kite with `broker` set to `upstox`. A sync
+  needs no API key from the browser; a 401 means login required for that broker.
 
 ## Verification
 - Run: `npm test` in `ui-v2/` (covers the `*.test.ts` files in this folder).

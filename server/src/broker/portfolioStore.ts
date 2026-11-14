@@ -1,6 +1,7 @@
 import type { QueryFn } from "../app.js";
 import type { Holding } from "../holdings/kiteHoldings.js";
 import type { PortfolioTx } from "../portfolioTx.js";
+import type { BrokerId } from "./names.js";
 
 /**
  * Stored portfolio snapshots (migration 058). A sync writes one `ok` portfolio_sync row and all of its holdings
@@ -26,13 +27,13 @@ export interface PublicHolding {
 export interface SnapshotView {
   holdings: PublicHolding[];
   syncedAt: string | null;
-  broker: "kite" | null;
+  broker: BrokerId | null;
 }
 
 export interface OkSnapshot {
   syncId: string;
   profile: string;
-  broker: "kite";
+  broker: BrokerId;
   syncedAt: string;
   holdings: Holding[];
 }
@@ -63,7 +64,7 @@ const SNAPSHOT_HOLDINGS_SQL =
 export function buildHoldingInsert(
   syncId: string,
   profile: string,
-  broker: "kite",
+  broker: BrokerId,
   rows: Holding[],
 ): { text: string; values: unknown[] } {
   const values: unknown[] = [];
@@ -191,7 +192,7 @@ function toPublicHolding(row: Record<string, unknown>): PublicHolding {
 }
 
 /** The latest ok snapshot for a profile and broker, or an empty view when none is stored. */
-export async function loadLatestSnapshot(query: QueryFn, profile: string, broker: "kite"): Promise<SnapshotView> {
+export async function loadLatestSnapshot(query: QueryFn, profile: string, broker: BrokerId): Promise<SnapshotView> {
   const latest = await query(LATEST_SYNC_SQL, [profile, broker]);
   const row = latest.rows[0];
   if (!row) return { holdings: [], syncedAt: null, broker: null };

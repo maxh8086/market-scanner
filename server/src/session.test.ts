@@ -548,6 +548,34 @@ describe("session required on safe methods under /api/", () => {
     await app.close();
   });
 
+  it("exempts GET /api/broker/upstox/callback with no cookie (reaches the route, not the gate)", async () => {
+    const app = buildApp({ query: fakeQuery().query });
+    const res = await app.inject({ method: "GET", url: "/api/broker/upstox/callback?error=access_denied" });
+    expect(res.statusCode).not.toBe(401);
+    await app.close();
+  });
+
+  it("does not exempt POST /api/broker/upstox/callback: 401 session_required with no cookie", async () => {
+    const { query, calls } = fakeQuery();
+    const app = buildApp({ query });
+    const res = await app.inject({ method: "POST", url: "/api/broker/upstox/callback", payload: {} });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: "session_required" });
+    expect(calls).toHaveLength(0);
+    await app.close();
+  });
+
+  it("does not exempt /api/broker/upstox/callback/ (trailing slash) or other upstox paths", async () => {
+    const { query, calls } = fakeQuery();
+    const app = buildApp({ query });
+    const slash = await app.inject({ method: "GET", url: "/api/broker/upstox/callback/?code=x&state=y" });
+    expect(slash.statusCode).toBe(401);
+    const status = await app.inject({ method: "GET", url: "/api/broker/upstox/status" });
+    expect(status.statusCode).toBe(401);
+    expect(calls).toHaveLength(0);
+    await app.close();
+  });
+
   it("does not exempt POST /api/broker/kite/callback: 401 session_required with no cookie", async () => {
     const { query, calls } = fakeQuery();
     const app = buildApp({ query });

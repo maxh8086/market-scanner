@@ -15,8 +15,12 @@ the shared loading and error view.
   `addCustomSymbol`, `normalizeSymbol`, `segmentIndices`, `INDEX_SEGMENTS`,
   `DEFAULT_INDICES`, `ALL_INDICES`.
 - `HoldingsPanel.tsx`: `HoldingsPanel`, `toHoldingRow`, `totalHoldings`,
-  `formatLocalTime`, `loginNoticeFromSearch`, `LOGIN_REQUIRED_NOTICE`,
-  `NO_STORED_PORTFOLIO`.
+  `formatLocalTime`, `brokerFromSearch`, `loginNoticeFromSearch`,
+  `loginRequiredNotice`, `noStoredPortfolio`, `LOGIN_REQUIRED_NOTICE`,
+  `NO_STORED_PORTFOLIO` (both Kite texts). The panel has a Kite / Upstox
+  tablist; the selected broker drives status, login, sync, holdings and the
+  synced stamp. Kite is the default. Results for a broker the user has left are
+  dropped.
 - `CommandPalette.tsx`: `CommandPalette`, `openCommandPalette`,
   `OPEN_COMMAND_PALETTE_EVENT`.
 - `EodRefreshButton.tsx`: `EodRefreshButton`, `formatCountdown`,

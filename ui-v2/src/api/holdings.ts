@@ -1,7 +1,7 @@
 /** Client for GET /api/holdings: the latest stored portfolio snapshot for a profile (no live broker call). */
 
 import { apiGet } from "./session";
-import type { BrokerName } from "./broker";
+import { DEFAULT_PROFILE, isBrokerName, type BrokerName } from "./broker";
 
 export interface Holding {
   symbol: string;
@@ -51,10 +51,16 @@ function isHoldingsBody(body: unknown): body is { holdings: Holding[] } {
   return typeof body === "object" && body !== null && Array.isArray((body as { holdings?: unknown }).holdings);
 }
 
-export async function fetchHoldings(options: { signal?: AbortSignal } = {}): Promise<HoldingsSnapshot> {
+/** The stored snapshot for one profile and broker. The broker defaults to kite, as the server does. */
+export async function fetchHoldings(
+  profile: string = DEFAULT_PROFILE,
+  broker: BrokerName = "kite",
+  options: { signal?: AbortSignal } = {},
+): Promise<HoldingsSnapshot> {
+  const query = new URLSearchParams({ profile, broker });
   let response: Response;
   try {
-    response = await apiGet("/api/holdings", {
+    response = await apiGet(`/api/holdings?${query.toString()}`, {
       headers: { Accept: "application/json" },
       signal: options.signal,
     });
@@ -78,10 +84,10 @@ export async function fetchHoldings(options: { signal?: AbortSignal } = {}): Pro
   if (!isHoldingsBody(body)) {
     throw new HoldingsError("The holdings response had an unexpected shape.", response.status);
   }
-  const { syncedAt, broker } = body as { syncedAt?: unknown; broker?: unknown };
+  const { syncedAt, broker: storedBroker } = body as { syncedAt?: unknown; broker?: unknown };
   return {
     holdings: body.holdings,
     syncedAt: typeof syncedAt === "string" ? syncedAt : null,
-    broker: broker === "kite" ? "kite" : null,
+    broker: isBrokerName(storedBroker) ? storedBroker : null,
   };
 }

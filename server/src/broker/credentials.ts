@@ -17,3 +17,11 @@ export async function readKiteApiKey(secrets: SecretReader, profile: string): Pr
 export function readKiteAccessToken(secrets: SecretReader, profile: string): Promise<string | undefined> {
   return secrets.get(brokerSecretName(profile, "kite", "access_token"));
 }
+
+/**
+ * Upstox access token for a profile. Upstox sync needs only this token: the app's client_id and secret stay
+ * in the ui. Same per-profile rule as Kite, so there is no global fallback.
+ */
+export function readUpstoxAccessToken(secrets: SecretReader, profile: string): Promise<string | undefined> {
+  return secrets.get(brokerSecretName(profile, "upstox", "access_token"));
+}

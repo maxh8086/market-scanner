@@ -94,9 +94,9 @@ function sessionHeaders(session: { cookie: string; csrf: string }) {
 }
 
 describe("GET /api/broker/:broker/status", () => {
-  it("returns 404 for a broker other than kite", async () => {
+  it("returns 404 for a broker outside kite and upstox", async () => {
     const { app, session, ui } = await setup();
-    const res = await app.inject({ method: "GET", url: "/api/broker/upstox/status", headers: sessionHeaders(session) });
+    const res = await app.inject({ method: "GET", url: "/api/broker/zerodha/status", headers: sessionHeaders(session) });
     expect(res.statusCode).toBe(404);
     expect(ui.request).not.toHaveBeenCalled();
     await app.close();
@@ -248,9 +248,9 @@ describe("GET /api/broker/kite/callback", () => {
 });
 
 describe("POST /api/holdings/sync", () => {
-  it("rejects a broker other than kite", async () => {
+  it("rejects a broker outside kite and upstox", async () => {
     const { app, session, kiteFetch } = await setup();
-    const res = await app.inject({ method: "POST", url: "/api/holdings/sync", headers: sessionHeaders(session), payload: { broker: "upstox" } });
+    const res = await app.inject({ method: "POST", url: "/api/holdings/sync", headers: sessionHeaders(session), payload: { broker: "zerodha" } });
     expect(res.statusCode).toBe(400);
     expect(kiteFetch).not.toHaveBeenCalled();
     await app.close();
@@ -371,6 +371,219 @@ describe("GET /api/holdings", () => {
     const res = await app.inject({ method: "GET", url: "/api/holdings", headers: sessionHeaders(session) });
     expect(res.statusCode).toBe(500);
     expect(res.json()).toEqual({ error: "holdings unavailable" });
+    await app.close();
+  });
+});
+
+const UP_ACCESS = "up-SENTINEL-ACCESS-9005";
+const UP_CODE = "code-SENTINEL-9006";
+const upstoxBody = {
+  status: "success",
+  data: [
+    { trading_symbol: "ACE", exchange: "NSE", isin: "INE00000001", quantity: 100, average_price: 834.1, last_price: 1166, close_price: 1160, pnl: 1, day_change: 4.9, day_change_percentage: 0.41 },
+    { trading_symbol: "", quantity: 5 },
+  ],
+};
+
+describe("upstox: GET /api/broker/upstox/status", () => {
+  it("returns connected state from the ui for upstox", async () => {
+    const { app, session, ui } = await setup({
+      ui: () => ({ status: 200, body: { connected: false, expires_at: null } }),
+    });
+    const res = await app.inject({ method: "GET", url: "/api/broker/upstox/status", headers: sessionHeaders(session) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ connected: false, expiresAt: null });
+    expect(ui.request).toHaveBeenCalledWith("GET", "/internal/broker/upstox/status?profile_id=default");
+    await app.close();
+  });
+
+  it("returns 502 when the ui answers badly for upstox", async () => {
+    const { app, session } = await setup({ ui: () => ({ status: 500, body: null }) });
+    const res = await app.inject({ method: "GET", url: "/api/broker/upstox/status?profile=main", headers: sessionHeaders(session) });
+    expect(res.statusCode).toBe(502);
+    await app.close();
+  });
+});
+
+describe("upstox: POST /api/broker/upstox/login-url", () => {
+  it("returns the Upstox login URL from the ui", async () => {
+    const { app, session, ui } = await setup({
+      ui: () => ({ status: 200, body: { url: "https://api.upstox.com/v2/login/authorization/dialog?state=s" } }),
+    });
+    const res = await app.inject({ method: "POST", url: "/api/broker/upstox/login-url", headers: sessionHeaders(session), payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ url: "https://api.upstox.com/v2/login/authorization/dialog?state=s" });
+    expect(ui.request).toHaveBeenCalledWith("POST", "/internal/broker/upstox/login-url", { profile_id: "default" });
+    await app.close();
+  });
+
+  it("maps a ui 409 to 409 api key not configured", async () => {
+    const { app, session } = await setup({ ui: () => ({ status: 409, body: { error: "x" } }) });
+    const res = await app.inject({ method: "POST", url: "/api/broker/upstox/login-url", headers: sessionHeaders(session), payload: { profile: "main" } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: "api key not configured" });
+    await app.close();
+  });
+});
+
+describe("GET /api/broker/upstox/callback", () => {
+  const exchangeOk = (profileId = "default") => ({ status: 200, body: { profile_id: profileId } });
+  const callback = (query: string) => `/api/broker/upstox/callback?${query}`;
+
+  it("exchanges code and state through the ui, clears only the cached upstox token and redirects with login=ok", async () => {
+    const { app, ui, secrets } = await setup({ ui: () => exchangeOk() });
+    const res = await app.inject({ method: "GET", url: callback(`code=${UP_CODE}&state=${STATE}`) });
+
+    expect(ui.request).toHaveBeenCalledWith("POST", "/internal/broker/upstox/exchange", { code: UP_CODE, state: STATE });
+    expect(secrets.invalidate).toHaveBeenCalledTimes(1);
+    expect(secrets.invalidate).toHaveBeenCalledWith("broker_default_upstox_access_token");
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe("http://127.0.0.1:5173/?broker=upstox&login=ok");
+    expect(res.headers["cache-control"]).toBe("no-store");
+    await app.close();
+  });
+
+  it("redirects with login=failed and calls nothing when Upstox returns an error, even with a code", async () => {
+    const { app, ui, secrets } = await setup({ ui: () => exchangeOk() });
+    const res = await app.inject({ method: "GET", url: callback(`error=access_denied&code=${UP_CODE}&state=${STATE}`) });
+    expect(res.headers.location).toBe("http://127.0.0.1:5173/?broker=upstox&login=failed");
+    expect(ui.request).not.toHaveBeenCalled();
+    expect(secrets.invalidate).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("redirects with login=failed and calls nothing when code or state is missing or empty", async () => {
+    const { app, ui } = await setup({ ui: () => exchangeOk() });
+    for (const query of [`state=${STATE}`, `code=${UP_CODE}`, `code=&state=${STATE}`, `code=${UP_CODE}&state=`]) {
+      const res = await app.inject({ method: "GET", url: callback(query) });
+      expect(res.headers.location).toBe("http://127.0.0.1:5173/?broker=upstox&login=failed");
+    }
+    expect(ui.request).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("never puts the code or state in the redirect or the response body", async () => {
+    const { app } = await setup({ ui: () => exchangeOk() });
+    const res = await app.inject({ method: "GET", url: callback(`code=${UP_CODE}&state=${STATE}`) });
+    expect(res.headers.location).not.toContain(UP_CODE);
+    expect(res.headers.location).not.toContain(STATE);
+    expect(res.body).not.toContain(UP_CODE);
+    await app.close();
+  });
+
+  it("redirects with login=failed and clears nothing when the ui rejects the exchange", async () => {
+    const { app, secrets } = await setup({ ui: () => ({ status: 502, body: { error: "broker exchange failed" } }) });
+    const res = await app.inject({ method: "GET", url: callback(`code=${UP_CODE}&state=${STATE}`) });
+    expect(res.headers.location).toBe("http://127.0.0.1:5173/?broker=upstox&login=failed");
+    expect(secrets.invalidate).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("treats a malformed profile_id from the ui as failed", async () => {
+    const { app, secrets } = await setup({ ui: () => exchangeOk("Not Valid") });
+    const res = await app.inject({ method: "GET", url: callback(`code=${UP_CODE}&state=${STATE}`) });
+    expect(res.headers.location).toContain("login=failed");
+    expect(secrets.invalidate).not.toHaveBeenCalled();
+    await app.close();
+  });
+});
+
+describe("upstox: POST /api/holdings/sync", () => {
+  const syncUrl = "/api/holdings/sync";
+
+  it("returns 401 login required when no upstox access token is stored, without calling Upstox", async () => {
+    const { app, session, kiteFetch, tx } = await setup({ secrets: {} });
+    const res = await app.inject({ method: "POST", url: syncUrl, headers: sessionHeaders(session), payload: { broker: "upstox" } });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: "login required" });
+    expect(kiteFetch).not.toHaveBeenCalled();
+    expect(tx.portfolioTx).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("needs no api key: syncs with the access token alone and saves an upstox snapshot", async () => {
+    const { app, session, kiteFetch, tx, secrets } = await setup({
+      secrets: { broker_default_upstox_access_token: UP_ACCESS },
+      kiteFetch: async () => kiteJson(200, upstoxBody),
+    });
+    const res = await app.inject({ method: "POST", url: syncUrl, headers: sessionHeaders(session), payload: { broker: "upstox" } });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ syncedAt: expect.any(String), broker: "upstox", rowCount: 1 });
+    expect(kiteFetch).toHaveBeenCalledWith(
+      "https://api.upstox.com/v2/portfolio/long-term-holdings",
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: `Bearer ${UP_ACCESS}` }) }),
+    );
+    expect(tx.statements[0].values).toContain("upstox");
+    expect(tx.statements[0].values).not.toContain("kite");
+    expect(secrets.get.mock.calls.map((call) => call[0])).not.toEqual(expect.arrayContaining([expect.stringContaining("api_key")]));
+    expect(res.body).not.toContain(UP_ACCESS);
+    await app.close();
+  });
+
+  it("does not read the kite access token when syncing upstox", async () => {
+    const { app, session, secrets } = await setup({
+      secrets: { broker_default_kite_access_token: ACCESS, broker_default_kite_api_key: API_KEY },
+      kiteFetch: async () => kiteJson(200, upstoxBody),
+    });
+    const res = await app.inject({ method: "POST", url: syncUrl, headers: sessionHeaders(session), payload: { broker: "upstox" } });
+    expect(res.statusCode).toBe(401);
+    expect(secrets.get.mock.calls.map((call) => call[0])).not.toContain("broker_default_kite_access_token");
+    await app.close();
+  });
+
+  it("maps an Upstox 401 to login expired and a 403 to the static IP message, saving nothing", async () => {
+    const expired = await setup({
+      secrets: { broker_default_upstox_access_token: UP_ACCESS },
+      kiteFetch: async () => kiteJson(401, {}),
+    });
+    const res1 = await expired.app.inject({ method: "POST", url: syncUrl, headers: sessionHeaders(expired.session), payload: { broker: "upstox" } });
+    expect(res1.statusCode).toBe(401);
+    expect(res1.json()).toEqual({ error: "Upstox login expired. Log in again." });
+    expect(expired.tx.portfolioTx).not.toHaveBeenCalled();
+    await expired.app.close();
+
+    const refused = await setup({
+      secrets: { broker_default_upstox_access_token: UP_ACCESS },
+      kiteFetch: async () => kiteJson(403, {}),
+    });
+    const res2 = await refused.app.inject({ method: "POST", url: syncUrl, headers: sessionHeaders(refused.session), payload: { broker: "upstox" } });
+    expect(res2.statusCode).toBe(403);
+    expect(res2.json()).toEqual({ error: "Upstox refused the request. Check the static IP setting for the app." });
+    expect(refused.tx.portfolioTx).not.toHaveBeenCalled();
+    await refused.app.close();
+  });
+
+  it("maps another Upstox failure to 502 and does not echo the body", async () => {
+    const { app, session, tx } = await setup({
+      secrets: { broker_default_upstox_access_token: UP_ACCESS },
+      kiteFetch: async () => kiteJson(500, { secret: UP_ACCESS }),
+    });
+    const res = await app.inject({ method: "POST", url: syncUrl, headers: sessionHeaders(session), payload: { broker: "upstox" } });
+    expect(res.statusCode).toBe(502);
+    expect(res.body).not.toContain(UP_ACCESS);
+    expect(tx.portfolioTx).not.toHaveBeenCalled();
+    await app.close();
+  });
+});
+
+describe("GET /api/holdings?broker=", () => {
+  it("reads the stored upstox snapshot when broker=upstox", async () => {
+    const query = fakeQuery({ syncRows: [{ sync_id: "u1", synced_at: new Date("2026-11-13T10:00:00.000Z") }] });
+    const { app, session, kiteFetch } = await setup({ query });
+    const res = await app.inject({ method: "GET", url: "/api/holdings?broker=upstox", headers: sessionHeaders(session) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ holdings: [], syncedAt: "2026-11-13T10:00:00.000Z", broker: "upstox" });
+    expect(query.calls[0].values).toEqual(["default", "upstox"]);
+    expect(kiteFetch).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("rejects an unknown broker with 400", async () => {
+    const { app, session } = await setup();
+    const res = await app.inject({ method: "GET", url: "/api/holdings?broker=zerodha", headers: sessionHeaders(session) });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: "broker not supported" });
     await app.close();
   });
 });
